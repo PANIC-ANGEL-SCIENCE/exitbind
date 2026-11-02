@@ -12,6 +12,7 @@ mod guidance;
 mod phase_guidance;
 pub(crate) use guidance::{guidance, guidance_for_assignment, selected_content};
 pub(crate) use phase_guidance::content_for_agent as phase_guidance_content;
+pub(crate) use phase_guidance::require_selected as require_selected_phase_guidance;
 
 pub(crate) fn contextual_host_is_pinned(
     loaded: &Loaded,

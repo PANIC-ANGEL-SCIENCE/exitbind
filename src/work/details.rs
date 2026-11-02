@@ -6,6 +6,10 @@
 use crate::{config::Loaded, evidence::hash, run::RunSnapshot};
 use serde_json::{json, Value};
 
+mod native_snapshot;
+pub(crate) use native_snapshot::current_check_command;
+pub(super) use native_snapshot::native_snapshot_facts;
+
 const PAGE_BYTES: usize = 24 * 1024;
 const SMALL_PAGE_BYTES: usize = 4 * 1024;
 pub(crate) const MAX_DETAIL_BYTES: usize = 64 * 1024;
@@ -70,12 +74,14 @@ pub(crate) fn ensure_action_binding(
     ensure_current_config(loaded)?;
     let next = super::next_for(loaded, work, &super::resolve(loaded, work)?)?;
     if next["current"]["binding"] != expected {
-        let route = crate::emitted::refresh(work, &loaded.path);
-        return Err(format!(
-            "current action form binding is stale; {route} and follow current.details.grouped"
-        ));
+        return Err(stale_action_binding(loaded, work));
     }
     Ok(())
+}
+
+fn stale_action_binding(loaded: &Loaded, work: &str) -> String {
+    let route = crate::emitted::refresh(work, &loaded.path);
+    format!("current action form binding is stale; {route} and follow current.details.grouped")
 }
 
 fn check_preparation(loaded: &Loaded, snapshot: &RunSnapshot) -> Value {
@@ -591,64 +597,6 @@ fn native_sections(mut sections: Value, forms: &Value, binding: &Value) -> Value
     }
     sections["currentAction"] = actor_action;
     sections
-}
-
-/// Reproduce the required facts from a validated predecessor snapshot. This
-/// proves the one governor transition without treating that old view as a
-/// current read route or changing the ledger.
-pub(super) fn native_snapshot_facts(
-    loaded: &Loaded,
-    work: &str,
-    snapshot: &RunSnapshot,
-    next: &Value,
-    pre_edit_inputs: &str,
-    managed: bool,
-) -> Result<Value, String> {
-    ensure_current_config(loaded)?;
-    let mut canonical = next.clone();
-    canonical
-        .as_object_mut()
-        .ok_or("predecessor action unavailable")?
-        .remove("current");
-    if let Some(assignment) = canonical["assignment"].as_str().map(str::to_owned) {
-        super::attach_held(loaded, work, &assignment, &mut canonical)?;
-    }
-    let binding = binding(loaded, work, snapshot, &canonical)?;
-    let recipient = super::readable::recipient_context::read(loaded, &canonical)?;
-    if recipient["available"] != true || !recipient["rules"].is_array() {
-        return Err("predecessor recipient instructions are unavailable".into());
-    }
-    let mut sections = Value::Object(super::readable::grouped_sections(
-        loaded, work, snapshot, &canonical, &binding,
-    )?);
-    if !super::readable::evidence_complete(&sections["evidence"]) {
-        return Err("predecessor required evidence is unavailable".into());
-    }
-    let observed = sections
-        .pointer_mut("/assignment/residual/snapshot/inputsSha256")
-        .filter(|value| value.is_string())
-        .ok_or("predecessor input observation is unavailable")?;
-    if pre_edit_inputs.len() != 64 || !pre_edit_inputs.bytes().all(|byte| byte.is_ascii_hexdigit())
-    {
-        return Err("grant pre-edit input identity is malformed".into());
-    }
-    // Only this historical observation comes from the exact validated grant.
-    // Current result/check inputs remain untouched.
-    *observed = json!(pre_edit_inputs);
-    let forms = super::action_forms::full(loaded, work, &canonical, &binding);
-    let mut sections = native_sections(sections, &forms, &json!(binding));
-    let continuation = if managed {
-        crate::project::continuation::runtime::delivery(loaded, work)?
-    } else {
-        None
-    };
-    if let Some(delivery) = continuation {
-        sections["projectContinuation"] = delivery;
-    }
-    Ok(
-        json!({"binding":binding,"requiredFactsSha256":hash::value(&sections),
-        "recipientSha256":hash::value(&recipient)}),
-    )
 }
 
 /// The same recipient owner rechecks rules, profile, rights and guidance at

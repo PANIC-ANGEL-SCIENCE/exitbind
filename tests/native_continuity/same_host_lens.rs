@@ -86,6 +86,16 @@ impl Fixture {
     }
 
     fn new_with_check_and_write(name: &str, check: &str, write: Option<&str>) -> Self {
+        Self::new_with_material(name, check, write, PROFILE_BODY, None)
+    }
+
+    fn new_with_material(
+        name: &str,
+        check: &str,
+        write: Option<&str>,
+        profile: &str,
+        phase: Option<(&str, Option<&str>)>,
+    ) -> Self {
         let base = super::support::temp(name);
         let product = base.join("product");
         let store = base.join("session-goals");
@@ -113,8 +123,15 @@ impl Fixture {
         if let Some(path) = write {
             config["agents"]["worker"]["write"] = json!([path]);
         }
+        if let Some((path, body)) = phase {
+            config["agents"]["worker"]["phaseGuidance"] =
+                json!([{"id":"required-test","phase":"test","path":path}]);
+            if let Some(body) = body {
+                fs::write(fixture.product.join(path), body).unwrap();
+            }
+        }
         fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
-        let mut files = vec![(PROFILE.to_owned(), PROFILE_BODY)];
+        let mut files = vec![(PROFILE.to_owned(), profile)];
         for (id, body) in LENSES {
             files.push((format!("your.soulmate/lenses/{id}.md"), body));
         }

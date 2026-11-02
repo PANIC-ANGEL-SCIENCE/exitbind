@@ -33,7 +33,9 @@ use storage::{
     acquire_lock, find_resume_source, journal_paths, journal_paths_readonly, JournalLock,
 };
 
-pub(crate) use host_return::{host_result_contract, return_host_result, validate_host_result};
+pub(crate) use host_return::{
+    actor_contract, host_result_contract, return_host_result, validate_host_result,
+};
 use journal::{
     claim_started, journal_result, read_journal, record_error, update_started,
     validate_completed_observation, verify_journal, write_completed, write_journal,

@@ -1,12 +1,15 @@
 //! Verified same-host Goal projection for host callbacks.
-use super::{run, text, Fixture, CHILD, OTHER, SESSION};
+use super::{run, text, Fixture, CHILD, OTHER, PROFILE_BODY, SESSION};
 use serde_json::{json, Value};
 use std::{fs, process::Output};
 
 #[test]
 fn selector_free_same_host_delivery_matches_owner_goal_and_returns_after_permit() {
-    let fixture =
-        Fixture::new_with_check_and_write("r60-same-host-delivery", "true", Some("fixture.txt"));
+    let fixture = Fixture::new_with_check_and_write(
+        "r60-same-host-delivery",
+        "true --mode strict",
+        Some("fixture.txt"),
+    );
     fs::write(
         fixture.product.join("AGENTS.md"),
         "Preserve the fixture flag.\n",
@@ -30,7 +33,7 @@ fn selector_free_same_host_delivery_matches_owner_goal_and_returns_after_permit(
         .as_str()
         .unwrap();
     assert!(
-        output.stdout.len() <= 16 * 1024 + 1,
+        output.stdout.len() <= 16 * 1024,
         "host bytes: {}",
         output.stdout.len()
     );
@@ -40,14 +43,23 @@ fn selector_free_same_host_delivery_matches_owner_goal_and_returns_after_permit(
         .and_then(|(_, rest)| rest.lines().next())
         .unwrap_or_else(|| panic!("complete assignment unavailable, {} bytes: {start}", output.stdout.len()));
     let packet: Value = serde_json::from_str(packet).unwrap();
-    assert_eq!(packet["currentAction"]["binding"], owner["binding"]);
-    assert_eq!(packet["tasks"]["goal"], owner["sections"]["tasks"]["goal"]);
+    assert_eq!(packet["checkCommand"], "true --mode strict");
     assert_eq!(
-        packet["tasks"]["tasks"],
-        owner["sections"]["tasks"]["tasks"]
+        packet["checkPreparation"]["workingDirectory"],
+        json!(fixture.product)
     );
+    assert_eq!(packet["currentAction"]["binding"], owner["binding"]);
+    assert_eq!(packet["goal"], owner["sections"]["tasks"]["goal"]);
+    if owner["sections"]["tasks"]["tasks"]
+        .as_array()
+        .is_some_and(Vec::is_empty)
+    {
+        assert!(packet["tasks"].is_null());
+    } else {
+        assert_eq!(packet["tasks"], owner["sections"]["tasks"]["tasks"]);
+    }
     assert_eq!(
-        packet["tasks"]["goal"],
+        packet["goal"],
         "A same-host lens needs no cross-host protocol"
     );
     assert_eq!(
@@ -92,6 +104,145 @@ fn selector_free_same_host_delivery_matches_owner_goal_and_returns_after_permit(
     let intent = &fixture.intents().unwrap()[0];
     assert!(intent["returnEventSha256"].is_string(), "{intent}");
     assert!(intent["rawObservation"].is_null(), "{intent}");
+}
+
+#[test]
+fn legacy_exact_delivery_remains_eligible_after_its_matching_permit() {
+    let fixture = Fixture::new_with_check_and_write(
+        "r60-same-host-legacy-delivery",
+        "true",
+        Some("fixture.txt"),
+    );
+    fixture.prepare_sonic();
+    let start = fixture
+        .hook(
+            json!({"hook_event_name":"SubagentStart","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic"}),
+        )
+        .unwrap();
+    let packet = start
+        .split_once("Complete current assignment, evidence and task conditions (verified for this recipient):\n")
+        .and_then(|(_, rest)| rest.lines().next()).unwrap();
+    let packet: Value = serde_json::from_str(packet).unwrap();
+    let path = fixture.product.join(".exitbind/child-intents.json");
+    let mut saved: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    // Model the old producer's record, which predates all three fields.
+    assert!(saved["intents"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("selectedDeliveryProtocol")
+        .is_some());
+    let delivery = saved["intents"][0]["assignmentDelivery"]
+        .as_object_mut()
+        .unwrap();
+    assert!(delivery.remove("actorFactsSha256").is_some());
+    assert!(delivery.remove("actorContractSha256").is_some());
+    fs::write(&path, serde_json::to_vec(&saved).unwrap()).unwrap();
+    let mut permit = packet["currentAction"]["beforeEditing"]["command"]["argv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|word| word.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    for word in &mut permit {
+        if word == "<OPERATION>" {
+            *word = "Update fixture".into();
+        }
+    }
+    let granted = run(
+        &permit,
+        &fixture.product,
+        &fixture.store,
+        Some(SESSION),
+        b"",
+    );
+    assert!(granted.status.success(), "{}", text(&granted));
+    let granted: Value = serde_json::from_slice(&granted.stdout).unwrap();
+    assert_eq!(granted["childDeliveryContinuity"]["state"], "current");
+    fs::write(fixture.product.join("fixture.txt"), "permitted edit\n").unwrap();
+    fixture.hook(json!({"hook_event_name":"SubagentStop","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic",
+        "last_assistant_message":r#"{"outcome":"completed","summary":"Edited fixture","reason":""}"#}));
+    let intent = &fixture.intents().unwrap()[0];
+    assert!(intent["returnEventSha256"].is_string(), "{intent}");
+    assert!(intent["rawObservation"].is_null(), "{intent}");
+}
+
+#[test]
+fn selected_delivery_refuses_transformed_or_incomplete_required_instructions() {
+    let long_phase = "required phase instruction\n".repeat(200);
+    let redacted_profile = format!(
+        "Never edit {}\n",
+        ["/", "home", "/", "account", "/project"].concat()
+    );
+    let scenarios = [
+        (
+            "phase-complete",
+            PROFILE_BODY,
+            Some("phase.md"),
+            Some("retain this phase instruction\n"),
+            true,
+        ),
+        (
+            "phase-overflow",
+            PROFILE_BODY,
+            Some("phase.md"),
+            Some(long_phase.as_str()),
+            false,
+        ),
+        (
+            "phase-unavailable",
+            PROFILE_BODY,
+            Some("missing-phase.md"),
+            None,
+            false,
+        ),
+        (
+            "profile-redacted",
+            redacted_profile.as_str(),
+            None,
+            None,
+            false,
+        ),
+    ];
+    for (name, profile, path, body, expected) in scenarios {
+        let phase = path.map(|path| (path, body));
+        let fixture = Fixture::new_with_material(name, "true", None, profile, phase);
+        fixture.prepare_sonic();
+        let start = fixture
+            .hook(
+                json!({"hook_event_name":"SubagentStart","session_id":SESSION,
+            "agent_id":CHILD,"agent_type":"sonic"}),
+            )
+            .unwrap();
+        let intent = &fixture.intents().unwrap()[0];
+        assert_eq!(
+            intent["assignmentDelivery"]["state"] == "presented",
+            expected,
+            "{name}: {start}"
+        );
+        if expected {
+            assert!(start.contains("retain this phase instruction"), "{start}");
+            continue;
+        }
+        assert!(
+            start.contains("no automatic return") || start.contains("cannot receive credit"),
+            "{start}"
+        );
+        fixture.hook(json!({"hook_event_name":"SubagentStop","session_id":SESSION,
+            "agent_id":CHILD,"agent_type":"sonic",
+            "last_assistant_message":r#"{"outcome":"completed","summary":"uncredited","reason":""}"#}));
+        let retained = &fixture.intents().unwrap()[0];
+        assert!(
+            retained["returnEventSha256"].is_null(),
+            "{name}: {retained}"
+        );
+        assert!(
+            retained.get("pendingReturn").is_none(),
+            "{name}: {retained}"
+        );
+        assert!(retained["rawObservation"].is_object(), "{name}: {retained}");
+    }
 }
 
 fn hook_with_selector(fixture: &Fixture, payload: Value, selector: &str, identity: &str) -> Output {

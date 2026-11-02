@@ -132,6 +132,50 @@ fn worker_receives_the_frozen_check_input_observation_before_work() {
 }
 
 #[test]
+fn marked_delivery_without_complete_actor_proof_cannot_return_on_unchanged_binding() {
+    for missing in ["facts", "contract", "both", "marker"] {
+        let fixture = Fixture::new(&format!("r60-exact-actor-{missing}"));
+        fixture.prepare_sonic();
+        let start = fixture
+            .hook(
+                json!({"hook_event_name":"SubagentStart","session_id":SESSION,
+            "agent_id":CHILD,"agent_type":"sonic"}),
+            )
+            .unwrap();
+        assert_eq!(
+            fixture.intents().unwrap()[0]["assignmentDelivery"]["state"],
+            "presented",
+            "{start}"
+        );
+        let path = fixture.product.join(".exitbind/child-intents.json");
+        let mut saved: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        if missing == "marker" {
+            saved["intents"][0]["selectedDeliveryProtocol"] = Value::Null;
+        } else {
+            let delivery = saved["intents"][0]["assignmentDelivery"]
+                .as_object_mut()
+                .unwrap();
+            if missing != "contract" {
+                delivery.remove("actorFactsSha256");
+            }
+            if missing != "facts" {
+                delivery.remove("actorContractSha256");
+            }
+        }
+        fs::write(path, serde_json::to_vec(&saved).unwrap()).unwrap();
+        fixture.hook(
+            json!({"hook_event_name":"SubagentStop","session_id":SESSION,
+            "agent_id":CHILD,"agent_type":"sonic",
+            "last_assistant_message":r#"{"outcome":"completed","summary":"Fixture","reason":""}"#}),
+        );
+        let intent = &fixture.intents().unwrap()[0];
+        assert!(intent["returnEventSha256"].is_null(), "{missing}: {intent}");
+        assert!(intent["rawObservation"].is_object(), "{missing}: {intent}");
+        assert!(intent.get("pendingReturn").is_none(), "{missing}: {intent}");
+    }
+}
+
+#[test]
 fn permit_successor_rejects_changed_recipient_and_unrelated_transitions() {
     for change in [
         "request",
@@ -142,6 +186,12 @@ fn permit_successor_rejects_changed_recipient_and_unrelated_transitions() {
         "rights",
         "rules",
         "old-proof",
+        "actor-proof",
+        "contract-proof",
+        "missing-actor",
+        "missing-contract",
+        "missing-both",
+        "bad-marker",
     ] {
         let fixture = Fixture::new(&format!("r60-permit-{change}"));
         if change == "rules" {
@@ -199,6 +249,38 @@ fn permit_successor_rejects_changed_recipient_and_unrelated_transitions() {
                 .remove("permitForm");
             fs::write(path, serde_json::to_vec(&saved).unwrap()).unwrap();
         }
+        if matches!(change, "actor-proof" | "contract-proof") {
+            let path = fixture.product.join(".exitbind/child-intents.json");
+            let mut saved: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            let field = if change == "actor-proof" {
+                "actorFactsSha256"
+            } else {
+                "actorContractSha256"
+            };
+            saved["intents"][0]["assignmentDelivery"][field] = json!("0".repeat(64));
+            fs::write(path, serde_json::to_vec(&saved).unwrap()).unwrap();
+        }
+        if matches!(
+            change,
+            "missing-actor" | "missing-contract" | "missing-both" | "bad-marker"
+        ) {
+            let path = fixture.product.join(".exitbind/child-intents.json");
+            let mut saved: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            if change == "bad-marker" {
+                saved["intents"][0]["selectedDeliveryProtocol"] = json!(2);
+            } else {
+                let delivery = saved["intents"][0]["assignmentDelivery"]
+                    .as_object_mut()
+                    .unwrap();
+                if change != "missing-contract" {
+                    delivery.remove("actorFactsSha256");
+                }
+                if change != "missing-actor" {
+                    delivery.remove("actorContractSha256");
+                }
+            }
+            fs::write(path, serde_json::to_vec(&saved).unwrap()).unwrap();
+        }
         if change == "pre-input" {
             fs::write(
                 fixture.product.join("changed-before-permit.txt"),
@@ -216,7 +298,18 @@ fn permit_successor_rejects_changed_recipient_and_unrelated_transitions() {
         assert!(result.status.success(), "{change}: {}", text(&result));
         let result: Value = serde_json::from_slice(&result.stdout).unwrap();
         assert_eq!(result["allowed"], true, "{change}: {result}");
-        if !matches!(change, "request" | "pre-input" | "old-proof") {
+        if !matches!(
+            change,
+            "request"
+                | "pre-input"
+                | "old-proof"
+                | "actor-proof"
+                | "contract-proof"
+                | "missing-actor"
+                | "missing-contract"
+                | "missing-both"
+                | "bad-marker"
+        ) {
             assert_eq!(
                 result["childDeliveryContinuity"]["state"], "current",
                 "{change}: {result}"
@@ -510,6 +603,29 @@ fn typed_host_return_uses_the_bound_assignment_once_and_rejects_foreign_or_inval
     let raw: Value = serde_json::from_slice(&raw.stdout).unwrap();
     assert_eq!(raw["resultText"], bad);
     assert_eq!(raw["credit"], "none");
+
+    let prose = Fixture::new("r60-host-return-prose-json");
+    prose.prepare_sonic();
+    prose.hook(
+        json!({"hook_event_name":"SubagentStart","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic"}),
+    );
+    assert_eq!(
+        prose.intents().unwrap()[0]["assignmentDelivery"]["state"],
+        "presented"
+    );
+    let prose_and_json = format!("Here is the result:\n{valid}");
+    prose.hook(
+        json!({"hook_event_name":"SubagentStop","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic","last_assistant_message":prose_and_json}),
+    );
+    let retained = prose.intents().unwrap()[0].clone();
+    assert!(retained["rawObservation"]["reason"]
+        .as_str()
+        .unwrap()
+        .contains("not typed JSON"));
+    assert!(retained.get("pendingReturn").is_none());
+    assert!(retained["returnEventSha256"].is_null());
 
     let unavailable = Fixture::new("r60-host-return-undelivered");
     unavailable.prepare_sonic();

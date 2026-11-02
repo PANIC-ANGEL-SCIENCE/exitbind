@@ -147,17 +147,17 @@ fn assert_complete_successor_delivery(label: &str) {
         .unwrap_or_else(|| panic!("complete successor delivery unavailable: {context}"));
     let packet: Value = serde_json::from_str(packet).unwrap();
     assert_eq!(packet["currentAction"]["binding"], detail["binding"]);
-    assert_eq!(packet["tasks"]["goal"], detail["sections"]["tasks"]["goal"]);
+    assert_eq!(packet["goal"], detail["sections"]["tasks"]["goal"]);
     assert_eq!(
-        packet["assignment"]["assignment"]["declaredBoundary"],
+        packet["boundary"],
         detail["sections"]["assignment"]["assignment"]["declaredBoundary"]
     );
     assert_eq!(
-        packet["assignment"]["assignment"]["role"],
+        packet["role"],
         detail["sections"]["assignment"]["assignment"]["role"]
     );
     assert_eq!(
-        packet["assignment"]["assignment"]["agent"],
+        packet["agent"],
         detail["sections"]["assignment"]["assignment"]["agent"]
     );
     assert_eq!(
@@ -177,7 +177,6 @@ fn assert_complete_successor_delivery(label: &str) {
         .as_str()
         .unwrap();
     let digest = digest_text(profile);
-    assert_eq!(packet["assignment"]["assignment"]["profileSha256"], digest);
     assert!(
         context.contains(&format!("Profile SHA-256: {digest}\nPresented profile SHA-256: same as Profile SHA-256 (after path redaction).")),
         "both profile identities must resolve to the exact source digest"

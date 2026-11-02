@@ -1,15 +1,18 @@
 //! Evidence read routes presented to a native child with its assignment.
 //!
-//! The child receives references it can resolve itself through work expand,
-//! never evidence content or a Lead's summary of it. References come from the
-//! same validated assignment context the packet digest covers, so a stale or
-//! foreign reference is never offered as current evidence.
+//! Preview references can be resolved through work expand; complete selected
+//! delivery may separately include verified original evidence. References come
+//! from the same validated assignment context the packet digest covers, so a
+//! stale or foreign reference is never offered as current evidence.
 
 use crate::config::Loaded;
 use serde_json::{json, Value};
 use std::path::Path;
 
 pub(crate) const MAX_CONTEXT_OUTPUT: usize = 16 * 1024;
+// Claude documents a separate limit on each delivered context string. Count
+// UTF-16 units conservatively as well as the complete serialized envelope.
+const MAX_CLAUDE_CONTEXT_UNITS: usize = 10_000;
 const MAX_ENTRIES: usize = 8;
 
 pub(crate) fn lines(loaded: &Loaded, work: &str, context: &Value) -> Vec<String> {
@@ -217,17 +220,30 @@ const PREVIEW_SHORTENED: &str =
     "Evidence preview shortened to fit; use the full assignment packet route.";
 
 pub(crate) fn append_within_budget(base: &str, event: &str, lines: &[String]) -> Option<String> {
+    append_bounded(base, event, lines, None)
+}
+
+pub(crate) fn append_for_claude(base: &str, event: &str, lines: &[String]) -> Option<String> {
+    append_bounded(base, event, lines, Some(MAX_CLAUDE_CONTEXT_UNITS))
+}
+
+fn append_bounded(
+    base: &str,
+    event: &str,
+    lines: &[String],
+    context_limit: Option<usize>,
+) -> Option<String> {
     if lines.len() < 2 {
-        return Some(base.to_owned());
+        return fits_bounded(base, event, &[], context_limit).then(|| base.to_owned());
     }
     let header = &lines[0];
     let route = lines.last().expect("at least two evidence lines");
     let mut selected = vec![header.clone(), route.clone()];
     let mut shortened = false;
-    if !fits(base, event, &selected) {
+    if !fits_bounded(base, event, &selected, context_limit) {
         selected = vec![route.clone()];
         shortened = true;
-        if !fits(base, event, &selected) {
+        if !fits_bounded(base, event, &selected, context_limit) {
             return None;
         }
     }
@@ -235,7 +251,7 @@ pub(crate) fn append_within_budget(base: &str, event: &str, lines: &[String]) ->
     for line in lines.iter().skip(1).take(lines.len().saturating_sub(2)) {
         let mut candidate = selected.clone();
         candidate.insert(candidate.len() - 1, line.clone());
-        if fits(base, event, &candidate) {
+        if fits_bounded(base, event, &candidate, context_limit) {
             selected = candidate;
         } else {
             shortened = true;
@@ -244,11 +260,11 @@ pub(crate) fn append_within_budget(base: &str, event: &str, lines: &[String]) ->
     if shortened {
         let mut candidate = selected.clone();
         candidate.insert(candidate.len() - 1, PREVIEW_SHORTENED.into());
-        if fits(base, event, &candidate) {
+        if fits_bounded(base, event, &candidate, context_limit) {
             selected = candidate;
         } else {
             selected = vec![PREVIEW_SHORTENED.into(), route.clone()];
-            if !fits(base, event, &selected) {
+            if !fits_bounded(base, event, &selected, context_limit) {
                 return None;
             }
         }
@@ -256,12 +272,24 @@ pub(crate) fn append_within_budget(base: &str, event: &str, lines: &[String]) ->
     Some(append(base, &selected))
 }
 
+#[cfg(test)]
 fn fits(base: &str, event: &str, suffix: &[String]) -> bool {
+    fits_bounded(base, event, suffix, None)
+}
+
+fn fits_bounded(base: &str, event: &str, suffix: &[String], context_limit: Option<usize>) -> bool {
     let candidate = append(base, suffix);
-    serde_json::to_vec(&json!({"hookSpecificOutput":{
-        "hookEventName":event,"additionalContext":candidate
-    }}))
-    .is_ok_and(|bytes| bytes.len() <= MAX_CONTEXT_OUTPUT)
+    context_limit.map_or(true, |limit| candidate.encode_utf16().count() <= limit)
+        && serde_json::to_vec(&json!({"hookSpecificOutput":{
+            "hookEventName":event,"additionalContext":candidate
+        }}))
+        // The selected Claude hook is written with println!, so its final
+        // transport includes one trailing newline. Preserve the legacy
+        // serialized-envelope convention for other callers.
+        .is_ok_and(|bytes| {
+            bytes.len() <= MAX_CONTEXT_OUTPUT
+                && (context_limit.is_none() || bytes.len() < MAX_CONTEXT_OUTPUT)
+        })
 }
 
 fn append(base: &str, suffix: &[String]) -> String {
@@ -338,6 +366,58 @@ mod tests {
         let detail = "d".repeat(512);
         let lines = vec!["Evidence for this assignment.".to_owned(), detail, route];
         assert!(append_within_budget(&base, event, &lines).is_none());
+    }
+
+    #[test]
+    fn claude_delivery_budgets_the_final_route_and_preview() {
+        let event = "SubagentStart";
+        let base = "a".repeat(9_700);
+        let route = format!("Full assignment packet route: {}", "r".repeat(120));
+        let lines = vec![
+            "Evidence for this assignment.".to_owned(),
+            "optional preview".repeat(50),
+            route.clone(),
+        ];
+        let context = append_for_claude(&base, event, &lines).unwrap();
+        assert!(context.starts_with(&base));
+        assert!(context.contains(&route));
+        assert!(context.contains(PREVIEW_SHORTENED));
+        assert!(!context.contains("optional preview"));
+        assert!(context.encode_utf16().count() <= MAX_CLAUDE_CONTEXT_UNITS);
+        assert!(serialized_len(event, &context) <= MAX_CONTEXT_OUTPUT);
+    }
+
+    #[test]
+    fn claude_delivery_refuses_either_character_or_escaped_byte_overflow() {
+        let event = "SubagentStart";
+        let too_many_units = format!("{}{}", "a".repeat(5_500), "😀".repeat(2_251));
+        assert!(serialized_len(event, &too_many_units) < MAX_CONTEXT_OUTPUT);
+        assert!(too_many_units.encode_utf16().count() > MAX_CLAUDE_CONTEXT_UNITS);
+        assert!(append_for_claude(&too_many_units, event, &[]).is_none());
+        assert!(append_within_budget(&too_many_units, event, &[]).is_some());
+
+        let escaped = "\"".repeat(8_200);
+        assert!(escaped.encode_utf16().count() < MAX_CLAUDE_CONTEXT_UNITS);
+        assert!(serialized_len(event, &escaped) > MAX_CONTEXT_OUTPUT);
+        assert!(append_for_claude(&escaped, event, &[]).is_none());
+    }
+
+    #[test]
+    fn claude_delivery_accounts_for_the_final_stdout_newline() {
+        let event = "SubagentStart";
+        let mut text = String::new();
+        while serialized_len(event, &text) < MAX_CONTEXT_OUTPUT {
+            text.push('"');
+        }
+        if serialized_len(event, &text) > MAX_CONTEXT_OUTPUT {
+            text.pop();
+            text.push('a');
+        }
+        assert_eq!(serialized_len(event, &text), MAX_CONTEXT_OUTPUT);
+        assert!(text.encode_utf16().count() < MAX_CLAUDE_CONTEXT_UNITS);
+        assert!(append_for_claude(&text, event, &[]).is_none());
+        text.pop();
+        assert!(append_for_claude(&text, event, &[]).is_some());
     }
 
     #[test]

@@ -8,14 +8,24 @@ use serde_json::{json, Value};
 /// Current, complete, bounded bytes for one prepared named child. A saved
 /// selector is never enough: binding, assignment and source hashes are rechecked.
 pub(crate) fn context(loaded: &Loaded, work: &str, intent_id: &str) -> Result<Value, String> {
-    context_inner(loaded, work, intent_id, false)
+    context_inner(loaded, work, intent_id, false, false)
 }
 
 /// Internal host assembly is checked against the actual serialized host
 /// envelope after duplicate fields are removed. The public context reader
 /// keeps its existing independent 16 KiB result bound.
 pub(super) fn host_context(loaded: &Loaded, work: &str, intent_id: &str) -> Result<Value, String> {
-    context_inner(loaded, work, intent_id, true)
+    context_inner(loaded, work, intent_id, true, true)
+}
+
+/// Preserve already-supported legacy delivery recovery without requiring a
+/// selected-actor proof that was not recorded by the older producer.
+pub(super) fn legacy_host_context(
+    loaded: &Loaded,
+    work: &str,
+    intent_id: &str,
+) -> Result<Value, String> {
+    context_inner(loaded, work, intent_id, true, false)
 }
 
 fn context_inner(
@@ -23,6 +33,7 @@ fn context_inner(
     work: &str,
     intent_id: &str,
     host_delivery: bool,
+    selected_actor: bool,
 ) -> Result<Value, String> {
     let intent = load(loaded)?
         .into_iter()
@@ -143,6 +154,47 @@ fn context_inner(
         complete["requiredAssignment"] = delivery["sections"].clone();
         complete["requiredAssignmentBinding"] = delivery["binding"].clone();
         if host_delivery {
+            if selected_actor {
+                complete["deliveryHost"] = json!(host);
+                // The installed Codex hook advertises a context limit whose
+                // units and delivery behavior have not been verified here.
+                // New selected automatic credit is therefore Claude-only.
+                if host == "claude" {
+                    super::actor_checks::exact_instructions(&result)?;
+                    let packet = &current["next"]["packet"];
+                    let role = current["next"]["role"]
+                        .as_str()
+                        .ok_or("native actor role is unavailable")?;
+                    let attempt = packet["attempt"]
+                        .as_u64()
+                        .ok_or("native actor attempt is unavailable")?;
+                    crate::project::agent_context::require_selected_phase_guidance(
+                        loaded,
+                        agent_id,
+                        role,
+                        attempt,
+                        &result["guidance"],
+                    )?;
+                    let binding = delivery["binding"]
+                        .as_str()
+                        .ok_or("native actor binding is unavailable")?;
+                    let check_command =
+                        crate::work::details::current_check_command(loaded, work, binding)?;
+                    let selected = crate::host::runtime::selected_actor_projection(
+                        loaded,
+                        work,
+                        binding,
+                        &delivery["sections"],
+                        &check_command,
+                    )?;
+                    let (contract, _) =
+                        crate::work::action::actor_contract(role, &result["hostResultContract"])?;
+                    complete["actorFactsSha256"] = json!(hash::value(&selected));
+                    complete["actorAssignment"] = selected;
+                    complete["actorContractSha256"] = json!(hash::text(&contract));
+                    complete["actorResultContract"] = json!(contract);
+                }
+            }
             complete["requiredFactsSha256"] = delivery["requiredFactsSha256"].clone();
             complete["requiredRecipientSha256"] = delivery["recipientSha256"].clone();
             complete["requiredRules"] = delivery["recipientRules"].clone();

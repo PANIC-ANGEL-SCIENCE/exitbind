@@ -104,6 +104,7 @@ pub(super) fn carry(
         request_id: super::action_forms::permit_request_id(&verified.form).unwrap(),
         required_facts_sha256: verified.facts["requiredFactsSha256"].as_str().unwrap(),
         recipient_sha256: verified.facts["recipientSha256"].as_str().unwrap(),
+        actor_facts_sha256: verified.facts["actorFactsSha256"].as_str(),
         successor_binding: verified.current["current"]["binding"].as_str().unwrap(),
         run_event_sha256: verified.event["eventSha256"].as_str().unwrap(),
         governor_event_sha256: verified.event["governorEvent"]["eventSha256"]
@@ -223,11 +224,31 @@ pub(crate) fn validate_successor(
     let Some(event) = events.last() else {
         return Ok(false);
     };
-    Ok(event["eventSha256"] == successor["runEventSha256"]
+    let exact_event = event["eventSha256"] == successor["runEventSha256"]
         && event["governorEvent"]["eventSha256"] == successor["governorEventSha256"]
         && event["requestId"] == form["requestId"]
         && event["governorEvent"]["requestId"] == form["requestId"]
-        && super::permit_response::is_current_grant_event(event, current, assignment))
+        && super::permit_response::is_current_grant_event(event, current, assignment);
+    if !exact_event {
+        return Ok(false);
+    }
+    if let Some(expected) = delivery.get("actorFactsSha256") {
+        let Some(expected) = expected.as_str() else {
+            return Ok(false);
+        };
+        let Some(verified) =
+            verified_transition(loaded, work, assignment, &ledger, Some(event), false)?
+        else {
+            return Ok(false);
+        };
+        let form_sha256 = hash::value(&verified.form);
+        return Ok(verified.facts["actorFactsSha256"] == expected
+            && verified.facts["requiredFactsSha256"] == delivery["requiredFactsSha256"]
+            && verified.facts["recipientSha256"] == delivery["recipientSha256"]
+            && verified.before["current"]["binding"] == delivery["binding"]
+            && form["sha256"].as_str() == Some(form_sha256.as_str()));
+    }
+    Ok(true)
 }
 
 #[cfg(test)]

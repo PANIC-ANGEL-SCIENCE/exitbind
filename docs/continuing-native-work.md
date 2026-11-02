@@ -39,6 +39,13 @@ return` executions emit the same product-owned goal line on bounded stderr;
 `--json` keeps stdout machine-only while retaining that bounded human channel
 on stderr.
 
+New selected automatic host-result delivery is available for Claude when its
+complete current instructions are verified and fit the host envelope. The
+Codex direct-hook context limit has not yet been verified, so a new direct-hook
+result is retained without automatic Work credit; use the current manual
+return form or the product-managed Codex route. Existing exact recovery of
+already-presented results is unchanged.
+
 ## Current binding and complete detail
 
 The normal 8 KiB response exposes `current` version 1 across worker, check,

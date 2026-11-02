@@ -1,6 +1,6 @@
 //! Carry one actually presented child form through its exact governor grant.
 
-use super::{context, load, selected_is_current, text, with_intents};
+use super::{actor_checks, context, load, selected_is_current, text, with_intents};
 use crate::{config::Loaded, evidence::hash, work};
 use serde_json::{json, Value};
 
@@ -12,6 +12,7 @@ pub(crate) struct PermitTransition<'a> {
     pub request_id: &'a str,
     pub required_facts_sha256: &'a str,
     pub recipient_sha256: &'a str,
+    pub actor_facts_sha256: Option<&'a str>,
     pub successor_binding: &'a str,
     pub run_event_sha256: &'a str,
     pub governor_event_sha256: &'a str,
@@ -40,6 +41,13 @@ fn matches(intent: &Value, proof: &PermitTransition<'_>) -> bool {
         && intent["assignmentDelivery"]["permitForm"]["requestId"] == proof.request_id
         && intent["assignmentDelivery"]["requiredFactsSha256"] == proof.required_facts_sha256
         && intent["assignmentDelivery"]["recipientSha256"] == proof.recipient_sha256
+        && match actor_checks::recorded_proof(intent) {
+            actor_checks::RecordedProof::Legacy => true,
+            actor_checks::RecordedProof::Selected { facts, .. } => {
+                Some(facts) == proof.actor_facts_sha256
+            }
+            actor_checks::RecordedProof::Invalid => false,
+        }
 }
 
 /// Called only with a transition proved by the current Work/ledger owner.
@@ -78,12 +86,28 @@ pub(crate) fn advance(loaded: &Loaded, proof: &PermitTransition<'_>) -> Result<b
         let intent_id = intent["id"]
             .as_str()
             .ok_or("child intent identity unavailable")?;
-        let instructions = super::context::host_context(loaded, proof.work, intent_id)?;
+        let recorded = actor_checks::recorded_proof(intent);
+        let instructions = match recorded {
+            actor_checks::RecordedProof::Legacy => {
+                super::context::legacy_host_context(loaded, proof.work, intent_id)?
+            }
+            actor_checks::RecordedProof::Selected { .. } => {
+                super::context::host_context(loaded, proof.work, intent_id)?
+            }
+            actor_checks::RecordedProof::Invalid => {
+                return Err("child selected actor presentation changed during permit".into())
+            }
+        };
         if !intent["assignmentDelivery"]["instructionsSha256"].is_string()
             || instructions["requiredInstructionsSha256"]
                 != intent["assignmentDelivery"]["instructionsSha256"]
         {
             return Err("child presented instructions changed during permit".into());
+        }
+        if let actor_checks::RecordedProof::Selected { contract, .. } = recorded {
+            if instructions["actorContractSha256"] != contract {
+                return Err("child selected actor presentation changed during permit".into());
+            }
         }
         let identity = &intent["directResultIdentity"];
         if current["current"]["binding"] != proof.successor_binding
@@ -113,7 +137,7 @@ pub(crate) fn note_delivery(
     payload: &serde_json::Map<String, Value>,
     binding: Option<&str>,
     permit_form: Option<&Value>,
-    facts: Option<(&str, &str, &str)>,
+    facts: Option<(&str, &str, &str, &str, &str)>,
 ) -> Result<(), String> {
     let (Some(session), Some(child)) = (text(payload, "session_id"), text(payload, "agent_id"))
     else {
@@ -136,14 +160,21 @@ pub(crate) fn note_delivery(
         }) else {
             return Ok(());
         };
+        // A duplicate start cannot replace an already presented historical
+        // proof or promote an unavailable first presentation into credit.
+        if intent.get("assignmentDelivery").is_some() {
+            return Ok(());
+        }
         let work = intent["work"].as_str().ok_or("child work unavailable")?;
         let presented = binding.is_some_and(|expected| {
             crate::work::details::ensure_action_binding(loaded, work, Some(expected)).is_ok()
                 && selected_is_current(loaded, work, &intent["selected"])
-                && facts.is_some_and(|(required, recipient, instructions)| {
+                && facts.is_some_and(|(required, recipient, instructions, actor, contract)| {
                     required.len() == 64
                         && recipient.len() == 64
                         && instructions.len() == 64
+                        && actor.len() == 64
+                        && contract.len() == 64
                         && crate::work::current_action(loaded, work)
                             .and_then(|current| {
                                 crate::work::details::recipient_fingerprint(loaded, &current)
@@ -154,6 +185,8 @@ pub(crate) fn note_delivery(
                             .and_then(|id| context::host_context(loaded, work, id).ok())
                             .is_some_and(|current| {
                                 current["requiredInstructionsSha256"] == instructions
+                                    && current["actorFactsSha256"] == actor
+                                    && current["actorContractSha256"] == contract
                             })
                 })
         });
@@ -175,10 +208,18 @@ pub(crate) fn note_delivery(
         intent["assignmentDelivery"] = json!({"state": if presented { "presented" } else { "unavailable" },
             "binding":if presented { binding } else { None },
             "meaning":"complete product presentation only; native model use is not inferred"});
-        if let Some((required, recipient, instructions)) = facts.filter(|_| presented) {
+        intent["selectedDeliveryProtocol"] = json!(1);
+        if !presented && intent["host"] == "codex" {
+            intent["assignmentDelivery"]["reason"] = json!(super::actor_checks::CODEX_UNVERIFIED);
+        }
+        if let Some((required, recipient, instructions, actor, contract)) =
+            facts.filter(|_| presented)
+        {
             intent["assignmentDelivery"]["requiredFactsSha256"] = json!(required);
             intent["assignmentDelivery"]["recipientSha256"] = json!(recipient);
             intent["assignmentDelivery"]["instructionsSha256"] = json!(instructions);
+            intent["assignmentDelivery"]["actorFactsSha256"] = json!(actor);
+            intent["assignmentDelivery"]["actorContractSha256"] = json!(contract);
         }
         if let Some(proof) = proof {
             intent["assignmentDelivery"]["permitForm"] = proof;
@@ -193,6 +234,7 @@ mod tests {
 
     #[test]
     fn delivered_permit_proof_requires_the_exact_work_assignment_form_and_facts() {
+        let actor = "a".repeat(64);
         let proof = PermitTransition {
             work: "work-a",
             assignment: "assignment-a",
@@ -201,15 +243,18 @@ mod tests {
             request_id: "request-a",
             required_facts_sha256: "facts-a",
             recipient_sha256: "recipient-a",
+            actor_facts_sha256: Some(&actor),
             successor_binding: "binding-b",
             run_event_sha256: "run-event",
             governor_event_sha256: "governor-event",
         };
         let original = json!({"state":"claimed", "work":"work-a", "assignment":"assignment-a",
+            "host":"claude", "selectedDeliveryProtocol":1,
             "directAssignment":true, "selected":{"assignment":"assignment-a"},
             "assignmentDelivery":{"state":"presented", "binding":"binding-a",
                 "permitForm":{"sha256":"form-a","requestId":"request-a"},
-                "requiredFactsSha256":"facts-a", "recipientSha256":"recipient-a"}});
+                "requiredFactsSha256":"facts-a", "recipientSha256":"recipient-a",
+                "actorFactsSha256":actor.clone(), "actorContractSha256":"b".repeat(64)}});
         assert!(matches(&original, &proof));
         for pointer in [
             "/work",
@@ -220,10 +265,29 @@ mod tests {
             "/assignmentDelivery/permitForm/requestId",
             "/assignmentDelivery/requiredFactsSha256",
             "/assignmentDelivery/recipientSha256",
+            "/assignmentDelivery/actorFactsSha256",
+            "/assignmentDelivery/actorContractSha256",
         ] {
             let mut changed = original.clone();
             *changed.pointer_mut(pointer).unwrap() = json!("different");
             assert!(!matches(&changed, &proof), "mismatch at {pointer}");
         }
+        let mut legacy = original.clone();
+        legacy
+            .as_object_mut()
+            .unwrap()
+            .remove("selectedDeliveryProtocol");
+        let delivery = legacy["assignmentDelivery"].as_object_mut().unwrap();
+        delivery.remove("actorFactsSha256");
+        delivery.remove("actorContractSha256");
+        assert!(
+            matches(&legacy, &proof),
+            "valid older deliveries retain their existing path"
+        );
+        legacy["assignmentDelivery"]["actorFactsSha256"] = Value::Null;
+        assert!(
+            !matches(&legacy, &proof),
+            "malformed selected proof is not legacy absence"
+        );
     }
 }

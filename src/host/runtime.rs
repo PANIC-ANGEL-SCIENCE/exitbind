@@ -3,9 +3,11 @@ use std::fs;
 use std::io::{self, Read};
 
 mod activation;
+mod actor;
 mod context;
 mod project;
 pub(crate) use activation::{assess_activation, classify_activation, Activation, ActivationFacts};
+pub(crate) use actor::projection as selected_actor_projection;
 
 const MAX_INPUT: usize = 64 * 1024;
 const MAX_PROFILE: u64 = 12 * 1024;
@@ -336,9 +338,12 @@ pub fn run() -> Result<(), String> {
             context.push('\n');
             context.push_str(&configuration);
         }
+        let mut finalized_context = false;
+        let mut claude_delivery = false;
         if event == "SubagentStart" {
             match crate::session_goal::claimed_child_context(&loaded, object) {
                 Ok(Some(child)) => {
+                    claude_delivery = child["deliveryHost"] == "claude";
                     let matches = child["configuredAgent"] == agent
                         && matches!(
                             &selected,
@@ -355,90 +360,80 @@ pub fn run() -> Result<(), String> {
                             ),
                         );
                     }
-                    context.push_str("\nSelected task perspectives for this assignment:");
-                    if let Some(specialist) = child.get("specialistExperience") {
-                        context.push_str("\nCurrent qualified specialist experience (complete; observed use remains separate):\n");
-                        context.push_str(
-                            &serde_json::to_string(specialist).map_err(|e| e.to_string())?,
-                        );
-                    }
-                    if let Some(capabilities) = child.get("capabilities") {
-                        context.push_str("\nCurrent approved project capabilities (complete; native use remains separate):\n");
-                        context.push_str(
-                            &serde_json::to_string(capabilities).map_err(|e| e.to_string())?,
-                        );
-                    }
-                    for perspective in child["perspectives"].as_array().into_iter().flatten() {
-                        context.push_str(&format!(
+                    if child["deliveryHost"] == "codex" {
+                        let evidence = match &selected {
+                            super::assignment_context::Selection::Bound { evidence, .. } => {
+                                evidence.as_slice()
+                            }
+                            _ => &[],
+                        };
+                        context = context::codex_unverified_with_evidence(event, evidence);
+                        finalized_context = true;
+                    } else {
+                        context.push_str("\nSelected task perspectives for this assignment:");
+                        if let Some(specialist) = child.get("specialistExperience") {
+                            context.push_str("\nCurrent qualified specialist experience (complete; observed use remains separate):\n");
+                            context.push_str(
+                                &serde_json::to_string(specialist).map_err(|e| e.to_string())?,
+                            );
+                        }
+                        if let Some(capabilities) = child.get("capabilities") {
+                            context.push_str("\nCurrent approved project capabilities (complete; native use remains separate):\n");
+                            context.push_str(
+                                &serde_json::to_string(capabilities).map_err(|e| e.to_string())?,
+                            );
+                        }
+                        for perspective in child["perspectives"].as_array().into_iter().flatten() {
+                            context.push_str(&format!(
                             "\nPerspective {} (source SHA-256 {}, presented SHA-256 {}, complete):\n{}",
                             perspective["id"].as_str().unwrap_or("?"),
                             perspective["sourceSha256"].as_str().unwrap_or("?"),
                             perspective["presentedSha256"].as_str().unwrap_or("?"),
                             perspective["content"].as_str().unwrap_or("")
                         ));
-                    }
-                    if let Some(contract) = child.get("hostResultContract") {
-                        context.push_str("\nFor automatic Work return, finish with one JSON object matching this role contract. Cite every listed evidence reference in order; a host return is a report, not proof of model behavior:\n");
-                        context
-                            .push_str(&serde_json::to_string(contract).map_err(|e| e.to_string())?);
-                    }
-                    if let Some(assignment) = child.get("requiredAssignment") {
-                        let complete = context::complete_assignment(
-                            &loaded, &child, &selected, assignment, &context,
-                        )?;
-                        let envelope = serde_json::to_vec(&json!({"hookSpecificOutput":{
-                            "hookEventName":event,"additionalContext":complete}}))
-                        .map_err(|e| e.to_string())?;
-                        let routes = match &selected {
-                            super::assignment_context::Selection::Bound { evidence, .. } => {
-                                evidence.as_slice()
+                        }
+                        if let Some(contract) = child["actorResultContract"].as_str() {
+                            context.push('\n');
+                            context.push_str(contract);
+                        }
+                        if let Some(assignment) = child.get("requiredAssignment") {
+                            if let Some(complete) = context::complete_with_evidence(
+                                &loaded, &child, &selected, assignment, &context, event,
+                            )? {
+                                context = complete;
+                                presented_child = Some(child.clone());
+                                finalized_context = true;
+                            } else {
+                                context.push_str("\nComplete assignment exceeds the host context envelope; automatic return cannot receive credit. Use the current scoped Work detail route.");
                             }
-                            _ => &[],
-                        };
-                        if envelope.len() <= MAX_OUTPUT
-                            && super::assignment_evidence::append_within_budget(
-                                &complete, event, routes,
-                            )
-                            .is_some()
-                        {
-                            context = complete;
-                            presented_child = Some(child.clone());
-                        } else {
+                        } else if child["requiredAssignmentUnavailable"].is_string() {
                             context.push_str("\nComplete assignment exceeds the host context envelope; use the current scoped Work detail route.");
                         }
-                    } else if child["requiredAssignmentUnavailable"].is_string() {
-                        context.push_str("\nComplete assignment exceeds the host context envelope; use the current scoped Work detail route.");
                     }
                 }
                 Err(_) => {
-                    return emit(event, "Exitbind could not verify the selected child context; assignment context is unavailable.");
+                    let evidence = match &selected {
+                        super::assignment_context::Selection::Bound { evidence, .. } => {
+                            evidence.as_slice()
+                        }
+                        _ => &[],
+                    };
+                    let message = context::unavailable_with_evidence(event, evidence);
+                    emit(event, &message)?;
+                    let _ = retry_busy(|| context::note_delivery(&loaded, object, None));
+                    return Ok(());
                 }
                 Ok(None) => {}
             }
         }
-        let core_serialized = serde_json::to_vec(&json!({"hookSpecificOutput":{
-            "hookEventName":event,"additionalContext":context}}))
-        .map_err(|_| String::new())?;
-        if core_serialized.len() > MAX_OUTPUT {
-            "Exitbind profile, architecture or perspective exceeds the complete child context envelope; acquisition is unavailable.".to_owned()
+        if finalized_context {
+            context
         } else {
             let evidence = match &selected {
                 super::assignment_context::Selection::Bound { evidence, .. } => evidence.as_slice(),
                 _ => &[],
             };
-            match super::assignment_evidence::append_within_budget(&context, event, evidence) {
-                Some(context) => {
-                    let serialized = serde_json::to_vec(&json!({"hookSpecificOutput":{
-                        "hookEventName":event,"additionalContext":context}}))
-                    .map_err(|_| String::new())?;
-                    if serialized.len() <= MAX_OUTPUT {
-                        context
-                    } else {
-                        "Exitbind profile, architecture or perspective exceeds the complete child context envelope; acquisition is unavailable.".to_owned()
-                    }
-                }
-                None => "Evidence route or shortened-preview notice cannot fit beside the required profile and perspectives; assignment context is unavailable.".to_owned(),
-            }
+            context::fallback_context(event, &context, claude_delivery, evidence)?
         }
     };
     emit(event, &text)?;

@@ -67,3 +67,4 @@ NotARefusal	src/session_goal/requirements.rs	required goal coverage is missing, 
 Integrity	src/session_goal/requirements/model.rs	requirement source hash mismatch
 Integrity	src/session_goal/requirements/successor.rs	predecessor's current named Goal contract differs from its frozen Work
 NotARefusal	src/session_goal/requirements/view.rs	additional direct completion is stale or unknown
+RoutedInText	src/session_goal/continuity/capture/return_result.rs	selected host actor facts changed after delivery; {route}

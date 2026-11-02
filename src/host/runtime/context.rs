@@ -69,6 +69,8 @@ pub(super) fn note_delivery(
             value["requiredFactsSha256"].as_str()?,
             value["requiredRecipientSha256"].as_str()?,
             value["requiredInstructionsSha256"].as_str()?,
+            value["actorFactsSha256"].as_str()?,
+            value["actorContractSha256"].as_str()?,
         ))
     });
     crate::session_goal::note_child_delivery(loaded, payload, binding, permit, facts)
@@ -145,26 +147,17 @@ pub(super) fn complete_assignment(
     assignment: &Value,
     context: &str,
 ) -> Result<String, String> {
-    let detail = child["requiredAssignmentBinding"]
+    let recipient = child["actorAssignment"]
+        .as_object()
+        .ok_or("selected native actor facts are unavailable")?;
+    let contract = child["actorResultContract"]
         .as_str()
-        .and_then(|binding| {
-            let reference = format!("{}{binding}", crate::work::readable::PREFIX);
-            crate::emitted::Route::new([
-                "work",
-                "expand",
-                child["work"].as_str()?,
-                &reference,
-                "--json",
-            ])
-            .config(&loaded.path)
-            .full_argv()
-            .ok()
-        });
-    // Omit Lead forms only when their exact current expansion is available.
-    let recipient = detail.as_ref().map_or_else(
-        || assignment.clone(),
-        |route| recipient_assignment(assignment, route),
-    );
+        .ok_or("selected native actor result contract is unavailable")?;
+    if child["actorFactsSha256"] != crate::evidence::hash::value(&child["actorAssignment"])
+        || child["actorContractSha256"] != crate::evidence::hash::text(contract)
+    {
+        return Err("selected native actor presentation differs from its proof".into());
+    }
     let config = child["configuredAgent"]
         .as_str()
         .and_then(|agent| loaded.agent(agent));
@@ -178,8 +171,82 @@ pub(super) fn complete_assignment(
             .push_str(&serde_json::to_string(&child["requiredRules"]).map_err(|e| e.to_string())?);
     }
     complete.push_str("\nComplete current assignment, evidence and task conditions (verified for this recipient):\n");
-    complete.push_str(&serde_json::to_string(&recipient).map_err(|e| e.to_string())?);
+    complete.push_str(&serde_json::to_string(recipient).map_err(|e| e.to_string())?);
     Ok(complete)
+}
+
+/// Measure the exact context that will be emitted, including its evidence
+/// routes. A failed measurement never proves complete actor delivery.
+pub(super) fn complete_with_evidence(
+    loaded: &crate::config::Loaded,
+    child: &Value,
+    selected: &crate::host::assignment_context::Selection,
+    assignment: &Value,
+    context: &str,
+    event: &str,
+) -> Result<Option<String>, String> {
+    if child["deliveryHost"] != "claude" {
+        return Ok(None);
+    }
+    let complete = complete_assignment(loaded, child, selected, assignment, context)?;
+    // The selected actor value already contains all complete evidence and its
+    // exact bound detail route. Do not repeat the older preview routes.
+    let routes = &[];
+    Ok(crate::host::assignment_evidence::append_for_claude(
+        &complete, event, routes,
+    ))
+}
+
+pub(super) fn codex_unverified_with_evidence(event: &str, routes: &[String]) -> String {
+    let message = "Codex direct-hook context limit is unverified; automatic Work return cannot receive credit. Use the current Work route below.";
+    if routes.len() < 2 {
+        return format!("{message} The exact Work route is unavailable.");
+    }
+    crate::host::assignment_evidence::append_within_budget(message, event, routes)
+        .unwrap_or_else(|| format!("{message} The exact Work route is unavailable."))
+}
+
+pub(super) fn unavailable_with_evidence(event: &str, routes: &[String]) -> String {
+    if routes.len() < 2 {
+        return "Complete assignment and its exact Work route are unavailable; no automatic return can be credited.".to_owned();
+    }
+    crate::host::assignment_evidence::append_for_claude(
+        "Complete assignment is unavailable; automatic return cannot receive credit. Use the current Work route below.",
+        event,
+        routes,
+    )
+    .unwrap_or_else(|| {
+        "Complete assignment and its exact Work route are unavailable; no automatic return can be credited.".to_owned()
+    })
+}
+
+pub(super) fn fallback_context(
+    event: &str,
+    context: &str,
+    claude_delivery: bool,
+    routes: &[String],
+) -> Result<String, String> {
+    let core = serde_json::to_vec(&json!({"hookSpecificOutput":{
+        "hookEventName":event,"additionalContext":context
+    }}))
+    .map_err(|error| error.to_string())?;
+    if core.len() > crate::host::assignment_evidence::MAX_CONTEXT_OUTPUT {
+        return Ok(if claude_delivery {
+            unavailable_with_evidence(event, routes)
+        } else {
+            "Exitbind profile, architecture or perspective exceeds the complete child context envelope; acquisition is unavailable.".to_owned()
+        });
+    }
+    let result = if claude_delivery {
+        crate::host::assignment_evidence::append_for_claude(context, event, routes)
+    } else {
+        crate::host::assignment_evidence::append_within_budget(context, event, routes)
+    };
+    Ok(match result {
+        Some(context) => context,
+        None if claude_delivery => unavailable_with_evidence(event, routes),
+        None => "Evidence route or shortened-preview notice cannot fit beside the required profile and perspectives; assignment context is unavailable.".to_owned(),
+    })
 }
 
 /// Omit only Lead decision forms from the host presentation. The complete,
@@ -308,12 +375,16 @@ pub(super) fn without_duplicate_assignment_summary(
         packet_digest,
         provenance,
         check_preparation,
+        guidance,
         ..
     } = selection
     else {
         return context.to_owned();
     };
-    let mut result = alias_equal_profile_hashes(context, &provenance.profile_sha256);
+    let mut result = compact_empty_guidance(
+        &alias_equal_profile_hashes(context, &provenance.profile_sha256),
+        guidance,
+    );
     let packet = &assignment["assignment"]["assignment"];
     if assignment["assignment"]["residual"]["work"] == work.as_str()
         && packet["context"]["next"]["assignment"] == assignment_id.as_str()
@@ -370,9 +441,49 @@ pub(super) fn without_duplicate_assignment_summary(
     result
 }
 
+fn compact_empty_guidance(context: &str, guidance: &Value) -> String {
+    let expected = json!({"budgetBytes":3072,"items":[],
+        "meaning":"current eligible complete items; overflow is available through its role/task-scoped read route; no permission, check, review or acceptance authority",
+        "overflow":[],"overflowCount":0,"selectedCount":0,"unavailable":[],
+        "unavailableCount":0,"usedBytes":0});
+    if *guidance != expected {
+        return context.to_owned();
+    }
+    let original = format!("Current eligible memory and lessons (complete items, ordered; omitted items have scoped read routes):\n{guidance}\n");
+    context.replacen(
+        &original,
+        "Current eligible memory: no selected, overflow or unavailable items; no permission, check, review or acceptance authority.\n",
+        1,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn oversized_claude_fallback_retains_an_exact_route_without_credit() {
+        let route = "Full assignment packet route: exact current route".to_owned();
+        let lines = vec!["Evidence for this assignment.".to_owned(), route.clone()];
+        let text = fallback_context("SubagentStart", &"x".repeat(10_001), true, &lines).unwrap();
+        assert!(text.contains("automatic return cannot receive credit"));
+        assert!(text.contains(&route));
+        assert!(text.encode_utf16().count() <= 10_000);
+    }
+
+    #[test]
+    fn empty_guidance_compaction_does_not_hide_changed_or_unavailable_items() {
+        let mut guidance = json!({"budgetBytes":3072,"items":[],
+            "meaning":"current eligible complete items; overflow is available through its role/task-scoped read route; no permission, check, review or acceptance authority",
+            "overflow":[],"overflowCount":0,"selectedCount":0,"unavailable":[],
+            "unavailableCount":0,"usedBytes":0});
+        let heading = "Current eligible memory and lessons (complete items, ordered; omitted items have scoped read routes):";
+        let text = format!("{heading}\n{guidance}\n");
+        assert!(compact_empty_guidance(&text, &guidance)
+            .contains("no selected, overflow or unavailable items"));
+        guidance["unavailableCount"] = json!(1);
+        assert_eq!(compact_empty_guidance(&text, &guidance), text);
+    }
 
     #[test]
     fn equal_profile_hashes_share_one_explicitly_resolvable_value() {

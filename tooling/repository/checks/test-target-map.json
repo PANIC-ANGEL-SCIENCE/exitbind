@@ -89,9 +89,16 @@
         "src/host/",
         "src/context",
         "src/kernel/",
+        "src/session_goal/continuity/capture",
+        "src/work/details.rs",
+        "src/work/details/",
+        "src/work/permit_delivery.rs",
+        "src/work/native_action/host_return.rs",
+        "src/work/native_action/result.rs",
         "src/cli/work/detail.rs",
         "src/work/readable.rs",
         "src/project/agent_context/",
+        "src/project/agent_context.rs",
         "src/envelope.rs",
         "src/producer.rs"
       ]
@@ -184,6 +191,12 @@
       "features": [],
       "covers": [
         "src/session_goal",
+        "src/host/runtime",
+        "src/host/assignment_evidence.rs",
+        "src/work/details.rs",
+        "src/work/details/",
+        "src/project/agent_context/",
+        "src/project/agent_context.rs",
         "src/work/supersede.rs",
         "src/work/launch_fence.rs",
         "src/work/native_action",
@@ -220,7 +233,10 @@
         "src/run/",
         "src/kernel/",
         "src/session_goal",
+        "src/host/runtime",
+        "src/host/assignment_evidence.rs",
         "src/project/agent_context/",
+        "src/project/agent_context.rs",
         "src/emitted.rs",
         "src/drift.rs"
       ]

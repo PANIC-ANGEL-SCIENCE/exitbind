@@ -13,6 +13,8 @@ use std::io::Write;
 
 use super::perspective::{self, Frozen};
 
+#[path = "capture/actor_checks.rs"]
+mod actor_checks;
 #[path = "capture/adviser.rs"]
 mod adviser;
 #[path = "capture/context.rs"]

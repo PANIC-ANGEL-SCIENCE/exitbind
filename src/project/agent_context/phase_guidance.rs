@@ -51,6 +51,42 @@ pub(super) fn items(
     Ok((items, overflow, unavailable))
 }
 
+/// Selected automatic delivery may claim complete instructions only when
+/// every applicable declared phase body is actually present and current.
+/// Optional memory overflow remains a separate visible notice.
+pub(crate) fn require_selected(
+    loaded: &Loaded,
+    agent: &str,
+    role: &str,
+    attempt: u64,
+    guidance: &Value,
+) -> Result<(), String> {
+    let configured = loaded
+        .agent(agent)
+        .ok_or("phase recipient is unavailable")?;
+    let phases = declared::phases_for(role, attempt);
+    for item in configured
+        .phase_guidance
+        .iter()
+        .filter(|item| phases.contains(&item.phase.as_str()))
+    {
+        let (reference, content) =
+            read(loaded, item).ok_or("required phase guidance source is unavailable")?;
+        let selected = guidance["items"]
+            .as_array()
+            .ok_or("selected phase guidance is unavailable")?;
+        if selected
+            .iter()
+            .filter(|entry| entry["reference"] == reference && entry["content"] == content)
+            .count()
+            != 1
+        {
+            return Err("required phase guidance was not delivered complete and current".into());
+        }
+    }
+    Ok(())
+}
+
 /// Whether a delivered reference still names this agent's declared item with
 /// the same current bytes.
 pub(super) fn still_current(loaded: &Loaded, agent: &str, reference: &Value) -> bool {
@@ -134,4 +170,56 @@ fn read(loaded: &Loaded, item: &declared::PhaseGuidance) -> Option<(Value, Strin
         "phase":item.phase,"sourcePath":source.to_str()?,"sourceSha256":hash::text(&content),
         "byteLength":content.len()});
     Some((reference, content))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::types;
+
+    #[test]
+    fn selected_delivery_requires_each_applicable_phase_body_but_not_optional_memory() {
+        let root = crate::test_root::temp("selected-phase-guidance");
+        let source = root.join("phase.md");
+        std::fs::write(&source, "required phase instruction\n").unwrap();
+        let config = json!({"agents":{"worker":{"profile":"profile.md",
+            "purpose":"implement","retention":"task","crossContext":"none",
+            "phaseGuidance":[{"id":"implementation","phase":"implementation","path":"phase.md"}]}}});
+        let loaded = Loaded {
+            agents: types::from_validated_agents(&config["agents"]).unwrap(),
+            workflows: Default::default(),
+            config,
+            lead: None,
+            architecture_contract: None,
+            capabilities: Vec::new(),
+            verification_preparation: None,
+            path: root.join("exitbind.json"),
+            control_root: root.to_path_buf(),
+            product_root: root.to_path_buf(),
+            state_root: root.to_path_buf(),
+            mode: crate::project::layout_types::Mode::Portable,
+            project_id: None,
+            source: String::new(),
+        };
+        let phases = declared::phases_for("worker", 1);
+        let (selected, overflow, unavailable) =
+            items(&loaded, "worker", &phases, 16 * 1024).unwrap();
+        let mut guidance = json!({"items":selected,"overflow":overflow,"unavailable":unavailable});
+        guidance["overflow"] = json!([{"reference":{"kind":"optional_memory"}}]);
+        assert!(require_selected(&loaded, "worker", "worker", 1, &guidance).is_ok());
+
+        let (selected, overflow, unavailable) = items(&loaded, "worker", &phases, 8).unwrap();
+        let over_budget = json!({"items":selected,"overflow":overflow,"unavailable":unavailable});
+        assert!(!over_budget["overflow"].as_array().unwrap().is_empty());
+        assert!(require_selected(&loaded, "worker", "worker", 1, &over_budget).is_err());
+        guidance["items"][0]["content"] = json!("changed instruction");
+        assert!(require_selected(&loaded, "worker", "worker", 1, &guidance).is_err());
+        std::fs::remove_file(source).unwrap();
+        let (selected, overflow, unavailable) =
+            items(&loaded, "worker", &phases, 16 * 1024).unwrap();
+        let unavailable = json!({"items":selected,"overflow":overflow,"unavailable":unavailable});
+        assert!(!unavailable["unavailable"].as_array().unwrap().is_empty());
+        assert!(require_selected(&loaded, "worker", "worker", 1, &unavailable).is_err());
+        assert!(require_selected(&loaded, "worker", "reviewer", 1, &unavailable).is_ok());
+    }
 }

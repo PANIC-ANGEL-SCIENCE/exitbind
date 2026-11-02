@@ -29,3 +29,5 @@ Identity	src/host/session_recovery/record.rs	recovery hint owner configuration n
 Identity	src/host/session_recovery/references.rs	saved configuration no longer matches the fixed native Goal owner
 ReadAsFact	src/host/session_recovery/references.rs	session recovery source changed or is unavailable: {}/{}
 Identity	src/host/session_recovery/show.rs	saved owner configuration no longer matches the fixed Goal owner
+Identity	src/host/runtime/actor/evidence.rs	native source reference is not current for this Work
+Integrity	src/host/runtime/context.rs	selected native actor presentation differs from its proof

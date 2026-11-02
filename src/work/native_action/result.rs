@@ -5,6 +5,18 @@ use serde_json::{json, Value};
 use std::sync::OnceLock;
 
 pub(super) const TEXT_GUIDANCE: &str = "The summary and reason must be single-line text: no newline, carriage return, tab, or other control characters. The summary must be nonempty. Each field is limited to 8192 UTF-8 bytes, not characters. Keep multiline evidence in its original artifact and use the supplied evidence references where required. Do not rewrite retained evidence to make a result valid.";
+pub(super) const MAX_TEXT_BYTES: usize = 8192;
+
+/// Share the exact outcome/reason relation with the selected host guidance.
+pub(super) fn reviewer_reasons(outcome: &str) -> Option<&'static [&'static str]> {
+    match outcome {
+        "approved" => Some(&[""]),
+        "rework" => Some(&["review_finding"]),
+        "blocked" => Some(&["blocked"]),
+        "unavailable" => Some(crate::run::state::FALLBACK_REASONS),
+        _ => None,
+    }
+}
 
 pub(super) fn role_schema(role: &str) -> Result<&'static str, String> {
     static WORKER: OnceLock<String> = OnceLock::new();
@@ -73,7 +85,7 @@ pub(super) fn validate_final_result<'a>(role: &str, result: &'a Value) -> Result
     let summary = object
         .get("summary")
         .and_then(Value::as_str)
-        .filter(|summary| !summary.is_empty() && summary.len() <= 8192)
+        .filter(|summary| !summary.is_empty() && summary.len() <= MAX_TEXT_BYTES)
         .ok_or_else(|| format!("native {role} result has no bounded summary"))?;
     if summary.chars().any(char::is_control) {
         return Err(format!(
@@ -83,19 +95,16 @@ pub(super) fn validate_final_result<'a>(role: &str, result: &'a Value) -> Result
     let reason = object
         .get("reason")
         .and_then(Value::as_str)
-        .filter(|reason| reason.len() <= 8192)
+        .filter(|reason| reason.len() <= MAX_TEXT_BYTES)
         .ok_or_else(|| format!("native {role} result has no bounded reason"))?;
     if reason.chars().any(char::is_control) {
         return Err(format!("native {role} result reason contains control text"));
     }
     if role == "reviewer" {
-        let valid = match object["outcome"].as_str() {
-            Some("approved") => reason.is_empty(),
-            Some("rework") => reason == "review_finding",
-            Some("blocked") => reason == "blocked",
-            Some("unavailable") => crate::run::state::FALLBACK_REASONS.contains(&reason),
-            _ => false,
-        };
+        let valid = object["outcome"]
+            .as_str()
+            .and_then(reviewer_reasons)
+            .is_some_and(|allowed| allowed.contains(&reason));
         if !valid {
             return Err("native reviewer reason does not match its outcome".into());
         }

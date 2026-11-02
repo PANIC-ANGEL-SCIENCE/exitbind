@@ -11,6 +11,9 @@ pub(super) fn validate_capture(
     message: &str,
 ) -> Result<(), String> {
     if intent["assignmentDelivery"]["state"] != "presented" {
+        if intent["assignmentDelivery"]["reason"] == super::actor_checks::CODEX_UNVERIFIED {
+            return Err("Codex direct-hook context limit is unverified; no automatic Work return was credited".into());
+        }
         return Err("complete host assignment and evidence presentation is unavailable; no automatic Work return was credited".into());
     }
     if intent["directAssignment"] != true
@@ -46,12 +49,38 @@ pub(super) fn validate_capture(
     let id = intent["id"]
         .as_str()
         .ok_or("child intent identity unavailable")?;
-    if super::context::host_context(loaded, work_id, id)?["requiredInstructionsSha256"] != expected
-    {
+    let recorded = super::actor_checks::recorded_proof(intent);
+    let host_context = match recorded {
+        super::actor_checks::RecordedProof::Legacy => {
+            super::context::legacy_host_context(loaded, work_id, id)?
+        }
+        super::actor_checks::RecordedProof::Selected { .. } => {
+            super::context::host_context(loaded, work_id, id)?
+        }
+        super::actor_checks::RecordedProof::Invalid => {
+            return Err("selected host actor presentation proof is unavailable or changed".into())
+        }
+    };
+    if host_context["requiredInstructionsSha256"] != expected {
         return Err("delivered host instructions changed before host result return".into());
     }
+    let actor_facts = match recorded {
+        super::actor_checks::RecordedProof::Legacy => None,
+        super::actor_checks::RecordedProof::Selected { facts, contract }
+            if host_context["actorContractSha256"] == contract =>
+        {
+            Some(facts)
+        }
+        _ => return Err("selected host actor presentation proof is unavailable or changed".into()),
+    };
     let exact =
         delivery["binding"].is_string() && current["current"]["binding"] == delivery["binding"];
+    if exact && actor_facts.is_some_and(|facts| host_context["actorFactsSha256"] != facts) {
+        let route = crate::emitted::refresh(work_id, &loaded.path);
+        return Err(format!(
+            "selected host actor facts changed after delivery; {route}"
+        ));
+    }
     let authorized = if exact {
         false
     } else {
