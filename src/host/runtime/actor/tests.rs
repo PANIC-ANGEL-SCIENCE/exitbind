@@ -118,6 +118,162 @@ fn selected_actor_keeps_exact_late_facts_and_the_canonical_action() {
 }
 
 #[test]
+fn check_evidence_alias_must_match_canonical_evidence() {
+    let route = vec!["work".into(), "expand".into(), "bound".into()];
+    let checks = json!([{"status":"passed","result":{"kind":"exit","code":0}}]);
+    let mut current = sections();
+    current["assignment"]["assignment"]["checkEvidence"] = checks.clone();
+    current["evidence"]["checkEvidence"] = checks.clone();
+    let actor = project_sections(
+        "work-a",
+        "binding-a",
+        &current,
+        &route,
+        &json!("sh verify.sh --mode strict"),
+    )
+    .unwrap();
+    assert_eq!(actor["evidence"]["checkEvidence"], checks);
+
+    for change in [
+        "different",
+        "missing-alias",
+        "missing-canonical",
+        "null-alias",
+    ] {
+        let mut altered = current.clone();
+        match change {
+            "different" => {
+                altered["assignment"]["assignment"]["checkEvidence"][0]["status"] = json!("failed");
+            }
+            "missing-alias" => {
+                altered["assignment"]["assignment"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("checkEvidence");
+            }
+            "missing-canonical" => {
+                altered["evidence"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("checkEvidence");
+            }
+            "null-alias" => altered["assignment"]["assignment"]["checkEvidence"] = Value::Null,
+            _ => unreachable!(),
+        }
+        let error = project_sections(
+            "work-a",
+            "binding-a",
+            &altered,
+            &route,
+            &json!("sh verify.sh --mode strict"),
+        )
+        .unwrap_err();
+        assert!(error.contains("check evidence"), "{change}: {error}");
+    }
+    current["assignment"]["assignment"]["newInstruction"] = json!("never drop this");
+    let error = project_sections(
+        "work-a",
+        "binding-a",
+        &current,
+        &route,
+        &json!("sh verify.sh --mode strict"),
+    )
+    .unwrap_err();
+    assert!(error.contains("unclassified"), "{error}");
+}
+
+#[test]
+fn mutation_history_is_preserved_and_unknown_or_unbound_evidence_refuses() {
+    let route = vec!["work".into(), "expand".into(), "bound".into()];
+    let mut original = sections();
+    let sha = original["evidence"]["items"][0]["artifact"]["sha256"].clone();
+    let packet = &mut original["assignment"]["assignment"];
+    packet["role"] = json!("reviewer");
+    packet["context"]["role"] = json!("reviewer");
+    packet["context"]["next"]["role"] = json!("reviewer");
+    packet["context"]["next"]["owner"] = json!("reviewer");
+    let current = json!({"runId":"run-a", "eventSha256":"b".repeat(64), "carryLineage":true,
+        "subjectSha256":"subject-a", "attempt":1, "checkpoint":1, "inputSha256":"input-a",
+        "unit":"worker", "operation":"completed_submission"});
+    let identity = json!({"runId":"run-a", "subjectSha256":"subject-a", "attempt":1,
+        "checkpoint":1, "inputSha256":"input-a", "unit":"worker", "operation":"completed_submission"});
+    packet["context"]["loop"]["currentMutation"] = current.clone();
+    packet["context"]["loop"]["seenMutations"] = json!([{
+        "digest":"a".repeat(64), "identity":identity, "evidence":sha
+    }]);
+    let project =
+        |value: &Value| project_sections("work-a", "binding-a", value, &route, &Value::Null);
+    let actor = project(&original).unwrap();
+    let governor = &original["assignment"]["assignment"]["context"]["loop"];
+    assert_eq!(actor["governor"]["currentMutation"], current);
+    assert_eq!(
+        actor["governor"]["seenMutations"],
+        governor["seenMutations"]
+    );
+
+    let mut permitted = original.clone();
+    let seen = &mut permitted["assignment"]["assignment"]["context"]["loop"]["seenMutations"][0];
+    seen["identity"]["unit"] = json!("worker-mutation");
+    seen["identity"]["operation"] = json!("Edit the fixture");
+    seen["evidence"] = Value::Null;
+    let actor = project(&permitted).unwrap();
+    assert_eq!(actor["governor"]["currentMutation"], current);
+    assert_eq!(
+        actor["governor"]["seenMutations"],
+        permitted["assignment"]["assignment"]["context"]["loop"]["seenMutations"]
+    );
+    let mut legacy = original.clone();
+    legacy["assignment"]["assignment"]["context"]["loop"]["currentMutation"]["carryLineage"] =
+        Value::Null;
+    let actor = project(&legacy).unwrap();
+    assert!(actor["governor"]["currentMutation"]["carryLineage"].is_null());
+
+    for change in [
+        "unbound-evidence",
+        "malformed-digest",
+        "unknown-record",
+        "unknown-identity",
+        "malformed-identity",
+        "missing-evidence",
+        "unknown-current",
+        "malformed-current",
+    ] {
+        let mut altered = original.clone();
+        let governor = &mut altered["assignment"]["assignment"]["context"]["loop"];
+        match change {
+            "unbound-evidence" => governor["seenMutations"][0]["evidence"] = json!("f".repeat(64)),
+            "malformed-digest" => governor["seenMutations"][0]["digest"] = json!("not-a-digest"),
+            "unknown-record" => governor["seenMutations"][0]["extra"] = json!("do not omit"),
+            "unknown-identity" => {
+                governor["seenMutations"][0]["identity"]["extra"] = json!("do not omit")
+            }
+            "malformed-identity" => {
+                governor["seenMutations"][0]["identity"]["checkpoint"] = json!("1")
+            }
+            "missing-evidence" => {
+                governor["seenMutations"][0]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("evidence");
+            }
+            "unknown-current" => governor["currentMutation"]["extra"] = json!("do not omit"),
+            "malformed-current" => governor["currentMutation"]["carryLineage"] = json!("yes"),
+            _ => unreachable!(),
+        }
+        assert!(project(&altered).is_err(), "{change}");
+    }
+    let mut object = original.clone();
+    let governor = &mut object["assignment"]["assignment"]["context"]["loop"];
+    let record = json!({"root":"product", "path":"evidence.txt", "sha256":sha});
+    governor["evidence"] = json!([record]);
+    governor["seenMutations"][0]["evidence"] = record;
+    assert!(project(&object).is_ok());
+    object["assignment"]["assignment"]["context"]["loop"]["seenMutations"][0]["evidence"]
+        ["unknown"] = json!("do not omit");
+    assert!(project(&object).is_err());
+}
+
+#[test]
 fn unequal_facts_survive_and_unknown_or_wrong_subject_refuses() {
     let mut original = sections();
     original["assignment"]["assignment"]["context"]["goal"] = json!("different current goal");

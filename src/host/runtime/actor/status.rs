@@ -247,46 +247,7 @@ pub(super) fn governor(
     } else if nonempty(&value["observations"]) {
         return Err("native governor observations are unclassified".into());
     }
-    if let Some(mutations) = value["seenMutations"].as_array() {
-        for mutation in mutations {
-            classified(
-                mutation,
-                &["digest", "identity", "evidence"],
-                "native mutation history",
-            )?;
-            let identity = &mutation["identity"];
-            classified(
-                identity,
-                &[
-                    "runId",
-                    "subjectSha256",
-                    "attempt",
-                    "checkpoint",
-                    "inputSha256",
-                    "unit",
-                    "operation",
-                ],
-                "native mutation identity",
-            )?;
-            if [
-                "runId",
-                "subjectSha256",
-                "attempt",
-                "checkpoint",
-                "inputSha256",
-                "unit",
-                "operation",
-            ]
-            .iter()
-            .any(|key| identity[*key] != value["currentMutation"][*key])
-                || nonempty(&mutation["evidence"])
-            {
-                return Err("native prior mutation requires classification".into());
-            }
-        }
-    } else if nonempty(&value["seenMutations"]) {
-        return Err("native mutation history is unclassified".into());
-    }
+    let preserve_mutations = mutation_history(value, evidence)?;
     if value["defaults"].is_object() {
         classified(
             &value["defaults"],
@@ -337,8 +298,133 @@ pub(super) fn governor(
     ] {
         copy_if_present(selected.as_object_mut().unwrap(), name, &value[name]);
     }
+    if preserve_mutations {
+        selected["currentMutation"] = value["currentMutation"].clone();
+        selected["seenMutations"] = value["seenMutations"].clone();
+    }
     actor.insert("governor".into(), selected);
     Ok(())
+}
+
+// Preserve classified mutation facts from the canonical snapshot. This
+// projection does not reconstruct events or grant mutation permission.
+fn mutation_history(value: &Value, evidence: &Value) -> Result<bool, String> {
+    let Some(mutations) = value["seenMutations"].as_array() else {
+        return if value["seenMutations"].is_null() && value["currentMutation"].is_null() {
+            Ok(false)
+        } else {
+            Err("native mutation history is unclassified".into())
+        };
+    };
+    let identity_keys = [
+        "runId",
+        "subjectSha256",
+        "attempt",
+        "checkpoint",
+        "inputSha256",
+        "unit",
+        "operation",
+    ];
+    let preserve = !mutations.is_empty() || value["currentMutation"].is_object();
+    for mutation in mutations {
+        classified(
+            mutation,
+            &["digest", "identity", "evidence"],
+            "native mutation history",
+        )?;
+        let identity = &mutation["identity"];
+        classified(identity, &identity_keys, "native mutation identity")?;
+        if !known_keys(mutation, &["digest", "identity", "evidence"])
+            || !known_keys(identity, &identity_keys)
+            || !valid_mutation_identity(identity)
+            || !valid_digest(&mutation["digest"])
+        {
+            return Err("native mutation history is malformed".into());
+        }
+        let seen = mutation
+            .get("evidence")
+            .ok_or("native mutation evidence is unavailable")?;
+        match seen {
+            Value::Null => {}
+            Value::String(sha) if valid_digest(seen) => {
+                let represented = evidence["items"].as_array().is_some_and(|items| {
+                    items.iter().any(|item| {
+                        ["artifact", "stdout", "stderr"]
+                            .iter()
+                            .any(|name| item[*name]["sha256"].as_str() == Some(sha.as_str()))
+                    })
+                });
+                if !represented {
+                    return Err("native mutation evidence original is unavailable".into());
+                }
+            }
+            Value::Object(_) => {
+                let known = known_keys(
+                    seen,
+                    &[
+                        "path",
+                        "root",
+                        "sha256",
+                        "subjectSha256",
+                        "attempt",
+                        "inputSha256",
+                    ],
+                );
+                let represented = value["evidence"]
+                    .as_array()
+                    .is_some_and(|items| items.contains(seen));
+                if !known || !represented {
+                    return Err("native mutation evidence is unclassified".into());
+                }
+            }
+            _ => return Err("native mutation evidence is unclassified".into()),
+        }
+    }
+    if !preserve {
+        return Ok(false);
+    }
+    let current = &value["currentMutation"];
+    if !known_keys(
+        current,
+        &[
+            "runId",
+            "eventSha256",
+            "carryLineage",
+            "subjectSha256",
+            "attempt",
+            "checkpoint",
+            "inputSha256",
+            "unit",
+            "operation",
+        ],
+    ) || !valid_mutation_identity(current)
+        || !valid_digest(&current["eventSha256"])
+        || (!current["carryLineage"].is_null() && !current["carryLineage"].is_boolean())
+    {
+        return Err("native current mutation is malformed".into());
+    }
+    Ok(true)
+}
+
+fn valid_mutation_identity(identity: &Value) -> bool {
+    ["runId", "subjectSha256", "inputSha256", "unit", "operation"]
+        .iter()
+        .all(|name| {
+            identity[*name]
+                .as_str()
+                .is_some_and(|value| !value.is_empty())
+        })
+        && identity["attempt"].is_u64()
+        && identity["checkpoint"].is_u64()
+}
+
+fn valid_digest(value: &Value) -> bool {
+    value.as_str().is_some_and(|value| {
+        value.len() == 64
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    })
 }
 
 pub(super) fn statuses(

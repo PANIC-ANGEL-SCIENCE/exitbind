@@ -124,6 +124,7 @@ fn project_sections(
             "agent",
             "attempt",
             "basisSha256",
+            "checkEvidence",
             "context",
             "declaredBoundary",
             "displayName",
@@ -150,6 +151,9 @@ fn project_sections(
         ],
         "native assignment packet",
     )?;
+    if packet["checkEvidence"] != sections["evidence"]["checkEvidence"] {
+        return Err("native assignment check evidence conflicts with canonical evidence".into());
+    }
     classified(
         &packet["profile"],
         &["path", "sha256"],

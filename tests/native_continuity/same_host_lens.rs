@@ -34,6 +34,8 @@ const RESULT: &str = "Implemented; evidence attached.\n";
 mod delivery;
 #[path = "same_host_recover.rs"]
 mod recover;
+#[path = "same_host_reviewer.rs"]
+mod reviewer;
 
 fn sha(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
