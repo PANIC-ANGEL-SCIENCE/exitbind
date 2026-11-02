@@ -75,7 +75,13 @@ pub(super) fn obligations(
         && help["nextAction"]["summary"] == "run the pending worker assignment"
         && help["nextAction"]["command"]["program"] == "exitbind"
         && help["nextAction"]["command"]["args"]
-            == json!(crate::emitted::Route::new(["work", "next", work]).partial_suffix());
+            .as_array()
+            .is_some_and(|args| {
+                matches!(args.as_slice(), [family, action, target]
+                    if family.as_str() == Some("work")
+                        && action.as_str() == Some("next")
+                        && target.as_str() == Some(work))
+            });
     if !default_help {
         actor.insert("currentStatus".into(), json!({"whatHappened":help["whatHappened"],"whatRemains":help["whatRemains"],"ownerDecision":help["ownerDecision"],"actor":next["actor"],"summary":next["summary"]}));
     }
