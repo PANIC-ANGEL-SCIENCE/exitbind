@@ -30,7 +30,7 @@ mod progress;
 pub(crate) use presentation::{
     context_summary, presentation, presentation_for_loaded, presentation_for_selected,
     progress_detail_for_work, progress_for_loaded, progress_for_work,
-    project_goal_progress_for_work, record_for_work, terminal_for_work,
+    project_goal_progress_for_work, record_for_work, terminal_for_work, WorkGoalObservation,
 };
 pub(crate) mod usage;
 pub(crate) use continuity::{

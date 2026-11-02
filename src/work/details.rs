@@ -23,6 +23,17 @@ pub(crate) fn binding(
     snapshot: &RunSnapshot,
     next: &Value,
 ) -> Result<String, String> {
+    let goal = crate::session_goal::WorkGoalObservation::acquire(loaded, work);
+    binding_with_goal(loaded, work, snapshot, next, &goal)
+}
+
+fn binding_with_goal(
+    loaded: &Loaded,
+    work: &str,
+    snapshot: &RunSnapshot,
+    next: &Value,
+    goal: &crate::session_goal::WorkGoalObservation,
+) -> Result<String, String> {
     // The loaded roots/config and canonical recipient are part of the digest,
     // rather than ambient CWD/PATH or a caller-selected role. A new grant,
     // repair, goal revision, profile/boundary change or assignment revokes it.
@@ -35,8 +46,8 @@ pub(crate) fn binding(
         "recipient": {"role": next["role"], "agent": next["agent"],
             "assignment": next["assignment"]},
         "packet": next["packet"],
-        "taskConditions": crate::session_goal::progress_detail_for_work(loaded, work, &next["progress"] )?,
-        "goalRevision": crate::session_goal::record_for_work(loaded, work)
+        "taskConditions": goal.detail(loaded, work, &next["progress"] )?,
+        "goalRevision": goal.record()
             .as_ref()
             .map(hash::value),
         "earlyEvidence": super::early_evidence::projection(loaded, work, snapshot)?,
@@ -134,7 +145,8 @@ pub(super) fn attach(
     snapshot: &RunSnapshot,
     next: &mut Value,
 ) -> Result<(), String> {
-    let progress = crate::session_goal::progress_for_work(loaded, work, &next["progress"])?;
+    let goal = crate::session_goal::WorkGoalObservation::acquire(loaded, work);
+    let progress = goal.progress(loaded, work, &next["progress"])?;
     next["goalProgress"] = progress.clone();
     next["goalProgress"]["usageAccount"] = crate::session_goal::usage::for_work(loaded, work);
     match crate::session_goal::project_goal_progress_for_work(loaded, work) {
@@ -161,7 +173,7 @@ pub(super) fn attach(
     } else {
         view["subject"].clone()
     };
-    let binding = binding(loaded, work, snapshot, next)?;
+    let binding = binding_with_goal(loaded, work, snapshot, next, &goal)?;
     let mut routes = json!({});
     for section in SECTIONS {
         routes[section] = route(loaded, work, &token(&binding, section, 0));
@@ -204,7 +216,7 @@ pub(super) fn attach(
         "version": 1, "work": work,
         "binding": binding,
         "goal": {"workGoalSha256": subject["goalSha256"],
-            "overallGoalId": if next["goalProgress"]["goal"].is_string() { crate::session_goal::record_for_work(loaded, work).map(|record| hash::value(&record["goalId"])) } else { None },
+            "overallGoalId": if next["goalProgress"]["goal"].is_string() { goal.record().map(|record| hash::value(&record["goalId"])) } else { None },
             "overallAvailable": next["goalProgress"]["goal"].is_string()},
         "result": {"available": subject.is_object(),
             "exists": if subject.is_object() { json!(artifact_exists && current_attempt) } else { Value::Null },

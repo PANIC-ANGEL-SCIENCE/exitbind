@@ -177,54 +177,133 @@ pub(crate) fn progress_for_loaded(
     ))
 }
 
-/// Project progress for one Work while enforcing the existing canonical
-/// goal-to-Work/continuation binding. A global goal record is not silently
-/// disclosed to an unrelated Work.
+/// One verified Goal association for one Work assembly. It is never stored or
+/// carried across the independent fresh reads that validate a delivery.
+pub(crate) struct WorkGoalObservation {
+    context: super::association::WorkContext,
+    owner_root: Option<std::path::PathBuf>,
+    local_record: Option<Result<Option<Value>, String>>,
+}
+
+impl WorkGoalObservation {
+    pub(crate) fn acquire(loaded: &crate::config::Loaded, work: &str) -> Self {
+        Self::from_resolution(
+            loaded,
+            super::association::context_for_work_with_root(loaded, work),
+        )
+    }
+
+    fn from_resolution(
+        loaded: &crate::config::Loaded,
+        association: super::association::WorkContextResolution,
+    ) -> Self {
+        let local_record = matches!(&association.context, super::association::WorkContext::Local)
+            .then(|| read(&loaded.state_root));
+        Self {
+            context: association.context,
+            owner_root: association.owner_root,
+            local_record,
+        }
+    }
+
+    pub(crate) fn progress(
+        &self,
+        loaded: &crate::config::Loaded,
+        work: &str,
+        result: &Value,
+    ) -> Result<Value, String> {
+        self.project(loaded, work, result, false)
+    }
+
+    pub(crate) fn detail(
+        &self,
+        loaded: &crate::config::Loaded,
+        work: &str,
+        result: &Value,
+    ) -> Result<Value, String> {
+        self.project(loaded, work, result, true)
+    }
+
+    fn project(
+        &self,
+        loaded: &crate::config::Loaded,
+        work: &str,
+        result: &Value,
+        detail: bool,
+    ) -> Result<Value, String> {
+        let from_record = |record: Option<&Value>, root: &std::path::Path| {
+            if detail {
+                progress_detail_from_record(loaded, work, result, record, root)
+            } else {
+                progress_from_record(loaded, work, result, record, root)
+            }
+        };
+        match &self.context {
+            super::association::WorkContext::NotRequested => Ok(progress::not_requested(result)),
+            super::association::WorkContext::Owner(record) => {
+                let Some(root) = self.owner_root.as_deref() else {
+                    return Ok(adoption::unavailable(
+                        loaded,
+                        Some(result),
+                        Reason::ContextInvalid,
+                        "verified native session Goal root is unavailable",
+                    ));
+                };
+                from_record(Some(record), root)
+            }
+            super::association::WorkContext::Session(record) => {
+                Ok(context_progress(record, work, result, detail))
+            }
+            super::association::WorkContext::Unavailable => Ok(adoption::unavailable(
+                loaded,
+                Some(result),
+                Reason::Unavailable,
+                "no verified native session Goal association",
+            )),
+            super::association::WorkContext::Invalid => Ok(adoption::unavailable(
+                loaded,
+                Some(result),
+                Reason::ContextInvalid,
+                "native session Goal context could not be verified",
+            )),
+            super::association::WorkContext::Local => {
+                let record = self
+                    .local_record
+                    .as_ref()
+                    .ok_or("local Goal observation is unavailable")?
+                    .as_ref()
+                    .map_err(Clone::clone)?;
+                from_record(record.as_ref(), &loaded.state_root)
+            }
+        }
+    }
+
+    pub(crate) fn record(&self) -> Option<Value> {
+        match &self.context {
+            super::association::WorkContext::Owner(record)
+            | super::association::WorkContext::Session(record) => {
+                Some(super::association::public_record(record))
+            }
+            super::association::WorkContext::Local => self
+                .local_record
+                .as_ref()
+                .and_then(|record| record.as_ref().ok())
+                .cloned()
+                .flatten(),
+            super::association::WorkContext::NotRequested
+            | super::association::WorkContext::Unavailable
+            | super::association::WorkContext::Invalid => None,
+        }
+    }
+}
+
+/// Project progress for one Work while enforcing its Goal association.
 pub(crate) fn progress_for_work(
     loaded: &crate::config::Loaded,
     work: &str,
     result: &Value,
 ) -> Result<Value, String> {
-    let association = super::association::context_for_work_with_root(loaded, work);
-    match association.context {
-        super::association::WorkContext::NotRequested => Ok(progress::not_requested(result)),
-        super::association::WorkContext::Owner(record) => {
-            let Some(root) = association.owner_root else {
-                return Ok(adoption::unavailable(
-                    loaded,
-                    Some(result),
-                    Reason::ContextInvalid,
-                    "verified native session Goal root is unavailable",
-                ));
-            };
-            progress_from_record(loaded, work, result, Some(&record), &root)
-        }
-        super::association::WorkContext::Session(record) => {
-            Ok(context_progress(&record, work, result, false))
-        }
-        super::association::WorkContext::Unavailable => Ok(adoption::unavailable(
-            loaded,
-            Some(result),
-            Reason::Unavailable,
-            "no verified native session Goal association",
-        )),
-        super::association::WorkContext::Invalid => Ok(adoption::unavailable(
-            loaded,
-            Some(result),
-            Reason::ContextInvalid,
-            "native session Goal context could not be verified",
-        )),
-        super::association::WorkContext::Local => local_progress_for_work(loaded, work, result),
-    }
-}
-
-fn local_progress_for_work(
-    loaded: &crate::config::Loaded,
-    work: &str,
-    result: &Value,
-) -> Result<Value, String> {
-    let record = read(&loaded.state_root)?;
-    progress_from_record(loaded, work, result, record.as_ref(), &loaded.state_root)
+    WorkGoalObservation::acquire(loaded, work).progress(loaded, work, result)
 }
 
 fn progress_from_record(
@@ -256,48 +335,7 @@ pub(crate) fn progress_detail_for_work(
     work: &str,
     result: &Value,
 ) -> Result<Value, String> {
-    let association = super::association::context_for_work_with_root(loaded, work);
-    match association.context {
-        super::association::WorkContext::NotRequested => Ok(progress::not_requested(result)),
-        super::association::WorkContext::Owner(record) => {
-            let Some(root) = association.owner_root else {
-                return Ok(adoption::unavailable(
-                    loaded,
-                    Some(result),
-                    Reason::ContextInvalid,
-                    "verified native session Goal root is unavailable",
-                ));
-            };
-            progress_detail_from_record(loaded, work, result, Some(&record), &root)
-        }
-        super::association::WorkContext::Session(record) => {
-            Ok(context_progress(&record, work, result, true))
-        }
-        super::association::WorkContext::Unavailable => Ok(adoption::unavailable(
-            loaded,
-            Some(result),
-            Reason::Unavailable,
-            "no verified native session Goal association",
-        )),
-        super::association::WorkContext::Invalid => Ok(adoption::unavailable(
-            loaded,
-            Some(result),
-            Reason::ContextInvalid,
-            "native session Goal context could not be verified",
-        )),
-        super::association::WorkContext::Local => {
-            local_progress_detail_for_work(loaded, work, result)
-        }
-    }
-}
-
-fn local_progress_detail_for_work(
-    loaded: &crate::config::Loaded,
-    work: &str,
-    result: &Value,
-) -> Result<Value, String> {
-    let record = read(&loaded.state_root)?;
-    progress_detail_from_record(loaded, work, result, record.as_ref(), &loaded.state_root)
+    WorkGoalObservation::acquire(loaded, work).detail(loaded, work, result)
 }
 
 fn progress_detail_from_record(
@@ -343,16 +381,7 @@ fn context_progress(record: &Value, work: &str, result: &Value, detail: bool) ->
 }
 
 pub(crate) fn record_for_work(loaded: &crate::config::Loaded, work: &str) -> Option<Value> {
-    match super::association::context_for_work(loaded, work) {
-        super::association::WorkContext::Owner(record)
-        | super::association::WorkContext::Session(record) => {
-            Some(super::association::public_record(&record))
-        }
-        super::association::WorkContext::Local => read(&loaded.state_root).ok().flatten(),
-        super::association::WorkContext::NotRequested
-        | super::association::WorkContext::Unavailable
-        | super::association::WorkContext::Invalid => None,
-    }
+    WorkGoalObservation::acquire(loaded, work).record()
 }
 
 /// Preserve a separately selected project-local named contract when the
@@ -370,9 +399,163 @@ pub(crate) fn project_goal_progress_for_work(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::session_goal::association::{WorkContext, WorkContextResolution};
+
     #[test]
     fn presentation_does_not_close_from_ready() {
         let value = json!({"goalId":"a","revision":1,"categories":{"obligations":"none_applicable","findings":"none_applicable","blockers":"none_applicable","decisions":"none_applicable","externalActions":"none_applicable"},"obligations":[],"findings":[],"blockers":[],"decisions":[],"externalActions":[],"closure":{"closed":false,"revision":null,"resultRefs":[]}});
         assert_eq!(presentation(Some(&value))["explicitLeadClosure"], false);
+    }
+
+    #[test]
+    fn work_observation_preserves_each_goal_context_projection() {
+        let root = crate::test_root::temp("goal-observation-variants");
+        let config = crate::project::onboarding::init_with_options(
+            crate::project::onboarding::InitOptions {
+                product_root: root.to_str().unwrap(),
+                coffee: false,
+                skip_skills: true,
+                mode: Some("portable"),
+                project_id: None,
+                control_root: None,
+                state_root: None,
+            },
+        )
+        .unwrap();
+        let loaded = crate::config::load(config.to_str()).unwrap();
+        let work = "observation-fixture-work";
+        let record = crate::session_goal::incorporate(
+            &loaded.state_root,
+            &loaded,
+            work,
+            "Complete the fixture Goal",
+            Some("A required task"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("findings,blockers,decisions,externalActions"),
+            false,
+        )
+        .unwrap();
+        let result = json!({"state":"running","completed":0});
+        let observe = |context, owner_root| {
+            WorkGoalObservation::from_resolution(
+                &loaded,
+                WorkContextResolution {
+                    context,
+                    owner_root,
+                },
+            )
+        };
+        let owner = observe(WorkContext::Owner(record.clone()), Some(root.to_path_buf()));
+        assert_eq!(
+            owner.progress(&loaded, work, &result).unwrap(),
+            progress_from_record(&loaded, work, &result, Some(&record), &root).unwrap()
+        );
+        assert_eq!(
+            owner.detail(&loaded, work, &result).unwrap(),
+            progress_detail_from_record(&loaded, work, &result, Some(&record), &root).unwrap()
+        );
+        assert_eq!(owner.record(), Some(association::public_record(&record)));
+
+        let session = observe(WorkContext::Session(record.clone()), None);
+        assert_eq!(
+            session.progress(&loaded, work, &result).unwrap(),
+            context_progress(&record, work, &result, false)
+        );
+        assert_eq!(
+            session.detail(&loaded, work, &result).unwrap(),
+            context_progress(&record, work, &result, true)
+        );
+        assert_eq!(session.record(), Some(association::public_record(&record)));
+
+        let local = observe(WorkContext::Local, None);
+        assert_eq!(
+            local.progress(&loaded, work, &result).unwrap(),
+            progress_from_record(&loaded, work, &result, Some(&record), &loaded.state_root)
+                .unwrap()
+        );
+        assert_eq!(
+            local.detail(&loaded, work, &result).unwrap(),
+            progress_detail_from_record(&loaded, work, &result, Some(&record), &loaded.state_root)
+                .unwrap()
+        );
+        assert_eq!(local.record(), Some(record.clone()));
+
+        let absent = observe(WorkContext::NotRequested, None);
+        assert_eq!(
+            absent.progress(&loaded, work, &result).unwrap(),
+            progress::not_requested(&result)
+        );
+        assert_eq!(
+            absent.detail(&loaded, work, &result).unwrap(),
+            progress::not_requested(&result)
+        );
+        assert!(absent.record().is_none());
+        for (context, reason, description) in [
+            (
+                WorkContext::Unavailable,
+                Reason::Unavailable,
+                "no verified native session Goal association",
+            ),
+            (
+                WorkContext::Invalid,
+                Reason::ContextInvalid,
+                "native session Goal context could not be verified",
+            ),
+        ] {
+            let observation = observe(context, None);
+            let expected = adoption::unavailable(&loaded, Some(&result), reason, description);
+            assert_eq!(
+                observation.progress(&loaded, work, &result).unwrap(),
+                expected
+            );
+            assert_eq!(
+                observation.detail(&loaded, work, &result).unwrap(),
+                expected
+            );
+            assert!(observation.record().is_none());
+        }
+        let missing_root = observe(WorkContext::Owner(record.clone()), None);
+        let unavailable = adoption::unavailable(
+            &loaded,
+            Some(&result),
+            Reason::ContextInvalid,
+            "verified native session Goal root is unavailable",
+        );
+        assert_eq!(
+            missing_root.progress(&loaded, work, &result).unwrap(),
+            unavailable
+        );
+        assert_eq!(
+            missing_root.detail(&loaded, work, &result).unwrap(),
+            unavailable
+        );
+        assert_eq!(
+            missing_root.record(),
+            Some(association::public_record(&record))
+        );
+
+        let journal = root.join(format!(
+            "{}/session-goal.jsonl",
+            crate::project::layout_types::state_namespace()
+        ));
+        std::fs::write(journal, "invalid journal\n").unwrap();
+        let local_error = read(&loaded.state_root).unwrap_err();
+        let changed = observe(WorkContext::Local, None);
+        assert_eq!(
+            changed.progress(&loaded, work, &result).unwrap_err(),
+            local_error
+        );
+        assert_eq!(
+            changed.detail(&loaded, work, &result).unwrap_err(),
+            local_error
+        );
+        assert!(changed.record().is_none());
     }
 }

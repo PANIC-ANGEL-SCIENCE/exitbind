@@ -55,13 +55,12 @@ fn every_native_unavailable_renderer_goes_through_the_adoption_route_builder() {
         }
     }
     renderers.sort();
+    // WorkGoalObservation shares the same three unavailable branches across
+    // bounded and detailed Work projections.
     assert_eq!(
         renderers,
         [
             "src/host/session_recovery/presentation.rs",
-            "src/session_goal/presentation.rs",
-            "src/session_goal/presentation.rs",
-            "src/session_goal/presentation.rs",
             "src/session_goal/presentation.rs",
             "src/session_goal/presentation.rs",
             "src/session_goal/presentation.rs",
