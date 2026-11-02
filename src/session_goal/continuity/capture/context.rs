@@ -18,9 +18,10 @@ pub(super) fn host_context(loaded: &Loaded, work: &str, intent_id: &str) -> Resu
     context_inner(loaded, work, intent_id, true, true)
 }
 
-/// Preserve already-supported legacy delivery recovery without requiring a
-/// selected-actor proof that was not recorded by the older producer.
-pub(super) fn legacy_host_context(
+/// Verify the existing complete identity and recipient context without
+/// requiring the newer selected-presentation proof. Used both to associate a
+/// claimed child for observation and to recover a legacy presentation.
+pub(super) fn core_host_context(
     loaded: &Loaded,
     work: &str,
     intent_id: &str,

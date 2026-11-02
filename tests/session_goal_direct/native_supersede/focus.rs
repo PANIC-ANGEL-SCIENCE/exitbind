@@ -147,7 +147,12 @@ fn assert_complete_successor_delivery(label: &str) {
         .unwrap_or_else(|| panic!("complete successor delivery unavailable: {context}"));
     let packet: Value = serde_json::from_str(packet).unwrap();
     assert_eq!(packet["currentAction"]["binding"], detail["binding"]);
-    assert_eq!(packet["goal"], detail["sections"]["tasks"]["goal"]);
+    assert_eq!(
+        packet["goal"],
+        detail["sections"]["assignment"]["assignment"]["goal"]
+    );
+    assert_eq!(packet["taskGoal"], detail["sections"]["tasks"]["goal"]);
+    assert_ne!(packet["goal"], packet["taskGoal"]);
     assert_eq!(
         packet["boundary"],
         detail["sections"]["assignment"]["assignment"]["declaredBoundary"]

@@ -49,7 +49,12 @@ fn selector_free_same_host_delivery_matches_owner_goal_and_returns_after_permit(
         json!(fixture.product)
     );
     assert_eq!(packet["currentAction"]["binding"], owner["binding"]);
-    assert_eq!(packet["goal"], owner["sections"]["tasks"]["goal"]);
+    assert_eq!(
+        packet["goal"],
+        owner["sections"]["assignment"]["assignment"]["goal"]
+    );
+    assert_eq!(packet["taskGoal"], owner["sections"]["tasks"]["goal"]);
+    assert_ne!(packet["goal"], packet["taskGoal"]);
     if owner["sections"]["tasks"]["tasks"]
         .as_array()
         .is_some_and(Vec::is_empty)
@@ -59,8 +64,12 @@ fn selector_free_same_host_delivery_matches_owner_goal_and_returns_after_permit(
         assert_eq!(packet["tasks"], owner["sections"]["tasks"]["tasks"]);
     }
     assert_eq!(
-        packet["goal"],
+        packet["taskGoal"],
         "A same-host lens needs no cross-host protocol"
+    );
+    assert_eq!(
+        packet["goal"],
+        "Spawn sonic with its lenses from the Lead session"
     );
     assert_eq!(
         fixture.intents().unwrap()[0]["assignmentDelivery"]["state"],
@@ -229,9 +238,29 @@ fn selected_delivery_refuses_transformed_or_incomplete_required_instructions() {
             start.contains("no automatic return") || start.contains("cannot receive credit"),
             "{start}"
         );
-        fixture.hook(json!({"hook_event_name":"SubagentStop","session_id":SESSION,
+        assert_eq!(intent["state"], "claimed", "{name}: {intent}");
+        assert_eq!(intent["assignmentDelivery"]["state"], "unavailable");
+        let unavailable = intent["assignmentDelivery"].clone();
+        let duplicate = fixture
+            .hook(
+                json!({"hook_event_name":"SubagentStart","session_id":SESSION,
+            "agent_id":CHILD,"agent_type":"sonic"}),
+            )
+            .unwrap();
+        assert!(
+            !duplicate.contains("Automatic Work return. ENTIRE final message"),
+            "{duplicate}"
+        );
+        assert_eq!(
+            fixture.intents().unwrap()[0]["assignmentDelivery"],
+            unavailable
+        );
+        let message = r#"{"outcome":"completed","summary":"uncredited","reason":""}"#;
+        fixture.hook(
+            json!({"hook_event_name":"SubagentStop","session_id":SESSION,
             "agent_id":CHILD,"agent_type":"sonic",
-            "last_assistant_message":r#"{"outcome":"completed","summary":"uncredited","reason":""}"#}));
+            "last_assistant_message":message}),
+        );
         let retained = &fixture.intents().unwrap()[0];
         assert!(
             retained["returnEventSha256"].is_null(),
@@ -242,7 +271,71 @@ fn selected_delivery_refuses_transformed_or_incomplete_required_instructions() {
             "{name}: {retained}"
         );
         assert!(retained["rawObservation"].is_object(), "{name}: {retained}");
+        let raw = fixture.value(
+            Some(SESSION),
+            &[
+                "work",
+                "child",
+                "context",
+                &fixture.work,
+                retained["id"].as_str().unwrap(),
+                "--view",
+                "result",
+            ],
+        );
+        assert_eq!(raw["resultText"], message);
+        assert_eq!(raw["credit"], "none");
     }
+}
+
+#[test]
+fn duplicate_start_cannot_upgrade_an_unavailable_delivery_even_when_renderable() {
+    let fixture = Fixture::new("r60-unavailable-duplicate");
+    fixture.prepare_sonic();
+    let first = fixture
+        .hook(
+            json!({"hook_event_name":"SubagentStart","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic"}),
+        )
+        .unwrap();
+    assert!(
+        first.contains("Automatic Work return. ENTIRE final message"),
+        "{first}"
+    );
+    let path = fixture.product.join(".exitbind/child-intents.json");
+    let mut saved: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(
+        saved["intents"][0]["assignmentDelivery"]["state"],
+        "presented"
+    );
+    // Model an earlier unavailable observation while all current actor facts
+    // remain renderable; the second callback cannot create delivery credit.
+    saved["intents"][0]["assignmentDelivery"] = json!({"state":"unavailable","binding":null});
+    let unavailable = saved["intents"][0]["assignmentDelivery"].clone();
+    fs::write(&path, serde_json::to_vec(&saved).unwrap()).unwrap();
+    let payload = json!({"hook_event_name":"SubagentStart","cwd":fixture.product,
+        "session_id":SESSION,"agent_id":CHILD,"agent_type":"sonic"});
+    let output = hook_with_selector(&fixture, payload, "CLAUDE_CODE_SESSION_ID", SESSION);
+    assert!(output.status.success(), "{}", text(&output));
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let context = value["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(context.contains("cannot receive credit"), "{context}");
+    assert!(!context.contains("Automatic Work return. ENTIRE final message"));
+    assert_eq!(
+        fixture.intents().unwrap()[0]["assignmentDelivery"],
+        unavailable
+    );
+    fixture.hook(
+        json!({"hook_event_name":"SubagentStop","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic",
+        "last_assistant_message":r#"{"outcome":"completed","summary":"uncredited","reason":""}"#}),
+    );
+    let retained = &fixture.intents().unwrap()[0];
+    assert!(retained["rawObservation"].is_object(), "{retained}");
+    assert!(retained["returnEventSha256"].is_null(), "{retained}");
+    assert!(retained.get("pendingReturn").is_none(), "{retained}");
 }
 
 fn hook_with_selector(fixture: &Fixture, payload: Value, selector: &str, identity: &str) -> Output {

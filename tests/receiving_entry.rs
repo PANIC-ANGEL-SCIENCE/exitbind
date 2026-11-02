@@ -245,7 +245,14 @@ fn receiver_gets_a_current_named_prepare_route_without_changing_legacy_capture()
     let context = output["hookSpecificOutput"]["additionalContext"]
         .as_str()
         .unwrap();
-    assert!(context.contains("automatic Work return"), "{context}");
+    assert!(
+        context.contains("Automatic Work return. ENTIRE final message"),
+        "{context}"
+    );
+    assert!(
+        context.contains("JSON object only; no prose, fence or extra fields"),
+        "{context}"
+    );
     assert!(
         !context.contains("Complete assignment exceeds"),
         "{context}"

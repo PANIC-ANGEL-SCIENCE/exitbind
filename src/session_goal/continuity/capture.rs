@@ -459,7 +459,10 @@ pub(crate) fn claim(
             }
             if !intents[index]["selected"].is_null() {
                 let intent = intents[index]["id"].as_str().unwrap_or_default();
-                if let Err(error) = context::host_context(loaded, &work, intent) {
+                // The core checks associate this child for observation only.
+                // Selected-delivery proof is checked after the claim, at
+                // presentation, before any automatic return can be credited.
+                if let Err(error) = context::core_host_context(loaded, &work, intent) {
                     intents[index]["state"] = json!("abandoned");
                     let reason = format!("child context unavailable: {error}");
                     intents[index]["failure"] = json!(&reason);
@@ -491,6 +494,9 @@ pub(crate) fn claimed_context(
     let (Some(work), Some(id)) = (intent["work"].as_str(), intent["id"].as_str()) else {
         return Err("claimed child identity is malformed".into());
     };
+    if intent["assignmentDelivery"]["state"] == "unavailable" {
+        return Err("the original child presentation is unavailable".into());
+    }
     context::host_context(loaded, work, id).map(Some)
 }
 

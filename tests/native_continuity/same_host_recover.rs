@@ -466,7 +466,14 @@ fn typed_host_return_uses_the_bound_assignment_once_and_rejects_foreign_or_inval
         "agent_id":CHILD,"agent_type":"sonic"}),
         )
         .unwrap();
-    assert!(start.contains("automatic Work return"), "{start}");
+    assert!(
+        start.contains("Automatic Work return. ENTIRE final message"),
+        "{start}"
+    );
+    assert!(
+        start.contains("JSON object only; no prose, fence or extra fields"),
+        "{start}"
+    );
     assert_eq!(
         fixture.intents().unwrap()[0]["assignmentDelivery"]["state"],
         "presented"

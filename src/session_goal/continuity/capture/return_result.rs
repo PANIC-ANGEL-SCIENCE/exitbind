@@ -52,7 +52,7 @@ pub(super) fn validate_capture(
     let recorded = super::actor_checks::recorded_proof(intent);
     let host_context = match recorded {
         super::actor_checks::RecordedProof::Legacy => {
-            super::context::legacy_host_context(loaded, work_id, id)?
+            super::context::core_host_context(loaded, work_id, id)?
         }
         super::actor_checks::RecordedProof::Selected { .. } => {
             super::context::host_context(loaded, work_id, id)?

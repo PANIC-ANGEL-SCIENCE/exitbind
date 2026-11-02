@@ -89,7 +89,7 @@ pub(crate) fn advance(loaded: &Loaded, proof: &PermitTransition<'_>) -> Result<b
         let recorded = actor_checks::recorded_proof(intent);
         let instructions = match recorded {
             actor_checks::RecordedProof::Legacy => {
-                super::context::legacy_host_context(loaded, proof.work, intent_id)?
+                super::context::core_host_context(loaded, proof.work, intent_id)?
             }
             actor_checks::RecordedProof::Selected { .. } => {
                 super::context::host_context(loaded, proof.work, intent_id)?
