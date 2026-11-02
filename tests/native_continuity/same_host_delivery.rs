@@ -378,6 +378,88 @@ fn postrender_changes_refuse_delivery_credit_before_note_delivery() {
     }
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn postrender_ancestor_changes_cannot_credit_the_successor() {
+    let profile = PROFILE_BODY.repeat(40);
+    for change in ["ledger", "claim"] {
+        let mut fixture = Fixture::new_with_material(
+            &format!("r60-postrender-ancestor-{change}"),
+            "true --mode strict",
+            Some("fixture.txt"),
+            &profile,
+            None,
+        );
+        let ancestor = fixture.work.clone();
+        let successor = fixture.value(
+            Some(SESSION),
+            &[
+                "work",
+                "supersede",
+                &ancestor,
+                "--reason=fixture successor",
+                "--json",
+            ],
+        );
+        assert_eq!(successor["effect"], "started");
+        fixture.work = successor["work"].as_str().unwrap().to_owned();
+        let lead = fixture.next(Some(SESSION));
+        assert_eq!(lead["role"], "lead");
+        let scope = fixture.call(
+            Some(SESSION),
+            &[
+                "work",
+                "return",
+                &fixture.work,
+                lead["assignment"].as_str().unwrap(),
+                "--outcome",
+                "scoped",
+            ],
+            b"scope",
+            true,
+        );
+        assert!(scope.status.success(), "{}", text(&scope));
+        fs::write(
+            fixture.product.join("AGENTS.md"),
+            "Original required rule.\n",
+        )
+        .unwrap();
+        fixture.prepare_sonic();
+        let ancestor_path = fixture
+            .product
+            .join(format!(".exitbind/runs/work-{}.jsonl", &ancestor[4..]));
+        let changed_path = if change == "claim" {
+            let mut path = ancestor_path.into_os_string();
+            path.push(".supersede");
+            std::path::PathBuf::from(path)
+        } else {
+            ancestor_path
+        };
+        let current_path = fixture
+            .product
+            .join(format!(".exitbind/runs/work-{}.jsonl", &fixture.work[4..]));
+        let before = fs::read(&current_path).unwrap();
+        let blocked = BlockedStart::new(&fixture);
+        fs::write(&changed_path, b"invalid fixture evidence\n").unwrap();
+        let output = blocked.finish();
+        assert!(output.status.success(), "{change}: {}", text(&output));
+        let intent = &fixture.intents().unwrap()[0];
+        assert_eq!(
+            intent["assignmentDelivery"]["state"], "unavailable",
+            "{intent}"
+        );
+        fixture.hook(
+            json!({"hook_event_name":"SubagentStop","session_id":SESSION,
+            "agent_id":CHILD,"agent_type":"sonic",
+            "last_assistant_message":r#"{"outcome":"completed","summary":"Fixture","reason":""}"#}),
+        );
+        let intent = &fixture.intents().unwrap()[0];
+        assert!(intent["returnEventSha256"].is_null(), "{change}: {intent}");
+        assert!(intent.get("pendingReturn").is_none(), "{change}: {intent}");
+        assert_eq!(fs::read(current_path).unwrap(), before, "{change}");
+    }
+}
+
 #[test]
 fn selected_delivery_refuses_transformed_or_incomplete_required_instructions() {
     let long_phase = "required phase instruction\n".repeat(200);

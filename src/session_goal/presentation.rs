@@ -179,63 +179,58 @@ pub(crate) fn progress_for_loaded(
 
 /// One verified Goal association for one Work assembly. It is never stored or
 /// carried across the independent fresh reads that validate a delivery.
-pub(crate) struct WorkGoalObservation {
+pub(crate) struct WorkGoalObservation<'a> {
+    loaded: &'a crate::config::Loaded,
+    work: &'a str,
     context: super::association::WorkContext,
     owner_root: Option<std::path::PathBuf>,
     local_record: Option<Result<Option<Value>, String>>,
+    journey: progress::JourneyObservation,
 }
 
-impl WorkGoalObservation {
-    pub(crate) fn acquire(loaded: &crate::config::Loaded, work: &str) -> Self {
+impl<'a> WorkGoalObservation<'a> {
+    pub(crate) fn acquire(loaded: &'a crate::config::Loaded, work: &'a str) -> Self {
         Self::from_resolution(
             loaded,
+            work,
             super::association::context_for_work_with_root(loaded, work),
         )
     }
 
     fn from_resolution(
-        loaded: &crate::config::Loaded,
+        loaded: &'a crate::config::Loaded,
+        work: &'a str,
         association: super::association::WorkContextResolution,
     ) -> Self {
         let local_record = matches!(&association.context, super::association::WorkContext::Local)
             .then(|| read(&loaded.state_root));
         Self {
+            loaded,
+            work,
             context: association.context,
             owner_root: association.owner_root,
             local_record,
+            journey: progress::JourneyObservation::default(),
         }
     }
 
-    pub(crate) fn progress(
-        &self,
-        loaded: &crate::config::Loaded,
-        work: &str,
-        result: &Value,
-    ) -> Result<Value, String> {
-        self.project(loaded, work, result, false)
+    pub(crate) fn progress(&mut self, result: &Value) -> Result<Value, String> {
+        self.project(result, false)
     }
 
-    pub(crate) fn detail(
-        &self,
-        loaded: &crate::config::Loaded,
-        work: &str,
-        result: &Value,
-    ) -> Result<Value, String> {
-        self.project(loaded, work, result, true)
+    pub(crate) fn detail(&mut self, result: &Value) -> Result<Value, String> {
+        self.project(result, true)
     }
 
-    fn project(
-        &self,
-        loaded: &crate::config::Loaded,
-        work: &str,
-        result: &Value,
-        detail: bool,
-    ) -> Result<Value, String> {
-        let from_record = |record: Option<&Value>, root: &std::path::Path| {
+    fn project(&mut self, result: &Value, detail: bool) -> Result<Value, String> {
+        let loaded = self.loaded;
+        let work = self.work;
+        let journey = &mut self.journey;
+        let mut from_record = |record: Option<&Value>, root: &std::path::Path| {
             if detail {
-                progress_detail_from_record(loaded, work, result, record, root)
+                progress_detail_from_record(loaded, work, result, record, root, journey)
             } else {
-                progress_from_record(loaded, work, result, record, root)
+                progress_from_record(loaded, work, result, record, root, journey)
             }
         };
         match &self.context {
@@ -303,7 +298,7 @@ pub(crate) fn progress_for_work(
     work: &str,
     result: &Value,
 ) -> Result<Value, String> {
-    WorkGoalObservation::acquire(loaded, work).progress(loaded, work, result)
+    WorkGoalObservation::acquire(loaded, work).progress(result)
 }
 
 fn progress_from_record(
@@ -312,6 +307,7 @@ fn progress_from_record(
     result: &Value,
     record: Option<&Value>,
     root: &std::path::Path,
+    journey: &mut progress::JourneyObservation,
 ) -> Result<Value, String> {
     let mut rendered = presentation(record);
     let readiness = current::evaluate(loaded, record, root, false);
@@ -325,6 +321,7 @@ fn progress_from_record(
         record,
         &rendered,
         Some(result),
+        journey,
     ))
 }
 
@@ -335,7 +332,7 @@ pub(crate) fn progress_detail_for_work(
     work: &str,
     result: &Value,
 ) -> Result<Value, String> {
-    WorkGoalObservation::acquire(loaded, work).detail(loaded, work, result)
+    WorkGoalObservation::acquire(loaded, work).detail(result)
 }
 
 fn progress_detail_from_record(
@@ -344,6 +341,7 @@ fn progress_detail_from_record(
     result: &Value,
     record: Option<&Value>,
     root: &std::path::Path,
+    journey: &mut progress::JourneyObservation,
 ) -> Result<Value, String> {
     let mut rendered = presentation(record);
     let readiness = current::evaluate(loaded, record, root, false);
@@ -357,6 +355,7 @@ fn progress_detail_from_record(
         record,
         &rendered,
         Some(result),
+        journey,
     ))
 }
 
@@ -446,54 +445,85 @@ mod tests {
         let observe = |context, owner_root| {
             WorkGoalObservation::from_resolution(
                 &loaded,
+                work,
                 WorkContextResolution {
                     context,
                     owner_root,
                 },
             )
         };
-        let owner = observe(WorkContext::Owner(record.clone()), Some(root.to_path_buf()));
+        let mut owner = observe(WorkContext::Owner(record.clone()), Some(root.to_path_buf()));
         assert_eq!(
-            owner.progress(&loaded, work, &result).unwrap(),
-            progress_from_record(&loaded, work, &result, Some(&record), &root).unwrap()
+            owner.progress(&result).unwrap(),
+            progress_from_record(
+                &loaded,
+                work,
+                &result,
+                Some(&record),
+                &root,
+                &mut progress::JourneyObservation::default()
+            )
+            .unwrap()
         );
         assert_eq!(
-            owner.detail(&loaded, work, &result).unwrap(),
-            progress_detail_from_record(&loaded, work, &result, Some(&record), &root).unwrap()
+            owner.detail(&result).unwrap(),
+            progress_detail_from_record(
+                &loaded,
+                work,
+                &result,
+                Some(&record),
+                &root,
+                &mut progress::JourneyObservation::default()
+            )
+            .unwrap()
         );
         assert_eq!(owner.record(), Some(association::public_record(&record)));
 
-        let session = observe(WorkContext::Session(record.clone()), None);
+        let mut session = observe(WorkContext::Session(record.clone()), None);
         assert_eq!(
-            session.progress(&loaded, work, &result).unwrap(),
+            session.progress(&result).unwrap(),
             context_progress(&record, work, &result, false)
         );
         assert_eq!(
-            session.detail(&loaded, work, &result).unwrap(),
+            session.detail(&result).unwrap(),
             context_progress(&record, work, &result, true)
         );
         assert_eq!(session.record(), Some(association::public_record(&record)));
 
-        let local = observe(WorkContext::Local, None);
+        let mut local = observe(WorkContext::Local, None);
         assert_eq!(
-            local.progress(&loaded, work, &result).unwrap(),
-            progress_from_record(&loaded, work, &result, Some(&record), &loaded.state_root)
-                .unwrap()
+            local.progress(&result).unwrap(),
+            progress_from_record(
+                &loaded,
+                work,
+                &result,
+                Some(&record),
+                &loaded.state_root,
+                &mut progress::JourneyObservation::default()
+            )
+            .unwrap()
         );
         assert_eq!(
-            local.detail(&loaded, work, &result).unwrap(),
-            progress_detail_from_record(&loaded, work, &result, Some(&record), &loaded.state_root)
-                .unwrap()
+            local.detail(&result).unwrap(),
+            progress_detail_from_record(
+                &loaded,
+                work,
+                &result,
+                Some(&record),
+                &loaded.state_root,
+                &mut progress::JourneyObservation::default()
+            )
+            .unwrap()
         );
         assert_eq!(local.record(), Some(record.clone()));
 
-        let absent = observe(WorkContext::NotRequested, None);
+        let mut absent = observe(WorkContext::NotRequested, None);
         assert_eq!(
-            absent.progress(&loaded, work, &result).unwrap(),
+            absent.progress(&result).unwrap(),
             progress::not_requested(&result)
         );
         assert_eq!(
-            absent.detail(&loaded, work, &result).unwrap(),
+            absent.detail(&result).unwrap(),
             progress::not_requested(&result)
         );
         assert!(absent.record().is_none());
@@ -509,33 +539,21 @@ mod tests {
                 "native session Goal context could not be verified",
             ),
         ] {
-            let observation = observe(context, None);
+            let mut observation = observe(context, None);
             let expected = adoption::unavailable(&loaded, Some(&result), reason, description);
-            assert_eq!(
-                observation.progress(&loaded, work, &result).unwrap(),
-                expected
-            );
-            assert_eq!(
-                observation.detail(&loaded, work, &result).unwrap(),
-                expected
-            );
+            assert_eq!(observation.progress(&result).unwrap(), expected);
+            assert_eq!(observation.detail(&result).unwrap(), expected);
             assert!(observation.record().is_none());
         }
-        let missing_root = observe(WorkContext::Owner(record.clone()), None);
+        let mut missing_root = observe(WorkContext::Owner(record.clone()), None);
         let unavailable = adoption::unavailable(
             &loaded,
             Some(&result),
             Reason::ContextInvalid,
             "verified native session Goal root is unavailable",
         );
-        assert_eq!(
-            missing_root.progress(&loaded, work, &result).unwrap(),
-            unavailable
-        );
-        assert_eq!(
-            missing_root.detail(&loaded, work, &result).unwrap(),
-            unavailable
-        );
+        assert_eq!(missing_root.progress(&result).unwrap(), unavailable);
+        assert_eq!(missing_root.detail(&result).unwrap(), unavailable);
         assert_eq!(
             missing_root.record(),
             Some(association::public_record(&record))
@@ -547,15 +565,9 @@ mod tests {
         ));
         std::fs::write(journal, "invalid journal\n").unwrap();
         let local_error = read(&loaded.state_root).unwrap_err();
-        let changed = observe(WorkContext::Local, None);
-        assert_eq!(
-            changed.progress(&loaded, work, &result).unwrap_err(),
-            local_error
-        );
-        assert_eq!(
-            changed.detail(&loaded, work, &result).unwrap_err(),
-            local_error
-        );
+        let mut changed = observe(WorkContext::Local, None);
+        assert_eq!(changed.progress(&result).unwrap_err(), local_error);
+        assert_eq!(changed.detail(&result).unwrap_err(), local_error);
         assert!(changed.record().is_none());
     }
 }

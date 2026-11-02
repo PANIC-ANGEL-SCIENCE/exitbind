@@ -182,6 +182,133 @@ fn goal_revision_during_detail_assembly_refuses_unchanged_assignment() {
     assert_ne!(fresh["current"]["binding"], original_binding);
 }
 
+fn scope_current_lead(loaded: &Loaded, work: &str) {
+    let snapshot =
+        RunSnapshot::capture(loaded, &crate::work::resolve(loaded, work).unwrap()).unwrap();
+    let next = crate::work::next_from(loaded, work, &snapshot).unwrap();
+    assert_eq!(next["role"], "lead");
+    crate::work::return_result_impl::return_result_with(
+        loaded,
+        work,
+        next["assignment"].as_str().unwrap(),
+        "scoped",
+        None,
+        None,
+        None,
+        Some(b"Scoped fixture work.\n".to_vec()),
+        None,
+    )
+    .unwrap();
+}
+
+#[test]
+fn journey_projections_match_and_ancestor_changes_refuse_detail() {
+    if !crate::compatibility::is_exitbind() {
+        return;
+    }
+    const CHILD: &str = "EXITBIND_TEST_NATIVE_CARRY_READ_RACE";
+    if std::env::var_os(CHILD).is_none() {
+        for change in ["ledger", "claim"] {
+            let outer = crate::test_root::temp("native-carry-read-child");
+            let store = outer.join("session-store");
+            crate::project::portability::create_private_directory(&store).unwrap();
+            // raw-spawn: isolate the fixture's native selectors and state.
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+            for key in [
+                "CODEX_THREAD_ID",
+                "CODEX_SESSION_ID",
+                "CLAUDE_CODE_SESSION_ID",
+                "EXITBIND_NATIVE_SESSION_ID",
+                "EXITBIND_SESSION_GOALS_DIR",
+                "CLAUDE_ENV_FILE",
+                "XDG_STATE_HOME",
+            ] {
+                child.env_remove(key);
+            }
+            let output = child
+                .args([
+                    "work::readable::tests::journey_projections_match_and_ancestor_changes_refuse_detail",
+                    "--exact",
+                    "--test-threads=1",
+                ])
+                .env(CHILD, change)
+                .env("CLAUDE_CODE_SESSION_ID", "fixture-native-carry-read-race")
+                .env("EXITBIND_SESSION_GOALS_DIR", &store)
+                .env("TMPDIR", &*outer)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{change}: {}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"));
+        }
+        return;
+    }
+
+    let change = std::env::var(CHILD).unwrap();
+    let (_root, loaded) = configured("carry-mid-read");
+    let scope = crate::session_goal::native::scope(&loaded, true).unwrap();
+    scope.require_owner().unwrap();
+    revise_goal(
+        &loaded,
+        &scope.root,
+        "fixture-carry-goal",
+        "Original obligation",
+        true,
+    )
+    .unwrap();
+    let ancestor = begin(&loaded, "true", true);
+    scope_current_lead(&loaded, &ancestor);
+    let successor = crate::work::supersede::supersede(&loaded, &ancestor, "Fixture successor")
+        .unwrap()["work"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    scope_current_lead(&loaded, &successor);
+    let current_ledger = crate::work::resolve(&loaded, &successor).unwrap();
+    let snapshot = RunSnapshot::capture(&loaded, &current_ledger).unwrap();
+    let next = crate::work::next_from(&loaded, &successor, &snapshot).unwrap();
+    assert_eq!(next["role"], "worker");
+    let mut shared = crate::session_goal::WorkGoalObservation::acquire(&loaded, &successor);
+    let bounded = shared.progress(&next["progress"]).unwrap();
+    let detail = shared.detail(&next["progress"]).unwrap();
+    assert!(bounded["journeyCompletion"].is_object(), "{bounded}");
+    assert_eq!(
+        bounded,
+        crate::session_goal::progress_for_work(&loaded, &successor, &next["progress"]).unwrap()
+    );
+    assert_eq!(
+        detail,
+        crate::session_goal::progress_detail_for_work(&loaded, &successor, &next["progress"])
+            .unwrap()
+    );
+
+    let ancestor_path = loaded
+        .state_root
+        .join(crate::work::resolve(&loaded, &ancestor).unwrap());
+    let changed_path = if change == "claim" {
+        let mut path = ancestor_path.into_os_string();
+        path.push(".supersede");
+        std::path::PathBuf::from(path)
+    } else {
+        ancestor_path
+    };
+    let current_path = loaded.state_root.join(&current_ledger);
+    let before = std::fs::read(&current_path).unwrap();
+    let error = read_after_reads(&loaded, &successor, &snapshot, &next, || {
+        std::fs::write(&changed_path, b"invalid fixture evidence\n").map_err(|e| e.to_string())
+    })
+    .unwrap_err();
+    let fresh_error = RunSnapshot::capture(&loaded, &current_ledger)
+        .err()
+        .expect("changed ancestor must fail its independent fresh capture");
+    assert_eq!(error, fresh_error, "{change}");
+    assert_eq!(std::fs::read(current_path).unwrap(), before, "{change}");
+}
+
 #[test]
 fn selected_check_snapshot_refuses_changes_during_detail_assembly() {
     if !crate::compatibility::is_exitbind() {

@@ -23,8 +23,8 @@ pub(crate) fn binding(
     snapshot: &RunSnapshot,
     next: &Value,
 ) -> Result<String, String> {
-    let goal = crate::session_goal::WorkGoalObservation::acquire(loaded, work);
-    binding_with_goal(loaded, work, snapshot, next, &goal)
+    let mut goal = crate::session_goal::WorkGoalObservation::acquire(loaded, work);
+    binding_with_goal(loaded, work, snapshot, next, &mut goal)
 }
 
 fn binding_with_goal(
@@ -32,7 +32,7 @@ fn binding_with_goal(
     work: &str,
     snapshot: &RunSnapshot,
     next: &Value,
-    goal: &crate::session_goal::WorkGoalObservation,
+    goal: &mut crate::session_goal::WorkGoalObservation<'_>,
 ) -> Result<String, String> {
     // The loaded roots/config and canonical recipient are part of the digest,
     // rather than ambient CWD/PATH or a caller-selected role. A new grant,
@@ -46,7 +46,7 @@ fn binding_with_goal(
         "recipient": {"role": next["role"], "agent": next["agent"],
             "assignment": next["assignment"]},
         "packet": next["packet"],
-        "taskConditions": goal.detail(loaded, work, &next["progress"] )?,
+        "taskConditions": goal.detail(&next["progress"] )?,
         "goalRevision": goal.record()
             .as_ref()
             .map(hash::value),
@@ -145,8 +145,8 @@ pub(super) fn attach(
     snapshot: &RunSnapshot,
     next: &mut Value,
 ) -> Result<(), String> {
-    let goal = crate::session_goal::WorkGoalObservation::acquire(loaded, work);
-    let progress = goal.progress(loaded, work, &next["progress"])?;
+    let mut goal = crate::session_goal::WorkGoalObservation::acquire(loaded, work);
+    let progress = goal.progress(&next["progress"])?;
     next["goalProgress"] = progress.clone();
     next["goalProgress"]["usageAccount"] = crate::session_goal::usage::for_work(loaded, work);
     match crate::session_goal::project_goal_progress_for_work(loaded, work) {
@@ -173,7 +173,7 @@ pub(super) fn attach(
     } else {
         view["subject"].clone()
     };
-    let binding = binding_with_goal(loaded, work, snapshot, next, &goal)?;
+    let binding = binding_with_goal(loaded, work, snapshot, next, &mut goal)?;
     let mut routes = json!({});
     for section in SECTIONS {
         routes[section] = route(loaded, work, &token(&binding, section, 0));
