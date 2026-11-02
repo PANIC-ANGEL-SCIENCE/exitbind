@@ -7,8 +7,8 @@ use crate::{config::Loaded, evidence::hash, run::RunSnapshot};
 use serde_json::{json, Value};
 
 mod native_snapshot;
-pub(crate) use native_snapshot::current_check_command;
 pub(super) use native_snapshot::native_snapshot_facts;
+pub(crate) use native_snapshot::{required_assignment, required_assignment_with_check};
 
 const PAGE_BYTES: usize = 24 * 1024;
 const SMALL_PAGE_BYTES: usize = 4 * 1024;
@@ -485,66 +485,6 @@ pub(super) fn expand(
 
 pub(super) fn is_section(reference: &str) -> bool {
     reference.starts_with(PREFIX)
-}
-
-/// Native delivery consumes the same canonical section as the public scoped
-/// reader. It requires complete instructions; compact status never grants work.
-pub(crate) fn required_assignment(
-    loaded: &Loaded,
-    work: &str,
-    current: &Value,
-) -> Result<Value, String> {
-    let ledger = super::resolve(loaded, work)?;
-    let snapshot = RunSnapshot::capture(loaded, &ledger)?;
-    let fresh = super::next_from(loaded, work, &snapshot)?;
-    if current["current"]["binding"] != fresh["current"]["binding"] {
-        return Err("native current binding changed; refresh before execution".into());
-    }
-    let detail = super::readable::read(loaded, work, &snapshot, &fresh)?;
-    // Native request assembly owns its separate, validated profile read.
-    // A grouped inline-profile fallback is not missing upstream evidence.
-    if !super::readable::evidence_complete(&detail["sections"]["evidence"]) {
-        let item = detail["sections"]["evidence"]["items"]
-            .as_array()
-            .and_then(|items| {
-                items.iter().find_map(|item| {
-                    ["artifact", "stdout", "stderr"].iter().find_map(|key| {
-                        (item[*key].is_object() && item[*key]["readable"] != true).then(|| {
-                            format!(
-                                "{} {} ({})",
-                                item["eventSha256"].as_str().unwrap_or("unknown event"),
-                                key,
-                                item[*key]["reason"].as_str().unwrap_or("unavailable")
-                            )
-                        })
-                    })
-                })
-            })
-            .unwrap_or_else(|| "required evidence".into());
-        let route =
-            crate::emitted::command_line(&["work", "detail", work, "--json"], Some(&loaded.path));
-        return Err(format!("native required evidence {item} is not completely readable; use {route} before provider launch"));
-    }
-    let recipient = &detail["recipientContext"];
-    if recipient["available"] != true || !recipient["rules"].is_array() {
-        // Preserve the existing actionable memory-drift diagnostic when it is
-        // the reason this recipient cannot be safely delivered.
-        crate::memory::contextual::assert_assignment(loaded, &fresh["packet"])?;
-        return Err("current recipient instructions are unavailable for native delivery".into());
-    }
-    let sections = native_sections(
-        detail["sections"].clone(),
-        &detail["actionForms"],
-        &detail["binding"],
-    );
-    Ok(json!({
-        "canonicalAssignment": fresh["packet"],
-        "requiredFactsSha256": hash::value(&sections),
-        "recipientSha256": hash::value(recipient),
-        "recipientRules": recipient["rules"],
-        "sections": sections,
-        "binding": detail["binding"],
-    }))
 }
 
 /// Managed launch and saved-result validation consume the same complete

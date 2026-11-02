@@ -1,6 +1,6 @@
 //! Carry one actually presented child form through its exact governor grant.
 
-use super::{actor_checks, context, load, selected_is_current, text, with_intents};
+use super::{actor_checks, context, load, text, with_intents};
 use crate::{config::Loaded, evidence::hash, work};
 use serde_json::{json, Value};
 
@@ -166,29 +166,27 @@ pub(crate) fn note_delivery(
             return Ok(());
         }
         let work = intent["work"].as_str().ok_or("child work unavailable")?;
+        // This fresh strict context rechecks the selected focus, Work binding
+        // and the same recipient owner after rendering. Keep the independent
+        // canonical permit comparison below after this reconstruction.
         let presented = binding.is_some_and(|expected| {
-            crate::work::details::ensure_action_binding(loaded, work, Some(expected)).is_ok()
-                && selected_is_current(loaded, work, &intent["selected"])
-                && facts.is_some_and(|(required, recipient, instructions, actor, contract)| {
-                    required.len() == 64
-                        && recipient.len() == 64
-                        && instructions.len() == 64
-                        && actor.len() == 64
-                        && contract.len() == 64
-                        && crate::work::current_action(loaded, work)
-                            .and_then(|current| {
-                                crate::work::details::recipient_fingerprint(loaded, &current)
-                            })
-                            .is_ok_and(|current| current == recipient)
-                        && intent["id"]
-                            .as_str()
-                            .and_then(|id| context::host_context(loaded, work, id).ok())
-                            .is_some_and(|current| {
-                                current["requiredInstructionsSha256"] == instructions
-                                    && current["actorFactsSha256"] == actor
-                                    && current["actorContractSha256"] == contract
-                            })
-                })
+            facts.is_some_and(|(required, recipient, instructions, actor, contract)| {
+                required.len() == 64
+                    && recipient.len() == 64
+                    && instructions.len() == 64
+                    && actor.len() == 64
+                    && contract.len() == 64
+                    && intent["id"]
+                        .as_str()
+                        .and_then(|id| context::host_context(loaded, work, id).ok())
+                        .is_some_and(|current| {
+                            current["requiredAssignmentBinding"] == expected
+                                && current["requiredRecipientSha256"] == recipient
+                                && current["requiredInstructionsSha256"] == instructions
+                                && current["actorFactsSha256"] == actor
+                                && current["actorContractSha256"] == contract
+                        })
+            })
         });
         let proof = if presented {
             permit_form.and_then(|form| {

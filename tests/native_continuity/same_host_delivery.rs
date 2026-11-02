@@ -177,6 +177,207 @@ fn legacy_exact_delivery_remains_eligible_after_its_matching_permit() {
     assert!(intent["rawObservation"].is_null(), "{intent}");
 }
 
+// Stop the actual hook while its completed presentation is blocked on stdout.
+// This puts each mutation after rendering and before note_delivery without a
+// timing-based race or a test-only product hook.
+#[cfg(target_os = "linux")]
+struct BlockedStart(Option<std::process::Child>);
+
+#[cfg(target_os = "linux")]
+impl BlockedStart {
+    fn new(fixture: &Fixture) -> Self {
+        use std::os::unix::io::AsRawFd;
+
+        let mut command =
+            super::super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
+        command
+            .arg("hook-run")
+            .current_dir(&fixture.product)
+            .env("EXITBIND_SESSION_GOALS_DIR", &fixture.store)
+            .env("EXITBIND_NO_UPDATE_CHECK", "1")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        let mut owned = Self(Some(command.spawn().unwrap()));
+        let child = owned.0.as_mut().unwrap();
+        let fd = child.stdout.as_ref().unwrap().as_raw_fd();
+        // The child is still waiting for its payload while the pipe is sized.
+        let capacity = unsafe { libc::fcntl(fd, libc::F_SETPIPE_SZ, 4096) };
+        assert_eq!(capacity, 4096, "could not establish bounded output barrier");
+        let payload = json!({"hook_event_name":"SubagentStart","cwd":fixture.product,
+            "session_id":SESSION,"agent_id":CHILD,"agent_type":"sonic"});
+        use std::io::Write;
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(payload.to_string().as_bytes())
+            .unwrap();
+        let mut poll = libc::pollfd {
+            fd,
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        assert_eq!(unsafe { libc::poll(&mut poll, 1, 15_000) }, 1);
+        let mut queued: libc::c_int = 0;
+        assert_eq!(unsafe { libc::ioctl(fd, libc::FIONREAD, &mut queued) }, 0);
+        assert_eq!(
+            queued, capacity,
+            "presentation did not fill the output barrier"
+        );
+        owned
+    }
+
+    fn finish(mut self) -> Output {
+        self.0.take().unwrap().wait_with_output().unwrap()
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for BlockedStart {
+    fn drop(&mut self) {
+        if let Some(child) = self.0.as_mut() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn postrender_changes_refuse_delivery_credit_before_note_delivery() {
+    let profile = PROFILE_BODY.repeat(40);
+    for change in ["rules", "profile", "config", "goal", "focus", "permit"] {
+        let fixture = Fixture::new_with_material(
+            &format!("r60-postrender-{change}"),
+            "true --mode strict",
+            Some("fixture.txt"),
+            &profile,
+            None,
+        );
+        fs::write(
+            fixture.product.join("AGENTS.md"),
+            "Original required rule.\n",
+        )
+        .unwrap();
+        let other = if change == "focus" {
+            let other = fixture.value(
+                Some(SESSION),
+                &[
+                    "work",
+                    "begin",
+                    "change",
+                    "--goal",
+                    "Independent fixture work",
+                    "--check-command",
+                    "true",
+                    "--standalone",
+                ],
+            )["work"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+            fixture.value(Some(SESSION), &["work", "focus", &fixture.work]);
+            Some(other)
+        } else {
+            None
+        };
+        fixture.prepare_sonic();
+        let detail = fixture.value(Some(SESSION), &["work", "detail", &fixture.work, "--json"]);
+        let mut permit = detail["actionForms"]["beforeEditing"]["command"]["argv"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|word| word.as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        for word in &mut permit {
+            if word == "<OPERATION>" {
+                *word = "Update fixture".into();
+            }
+        }
+        let blocked = BlockedStart::new(&fixture);
+        match change {
+            "rules" => fs::write(
+                fixture.product.join("AGENTS.md"),
+                "Changed required rule.\n",
+            )
+            .unwrap(),
+            "profile" => {
+                fs::write(fixture.product.join(super::PROFILE), "Changed profile.\n").unwrap()
+            }
+            "config" => {
+                let path = fixture.product.join("exitbind.json");
+                let mut config: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+                config["agents"]["worker"]["write"] = json!(["different.txt"]);
+                fs::write(path, serde_json::to_vec(&config).unwrap()).unwrap();
+            }
+            "goal" => {
+                fixture.value(
+                    Some(SESSION),
+                    &[
+                        "goal",
+                        "incorporate",
+                        "--goal-id",
+                        "f5b-goal",
+                        "--goal",
+                        "A same-host lens needs no cross-host protocol",
+                        "--obligation",
+                        "A later independent obligation",
+                    ],
+                );
+            }
+            "focus" => {
+                fixture.value(Some(SESSION), &["work", "focus", other.as_deref().unwrap()]);
+            }
+            "permit" => {
+                let output = run(
+                    &permit,
+                    &fixture.product,
+                    &fixture.store,
+                    Some(SESSION),
+                    b"",
+                );
+                assert!(output.status.success(), "{}", text(&output));
+                let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+                assert_eq!(value["allowed"], true);
+            }
+            _ => unreachable!(),
+        }
+        let output = blocked.finish();
+        assert!(output.status.success(), "{change}: {}", text(&output));
+        assert!(
+            output.stdout.len() > 4096,
+            "{change}: output did not exceed the barrier"
+        );
+        let hook: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let presented = hook["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap();
+        assert!(
+            presented.contains("Original required rule."),
+            "{change}: {presented}"
+        );
+        assert!(
+            presented.contains("Automatic Work return. ENTIRE final message"),
+            "{change}: {presented}"
+        );
+        let intent = &fixture.intents().unwrap()[0];
+        assert_eq!(
+            intent["assignmentDelivery"]["state"], "unavailable",
+            "{change}: {intent}"
+        );
+        fixture.hook(
+            json!({"hook_event_name":"SubagentStop","session_id":SESSION,
+            "agent_id":CHILD,"agent_type":"sonic",
+            "last_assistant_message":r#"{"outcome":"completed","summary":"Fixture","reason":""}"#}),
+        );
+        let intent = &fixture.intents().unwrap()[0];
+        assert!(intent["returnEventSha256"].is_null(), "{change}: {intent}");
+        assert!(intent["rawObservation"].is_object(), "{change}: {intent}");
+        assert!(intent.get("pendingReturn").is_none(), "{change}: {intent}");
+    }
+}
+
 #[test]
 fn selected_delivery_refuses_transformed_or_incomplete_required_instructions() {
     let long_phase = "required phase instruction\n".repeat(200);

@@ -3,21 +3,100 @@ use super::{binding, ensure_current_config, native_sections};
 use crate::{config::Loaded, evidence::hash, run::RunSnapshot};
 use serde_json::{json, Value};
 
-/// Read the frozen policy from a fresh snapshot of the same bound action.
-pub(crate) fn current_check_command(
+/// Native delivery consumes the same canonical section as the public scoped
+/// reader. It requires complete instructions; compact status never grants work.
+pub(crate) fn required_assignment(
     loaded: &Loaded,
     work: &str,
-    expected_binding: &str,
+    current: &Value,
 ) -> Result<Value, String> {
-    ensure_current_config(loaded)?;
-    let snapshot = RunSnapshot::capture(loaded, &super::super::resolve(loaded, work)?)?;
-    let current = super::super::next_from(loaded, work, &snapshot)?;
-    if current["current"]["binding"] != expected_binding {
-        return Err(super::stale_action_binding(loaded, work));
-    }
-    check_command(&snapshot)
+    required_assignment_inner(loaded, work, current, false).map(|(assignment, _)| assignment)
 }
 
+/// Selected delivery also needs the exact check policy from this same snapshot.
+pub(crate) fn required_assignment_with_check(
+    loaded: &Loaded,
+    work: &str,
+    current: &Value,
+) -> Result<(Value, Value), String> {
+    let (assignment, check) = required_assignment_inner(loaded, work, current, true)?;
+    Ok((
+        assignment,
+        check.ok_or("native check policy observation is unavailable")?,
+    ))
+}
+
+fn required_assignment_inner(
+    loaded: &Loaded,
+    work: &str,
+    current: &Value,
+    include_check: bool,
+) -> Result<(Value, Option<Value>), String> {
+    let ledger = super::super::resolve(loaded, work)?;
+    let snapshot = RunSnapshot::capture(loaded, &ledger)?;
+    let fresh = super::super::next_from(loaded, work, &snapshot)?;
+    if current["current"]["binding"] != fresh["current"]["binding"] {
+        return Err("native current binding changed; refresh before execution".into());
+    }
+    let detail = super::super::readable::read(loaded, work, &snapshot, &fresh)?;
+    // Native request assembly owns its separate, validated profile read.
+    // A grouped inline-profile fallback is not missing upstream evidence.
+    if !super::super::readable::evidence_complete(&detail["sections"]["evidence"]) {
+        let item = detail["sections"]["evidence"]["items"]
+            .as_array()
+            .and_then(|items| {
+                items.iter().find_map(|item| {
+                    ["artifact", "stdout", "stderr"].iter().find_map(|key| {
+                        (item[*key].is_object() && item[*key]["readable"] != true).then(|| {
+                            format!(
+                                "{} {} ({})",
+                                item["eventSha256"].as_str().unwrap_or("unknown event"),
+                                key,
+                                item[*key]["reason"].as_str().unwrap_or("unavailable")
+                            )
+                        })
+                    })
+                })
+            })
+            .unwrap_or_else(|| "required evidence".into());
+        let route =
+            crate::emitted::command_line(&["work", "detail", work, "--json"], Some(&loaded.path));
+        return Err(format!("native required evidence {item} is not completely readable; use {route} before provider launch"));
+    }
+    let recipient = &detail["recipientContext"];
+    if recipient["available"] != true || !recipient["rules"].is_array() {
+        // Preserve the existing actionable memory-drift diagnostic when it is
+        // the reason this recipient cannot be safely delivered.
+        crate::memory::contextual::assert_assignment(loaded, &fresh["packet"])?;
+        return Err("current recipient instructions are unavailable for native delivery".into());
+    }
+    let sections = native_sections(
+        detail["sections"].clone(),
+        &detail["actionForms"],
+        &detail["binding"],
+    );
+    // The readable owner has already rechecked the current binding and
+    // recipient after assembling these sections. The command comes from the
+    // original validated snapshot, never from the readiness projection.
+    let check = if include_check {
+        Some(check_command(&snapshot)?)
+    } else {
+        None
+    };
+    Ok((
+        json!({
+            "canonicalAssignment": fresh["packet"],
+            "requiredFactsSha256": hash::value(&sections),
+            "recipientSha256": hash::value(recipient),
+            "recipientRules": recipient["rules"],
+            "sections": sections,
+            "binding": detail["binding"],
+        }),
+        check,
+    ))
+}
+
+/// Read the exact frozen check policy from a validated Work snapshot.
 fn check_command(snapshot: &RunSnapshot) -> Result<Value, String> {
     let Some(policy) = snapshot.state().get("checkPolicy") else {
         return Ok(Value::Null);

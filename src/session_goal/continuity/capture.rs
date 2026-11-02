@@ -103,7 +103,17 @@ fn selected_is_current(loaded: &Loaded, work: &str, selected: &Value) -> bool {
     let Ok(view) = crate::work::next(loaded, work) else {
         return false;
     };
-    let next = &view["next"];
+    selected_matches(selected, &view["next"])
+}
+
+/// Check the same selected identity against an already acquired Work view.
+fn selected_matches_current(loaded: &Loaded, work: &str, selected: &Value, next: &Value) -> bool {
+    selected.is_null()
+        || (matches!(crate::work::focus::read(loaded), Ok(crate::work::focus::Focus::Work(current)) if current == work)
+            && selected_matches(selected, next))
+}
+
+fn selected_matches(selected: &Value, next: &Value) -> bool {
     next["action"] == "spawn"
         && next["assignment"] == selected["assignment"]
         && next["packet"]["agent"] == selected["agent"]

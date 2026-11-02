@@ -489,13 +489,9 @@ pub(super) fn evidence_complete(value: &Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn rules_changed_during_actual_detail_assembly_are_refused() {
-        // Grouped current-Work delivery is not a historical Soulmate protocol.
-        if !crate::compatibility::is_exitbind() {
-            return;
-        }
-        let root = crate::test_root::temp("detail-mid-read");
+
+    fn fixture(label: &str, check: &str) -> (crate::test_root::TempRoot, Loaded, String) {
+        let root = crate::test_root::temp(label);
         let mut git = std::process::Command::new("git");
         for key in [
             "GIT_DIR",
@@ -531,7 +527,7 @@ mod tests {
             crate::work::BeginOptions {
                 workflow: "change",
                 goal: "mid-read detail",
-                check_command: "true",
+                check_command: check,
                 boundary: None,
                 harness_receipt: None,
                 proof_origin: None,
@@ -544,15 +540,88 @@ mod tests {
             },
         )
         .unwrap();
-        let work = begun["work"].as_str().unwrap();
+        let work = begun["work"].as_str().unwrap().to_owned();
+        (root, loaded, work)
+    }
+
+    #[test]
+    fn rules_changed_during_actual_detail_assembly_are_refused() {
+        // Grouped current-Work delivery is not a historical Soulmate protocol.
+        if !crate::compatibility::is_exitbind() {
+            return;
+        }
+        let (root, loaded, work) = fixture("detail-mid-read", "true");
         let snapshot =
-            RunSnapshot::capture(&loaded, &crate::work::resolve(&loaded, work).unwrap()).unwrap();
-        let next = crate::work::next_from(&loaded, work, &snapshot).unwrap();
-        let error = read_after_reads(&loaded, work, &snapshot, &next, || {
+            RunSnapshot::capture(&loaded, &crate::work::resolve(&loaded, &work).unwrap()).unwrap();
+        let next = crate::work::next_from(&loaded, &work, &snapshot).unwrap();
+        let error = read_after_reads(&loaded, &work, &snapshot, &next, || {
             std::fs::write(root.join("AGENTS.md"), "after\n").map_err(|e| e.to_string())
         })
         .unwrap_err();
         assert!(error.contains("recipient instructions changed"), "{error}");
-        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn selected_check_snapshot_refuses_changes_during_detail_assembly() {
+        if !crate::compatibility::is_exitbind() {
+            return;
+        }
+        for change in ["ledger", "config", "profile"] {
+            let (root, loaded, work) =
+                fixture(&format!("detail-mid-{change}"), "true --mode strict");
+            let snapshot =
+                RunSnapshot::capture(&loaded, &crate::work::resolve(&loaded, &work).unwrap())
+                    .unwrap();
+            let next = crate::work::next_from(&loaded, &work, &snapshot).unwrap();
+            let (assignment, command) =
+                crate::work::details::required_assignment_with_check(&loaded, &work, &next)
+                    .unwrap();
+            assert_eq!(command, json!("true --mode strict"));
+            assert_eq!(assignment["binding"], next["current"]["binding"]);
+            assert_eq!(
+                assignment["recipientSha256"],
+                json!(crate::work::details::recipient_fingerprint(&loaded, &next).unwrap())
+            );
+            assert_eq!(
+                assignment,
+                crate::work::details::required_assignment(&loaded, &work, &next).unwrap()
+            );
+            let error = read_after_reads(&loaded, &work, &snapshot, &next, || match change {
+                "ledger" => crate::work::return_result_impl::return_result_with(
+                    &loaded,
+                    &work,
+                    next["assignment"].as_str().unwrap(),
+                    "scoped",
+                    None,
+                    None,
+                    None,
+                    Some(b"Scoped fixture work.\n".to_vec()),
+                    None,
+                )
+                .map(|_| ()),
+                "config" => std::fs::write(&loaded.path, format!("{}\n", loaded.source))
+                    .map_err(|error| error.to_string()),
+                "profile" => {
+                    let agent = loaded.agent(next["agent"].as_str().unwrap()).unwrap();
+                    std::fs::write(root.join(&agent.profile), "Changed profile.\n")
+                        .map_err(|error| error.to_string())
+                }
+                _ => unreachable!(),
+            })
+            .unwrap_err();
+            match change {
+                "ledger" => assert!(error.contains("work detail changed"), "{error}"),
+                "config" => assert!(
+                    error.starts_with("configuration ")
+                        && error.contains("during work detail consumption"),
+                    "{error}"
+                ),
+                "profile" => assert!(
+                    error.contains("recipient") && error.contains("changed"),
+                    "{error}"
+                ),
+                _ => unreachable!(),
+            }
+        }
     }
 }

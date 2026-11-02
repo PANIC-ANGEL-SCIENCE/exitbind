@@ -1,7 +1,7 @@
 //! The complete current context of one prepared named child: base profile,
 //! frozen perspectives and the assignment's deliveries, rechecked now.
 
-use super::{adviser, binding_of, load, perspective, selected_is_current, Frozen};
+use super::{adviser, binding_of, load, perspective, selected_matches_current, Frozen};
 use crate::{config::Loaded, evidence::hash};
 use serde_json::{json, Value};
 
@@ -55,7 +55,9 @@ fn context_inner(
     if selected.is_null() {
         return Err("no named assignment was frozen for this child".into());
     }
-    if !selected_is_current(loaded, work, selected) {
+    let current = crate::work::next(loaded, work)
+        .map_err(|_| "child context expired after assignment or profile change")?;
+    if !selected_matches_current(loaded, work, selected, &current["next"]) {
         return Err("child context expired after assignment or profile change".into());
     }
     let agent_id = selected["agent"].as_str().ok_or("invalid selected agent")?;
@@ -72,7 +74,6 @@ fn context_inner(
     let sources: Vec<Frozen> = serde_json::from_value(intent["perspectives"].clone())
         .map_err(|_| "prepared perspectives are malformed")?;
     let perspectives = perspective::current(loaded, &sources)?;
-    let current = crate::work::next(loaded, work)?;
     crate::memory::contextual::assert_assignment(loaded, &current["next"]["packet"])?;
     adviser::validate_requested_binding(
         loaded,
@@ -147,7 +148,19 @@ fn context_inner(
     result["guidance"] = guidance;
     let mut assignment_binding = None;
     if intent["directAssignment"] == true {
-        let delivery = crate::work::details::required_assignment(loaded, work, &current["next"])?;
+        let (delivery, check_command) = if host_delivery && selected_actor && host == "claude" {
+            let (delivery, command) = crate::work::details::required_assignment_with_check(
+                loaded,
+                work,
+                &current["next"],
+            )?;
+            (delivery, Some(command))
+        } else {
+            (
+                crate::work::details::required_assignment(loaded, work, &current["next"])?,
+                None,
+            )
+        };
         result["hostResultContract"] =
             crate::work::action::host_result_contract(loaded, work, &current["next"])?;
         assignment_binding = Some(delivery["binding"].clone());
@@ -179,14 +192,15 @@ fn context_inner(
                     let binding = delivery["binding"]
                         .as_str()
                         .ok_or("native actor binding is unavailable")?;
-                    let check_command =
-                        crate::work::details::current_check_command(loaded, work, binding)?;
+                    let check_command = check_command
+                        .as_ref()
+                        .ok_or("native actor check command is unavailable")?;
                     let selected = crate::host::runtime::selected_actor_projection(
                         loaded,
                         work,
                         binding,
                         &delivery["sections"],
-                        &check_command,
+                        check_command,
                     )?;
                     let (contract, _) =
                         crate::work::action::actor_contract(role, &result["hostResultContract"])?;
