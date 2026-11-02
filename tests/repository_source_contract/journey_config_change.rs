@@ -89,8 +89,37 @@ fn every_member_consumer_reads_the_configuration_through_the_one_admit_rule() {
         "src/session_goal/journey/integration.rs::current_integration_for_project",
         "src/session_goal/journey/readiness.rs::member_currentness",
         "src/session_goal/journey.rs::validate_member_for_session",
-        "src/session_goal/journey/integration/lineage.rs::accepted_endpoint",
+        "src/session_goal/journey/integration/lineage.rs::accepted_endpoint_with",
     ] {
         assert!(functions.contains(consumer), "{consumer}: {functions:#?}");
+    }
+
+    // Both public entry points must return through the shared consumer above.
+    let lineage = &sources
+        .iter()
+        .find(|(file, _)| file == "src/session_goal/journey/integration/lineage.rs")
+        .expect("journey lineage source")
+        .1;
+    for (entry, expected) in [
+        (
+            "accepted_endpoint",
+            "accepted_endpoint_with(selected,member,None)",
+        ),
+        (
+            "accepted_endpoint_observed",
+            "accepted_endpoint_with(selected,member,Some(observation))",
+        ),
+    ] {
+        let function = super::rust_source::function(lineage, entry).expect("endpoint entry point");
+        let code = super::rust_source::blank(function);
+        let body = code
+            .split_once('{')
+            .and_then(|(_, body)| body.rsplit_once('}').map(|(body, _)| body))
+            .expect("endpoint body");
+        let body = body.split_whitespace().collect::<String>();
+        assert_eq!(
+            body, expected,
+            "{entry} must return through the shared reader"
+        );
     }
 }
