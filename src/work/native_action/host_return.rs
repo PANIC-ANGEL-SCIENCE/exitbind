@@ -132,8 +132,10 @@ pub(crate) fn actor_contract(role: &str, contract: &Value) -> Result<(String, Va
     } else {
         ""
     };
+    // Validate a complete exemplar against the canonical validator, then expose
+    // an incomplete scaffold that cannot itself be submitted as a result.
     let mut template =
-        json!({"outcome":first,"summary":"Replace with the actual result","reason":first_reason});
+        json!({"outcome":first,"summary":"contract validation","reason":first_reason});
     if reviewer {
         template["evidenceReferences"] = contract["requiredEvidenceReferences"].clone();
     } else if !contract["requiredEvidenceReferences"].is_null() {
@@ -144,6 +146,8 @@ pub(crate) fn actor_contract(role: &str, contract: &Value) -> Result<(String, Va
         .filter(|guidance| *guidance == super::result::TEXT_GUIDANCE)
         .ok_or("native result text guidance is unavailable")?;
     super::result::validate_final_result(role, &template)?;
+    template["outcome"] = json!("");
+    template["summary"] = json!("");
     let mut text = format!(
         "Automatic Work return. ENTIRE final message: this JSON object only; no prose, fence or extra fields. Template: {template}. Fill actual outcome, summary and reason. Outcomes: {}. {guidance}",
         serde_json::to_string(outcomes).map_err(|error| error.to_string())?,
@@ -263,6 +267,12 @@ mod tests {
             assert!(text.contains("ENTIRE final message"));
             assert!(text.contains(&template.to_string()));
             assert!(text.contains(super::super::result::TEXT_GUIDANCE));
+            assert_eq!(template["outcome"], "");
+            assert_eq!(template["summary"], "");
+            assert!(parse_result(role, &template.to_string()).is_err());
+            let mut summary_only = template.clone();
+            summary_only["summary"] = json!("Actual result");
+            assert!(parse_result(role, &summary_only.to_string()).is_err());
             for outcome in canonical["schema"]["properties"]["outcome"]["enum"]
                 .as_array()
                 .unwrap()
@@ -271,31 +281,66 @@ mod tests {
                 let reasons = if role == "reviewer" {
                     super::super::result::reviewer_reasons(name).unwrap()
                 } else {
-                    &[""][..]
+                    &["", "Actual reason"][..]
                 };
                 assert!(text.contains(&outcome.to_string()));
+                let mut outcome_only = template.clone();
+                outcome_only["outcome"] = outcome.clone();
+                assert!(parse_result(role, &outcome_only.to_string()).is_err());
                 for reason in reasons {
                     let mut selected = template.clone();
                     selected["outcome"] = outcome.clone();
+                    selected["summary"] = json!("Actual result");
                     selected["reason"] = json!(reason);
                     assert!(parse_result(role, &selected.to_string()).is_ok());
+                    if role == "reviewer" {
+                        let expected = vec![json!("ref:first"), json!("ref:second")];
+                        assert!(validate_references(&selected, &expected).is_ok());
+                    }
+                }
+                if role == "reviewer" {
+                    for reason in canonical["schema"]["properties"]["reason"]["enum"]
+                        .as_array()
+                        .unwrap()
+                    {
+                        let mut selected = template.clone();
+                        selected["outcome"] = outcome.clone();
+                        selected["summary"] = json!("Actual result");
+                        selected["reason"] = reason.clone();
+                        assert_eq!(
+                            parse_result(role, &selected.to_string()).is_ok(),
+                            reasons.contains(&reason.as_str().unwrap()),
+                            "outcome {name}, reason {reason}"
+                        );
+                    }
                 }
             }
-            let mut missing = template.clone();
+            let mut completed = template.clone();
+            completed["outcome"] = canonical["schema"]["properties"]["outcome"]["enum"][0].clone();
+            completed["summary"] = json!("Actual result");
+            assert!(parse_result(role, &completed.to_string()).is_ok());
+            let mut missing = completed.clone();
             missing.as_object_mut().unwrap().remove("reason");
             assert!(parse_result(role, &missing.to_string()).is_err());
-            let mut extra = template.clone();
+            let mut extra = completed.clone();
             extra["extra"] = json!(true);
             assert!(parse_result(role, &extra.to_string()).is_err());
-            let mut invalid = template.clone();
+            let mut invalid = completed.clone();
             invalid["outcome"] = json!("not-an-outcome");
             assert!(parse_result(role, &invalid.to_string()).is_err());
-            assert!(parse_result(role, &format!("prose\n{template}")).is_err());
+            assert!(parse_result(role, &format!("prose\n{completed}")).is_err());
         }
-        let (_, reviewer) = actor_contract("reviewer", &canonical("reviewer")).unwrap();
+        let (_, mut reviewer) = actor_contract("reviewer", &canonical("reviewer")).unwrap();
+        reviewer["outcome"] = json!("approved");
+        reviewer["summary"] = json!("Reviewed current evidence");
+        assert!(parse_result("reviewer", &reviewer.to_string()).is_ok());
         assert!(parse_result("worker", &reviewer.to_string()).is_err());
         let expected = vec![json!("ref:first"), json!("ref:second")];
         assert!(validate_references(&reviewer, &expected).is_ok());
+        let mut missing_reference = reviewer.clone();
+        missing_reference["evidenceReferences"] = json!(["ref:first"]);
+        assert!(parse_result("reviewer", &missing_reference.to_string()).is_ok());
+        assert!(validate_references(&missing_reference, &expected).is_err());
         let mut reversed = reviewer;
         reversed["evidenceReferences"] = json!(["ref:second", "ref:first"]);
         assert!(parse_result("reviewer", &reversed.to_string()).is_ok());
