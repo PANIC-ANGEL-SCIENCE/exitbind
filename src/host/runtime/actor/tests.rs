@@ -95,6 +95,19 @@ fn selected_actor_keeps_exact_late_facts_and_the_canonical_action() {
     assert_eq!(actor["governor"]["noInformationStreak"], 1);
     assert_eq!(actor["governor"]["noInformationLimit"], 2);
     assert!(actor.get("artifactPathHint").is_none());
+    assert!(actor.get("currentStatus").is_none());
+    let mut different_route = original;
+    different_route["assignment"]["residual"]["humanHelp"]["nextAction"]["command"]["args"][2] =
+        json!("another-work");
+    let actor = project_sections(
+        "work-a",
+        "binding-a",
+        &different_route,
+        &route,
+        &json!("sh verify.sh --mode strict"),
+    )
+    .unwrap();
+    assert!(actor["currentStatus"].is_object());
 }
 
 #[test]
