@@ -28,11 +28,12 @@ struct GoalProjectionContext<'a> {
     project_selected: bool,
 }
 
-/// Journey progress is reusable only for the exact record, configuration and
-/// Work that supplied the rechecked physical observation.
+/// Journey progress stays within the exact record, configuration and Work
+/// that supplied the observation or the legacy local absence projection.
 #[derive(Default)]
 pub(super) struct JourneyObservation {
     work: Option<String>,
+    local_goal: bool,
     key: Option<JourneyKey>,
     observed: Option<super::journey::WorkJourney>,
     error: Option<String>,
@@ -55,9 +56,10 @@ struct JourneyConfig {
 }
 
 impl JourneyObservation {
-    pub(super) fn for_work(work: &str) -> Self {
+    pub(super) fn for_work(work: &str, local_goal: bool) -> Self {
         Self {
             work: Some(work.to_owned()),
+            local_goal,
             ..Self::default()
         }
     }
@@ -85,10 +87,10 @@ impl JourneyObservation {
         }
         match (loaded, self.work.as_deref()) {
             (Some(loaded), Some(work)) => {
-                match super::journey::observe_work(loaded, record, work) {
+                match super::journey::observe_work(loaded, record, work, self.local_goal) {
                     Ok(observed) => {
                         let value = observed.value();
-                        if observed.reusable() {
+                        if observed.keep_in_projection() {
                             self.observed = Some(observed);
                         }
                         value
@@ -453,7 +455,7 @@ pub(super) fn compare_close_routes(
     work: &str,
     root: &std::path::Path,
 ) -> Result<(Option<Value>, Option<Value>, bool), String> {
-    let mut observation = JourneyObservation::for_work(work);
+    let mut observation = JourneyObservation::for_work(work, false);
     observation.progress(Some(loaded), observed_record);
     observation.status()?;
     let observed = observation
@@ -481,7 +483,7 @@ pub(super) fn finish_after_close_route_change(
     root: &std::path::Path,
     change: impl FnOnce(),
 ) -> Result<(), String> {
-    let mut observation = JourneyObservation::for_work(work);
+    let mut observation = JourneyObservation::for_work(work, false);
     observation.progress(Some(loaded), record);
     observation.status()?;
     let observed = observation
@@ -730,6 +732,10 @@ fn task_current(loaded: Option<&Loaded>, record: &Value, item: &Value) -> Option
     }
     Some(current)
 }
+
+#[cfg(all(test, unix))]
+#[path = "progress/local_history_tests.rs"]
+mod local_history_tests;
 
 #[cfg(test)]
 mod tests {

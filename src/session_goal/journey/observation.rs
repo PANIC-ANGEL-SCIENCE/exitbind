@@ -60,6 +60,7 @@ impl Witness {
 enum JourneyResult {
     Observed(Readiness),
     Fresh(Option<Value>),
+    LocalHistoryUnavailable,
 }
 
 pub(in crate::session_goal) struct WorkJourney {
@@ -76,11 +77,12 @@ impl WorkJourney {
         match &self.result {
             JourneyResult::Observed(readiness) => Some(readiness.value()),
             JourneyResult::Fresh(value) => value.clone(),
+            JourneyResult::LocalHistoryUnavailable => None,
         }
     }
 
-    pub(in crate::session_goal) fn reusable(&self) -> bool {
-        self.witness.is_some()
+    pub(in crate::session_goal) fn keep_in_projection(&self) -> bool {
+        self.witness.is_some() || matches!(&self.result, JourneyResult::LocalHistoryUnavailable)
     }
 
     /// Reuse only a negative result from this exact Work projection. The
@@ -143,6 +145,17 @@ fn fresh(loaded: &Loaded, record: &Value) -> WorkJourney {
     }
 }
 
+fn absent_before_observation() -> WorkJourney {
+    WorkJourney {
+        result: JourneyResult::LocalHistoryUnavailable,
+        witness: None,
+        #[cfg(test)]
+        used_fresh: false,
+        #[cfg(test)]
+        used_blocked_close_route: std::cell::Cell::new(false),
+    }
+}
+
 /// Discover the selected Work's chain in the original member traversal.
 /// Unsupported shapes take the unchanged reader after rechecking the facts
 /// already observed; ordinary validation errors keep their original result.
@@ -150,12 +163,21 @@ pub(in crate::session_goal) fn observe_work(
     loaded: &Loaded,
     record: &Value,
     work: &str,
+    local_goal: bool,
 ) -> Result<WorkJourney, String> {
     if !cfg!(unix) {
         return Ok(fresh(loaded, record));
     }
-    let Some((scope, current)) = super::readiness::belongs_to_current_session(loaded, record)?
-    else {
+    let association = match super::readiness::belongs_to_current_session(loaded, record) {
+        Ok(association) => association,
+        // A separately bound local Goal keeps its legacy absent-journey view
+        // when the unrelated ambient native history cannot first be read.
+        Err(super::readiness::SessionLookupError::History(_)) if local_goal => {
+            return Ok(absent_before_observation());
+        }
+        Err(error) => return Err(error.into_message()),
+    };
+    let Some((scope, current)) = association else {
         return Ok(fresh(loaded, record));
     };
     if super::super::association::public_record(record) != current {

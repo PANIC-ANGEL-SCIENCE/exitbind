@@ -202,15 +202,15 @@ impl<'a> WorkGoalObservation<'a> {
         work: &'a str,
         association: super::association::WorkContextResolution,
     ) -> Self {
-        let local_record = matches!(&association.context, super::association::WorkContext::Local)
-            .then(|| read(&loaded.state_root));
+        let local_goal = matches!(&association.context, super::association::WorkContext::Local);
+        let local_record = local_goal.then(|| read(&loaded.state_root));
         Self {
             loaded,
             work,
             context: association.context,
             owner_root: association.owner_root,
             local_record,
-            journey: progress::JourneyObservation::for_work(work),
+            journey: progress::JourneyObservation::for_work(work, local_goal),
         }
     }
 

@@ -112,3 +112,88 @@ fn malformed_native_selector_remains_diagnosable() {
     );
     fs::remove_dir_all(root).unwrap();
 }
+
+#[cfg(unix)]
+#[test]
+fn local_work_view_survives_unreadable_ambient_session_history() {
+    let root = project("local-goal-ambient-history");
+    let started = invoke(
+        &root,
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "Deliver the scoped result",
+            "--check-command",
+            "true",
+            "--review-policy",
+            "required",
+            "--json",
+        ],
+        None,
+    );
+    let work = started["work"].as_str().unwrap();
+    invoke(
+        &root,
+        &[
+            "goal",
+            "incorporate",
+            "--project",
+            "--goal-id",
+            work,
+            "--goal",
+            "The local goal",
+            "--obligation",
+            "Complete the scoped result",
+            "--json",
+        ],
+        None,
+    );
+    let session = Some("local-goal-ambient-history");
+    invoke(
+        &root,
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "separate-native-goal",
+            "--goal",
+            "A separate ambient native Goal",
+            "--obligation",
+            "Retain the native Goal",
+            "--json",
+        ],
+        session,
+    );
+    let before = invoke(&root, &["work", "detail", work, "--json"], session);
+    assert_eq!(before["sections"]["tasks"]["goal"], "The local goal");
+    assert!(before["sections"]["tasks"]
+        .get("journeyCompletion")
+        .is_none());
+    let before_next = invoke(&root, &["work", "next", work, "--json"], session);
+
+    let sessions: Vec<_> = fs::read_dir(root.join("sessions"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.is_dir())
+        .collect();
+    assert_eq!(sessions.len(), 1, "{sessions:?}");
+    let history = sessions[0].join(".exitbind/session-goal.jsonl");
+    fs::write(&history, b"invalid disposable session goal history\n").unwrap();
+
+    let after = invoke(&root, &["work", "detail", work, "--json"], session);
+    assert_eq!(after["valid"], true);
+    assert_eq!(after["complete"], true);
+    assert_eq!(after["sections"]["tasks"], before["sections"]["tasks"]);
+    let after_next = invoke(&root, &["work", "next", work, "--json"], session);
+    assert_eq!(
+        after_next["next"]["assignment"],
+        before_next["next"]["assignment"]
+    );
+    assert_eq!(
+        fs::read(history).unwrap(),
+        b"invalid disposable session goal history\n"
+    );
+    fs::remove_dir_all(root).unwrap();
+}

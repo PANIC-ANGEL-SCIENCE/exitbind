@@ -93,7 +93,7 @@ pub(crate) fn compare_test_journey(
     work: &str,
 ) -> Result<(Option<Value>, Option<Value>, bool), String> {
     let fresh = journey::progress_for_record(Some(loaded), record);
-    let observed = journey::observe_work(loaded, record, work)?;
+    let observed = journey::observe_work(loaded, record, work, false)?;
     let value = observed.value();
     let used_fresh = observed.used_fresh();
     observed.finish(loaded)?;

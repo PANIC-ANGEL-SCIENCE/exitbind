@@ -303,25 +303,37 @@ pub(super) fn readiness_for_state_inner(
     }
 }
 
+pub(super) enum SessionLookupError {
+    Scope(String),
+    History(String),
+}
+
+impl SessionLookupError {
+    pub(super) fn into_message(self) -> String {
+        match self {
+            Self::Scope(error) | Self::History(error) => error,
+        }
+    }
+}
+
 pub(super) fn belongs_to_current_session(
     loaded: &Loaded,
     record: &Value,
-) -> Result<Option<(super::super::native::Scope, Value)>, String> {
-    let scope = super::super::native::scope(loaded, false)?;
+) -> Result<Option<(super::super::native::Scope, Value)>, SessionLookupError> {
+    let scope = super::super::native::scope(loaded, false).map_err(SessionLookupError::Scope)?;
     if !scope.is_session() || !scope.owner_matches {
         return Ok(None);
     }
-    let history = super::super::records(&scope.root)?;
+    let history = super::super::records(&scope.root).map_err(SessionLookupError::History)?;
     if !history
         .iter()
         .any(|item| item["eventSha256"] == record["eventSha256"])
     {
         return Ok(None);
     }
-    let current = history
-        .last()
-        .cloned()
-        .ok_or("native session Goal history is empty")?;
+    let current = history.last().cloned().ok_or_else(|| {
+        SessionLookupError::History("native session Goal history is empty".into())
+    })?;
     Ok(Some((scope, current)))
 }
 
@@ -331,7 +343,9 @@ pub(crate) fn readiness_for_record(
     loaded: &Loaded,
     record: &Value,
 ) -> Result<Option<Readiness>, String> {
-    let Some((_scope, current)) = belongs_to_current_session(loaded, record)? else {
+    let Some((_scope, current)) =
+        belongs_to_current_session(loaded, record).map_err(SessionLookupError::into_message)?
+    else {
         return Ok(None);
     };
     if current["goalId"] != record["goalId"] {
