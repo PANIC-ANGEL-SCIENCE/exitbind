@@ -83,7 +83,7 @@ pub(super) fn scoped_help(command: &str, positional: &[String]) -> Option<String
             "work child WORK ASSIGNMENT --context TOKEN --native-child ID [--result TEXT] < RESULT"
         }
         ["work", "child", "prepare"] => {
-            "work child prepare WORK SHORT_ASSIGNMENT [--context TOKEN] [--agent-type NAME] [--perspectives JSON] [--current-binding SHA] (without --context: the native session that holds the Work; work next prints this route as next.prepareChild)"
+            "work child prepare WORK SHORT_ASSIGNMENT [--context TOKEN] [--agent-type NAME] [--perspectives JSON] [--current-binding SHA] [--retry-of INTENT] (without --context: the native session that holds the Work; work next prints this route as next.prepareChild)"
         }
         ["work", "child", "context"] => "work child context WORK INTENT [--view result] | work child context WORK --view results [--index N] (result expands an exact uncredited host observation; results pages its metadata)",
         ["work", "child", "recover"] => {

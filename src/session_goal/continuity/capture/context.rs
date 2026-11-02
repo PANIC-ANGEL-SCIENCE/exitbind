@@ -161,6 +161,13 @@ fn context_inner(
                 None,
             )
         };
+        super::reviewer_retry::ensure_fence(
+            loaded,
+            work,
+            &intent,
+            &delivery["binding"],
+            &delivery["sections"],
+        )?;
         result["hostResultContract"] =
             crate::work::action::host_result_contract(loaded, work, &current["next"])?;
         assignment_binding = Some(delivery["binding"].clone());

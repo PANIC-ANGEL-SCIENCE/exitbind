@@ -143,6 +143,27 @@ intent is `failed` with the final message retained; once the session holds
 the Work again, `work child recover WORK INTENT` without `--context`, run from
 that session, records it the same way. Another session, or none, is refused.
 
+If a same-session read-only reviewer ended after its assignment delivery could
+not be recorded, `work next` may offer a `--retry-of INTENT` preparation route.
+It requires the current reviewer, subject, tested inputs, configuration and
+passing observed check to remain current. The earlier observation stays
+uncredited; a distinct child must receive a complete new presentation and
+return its own typed result. A retry rejects the failed child ID and IDs still
+retained for that session. Earlier IDs removed by old cleanup are unavailable;
+host-reported IDs remain correlation data, not authentication.
+
+The first such retry upgrades this state root's child-intent container to
+version 2 after other children are known ended. Older Exitbind readers reject
+prepared-child intent operations and automatic callbacks on that container;
+use a version that supports it. The separate legacy cross-host child recorder
+does not read this container and is not fenced by its version. The filesystem
+must support synchronizing the intent directory. If synchronization fails,
+the version 2 update is not acknowledged; inspect the current child state
+before proceeding. If a retry return may have been appended but its delivery
+record was not saved,
+inspect the current Work: automatic attribution stays unknown and is not
+replayed from matching result bytes.
+
 `work child WORK SHORT_ASSIGNMENT --context FRESH_TOKEN --native-child CHILD_ID`
 accepts exact UTF-8 text from standard input or `--result`; run the bind
 reply's read-only `nextAction.command` to obtain a fresh token. The CLI

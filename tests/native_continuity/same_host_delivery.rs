@@ -181,11 +181,15 @@ fn legacy_exact_delivery_remains_eligible_after_its_matching_permit() {
 // This puts each mutation after rendering and before note_delivery without a
 // timing-based race or a test-only product hook.
 #[cfg(target_os = "linux")]
-struct BlockedStart(Option<std::process::Child>);
+pub(super) struct BlockedStart(Option<std::process::Child>);
 
 #[cfg(target_os = "linux")]
 impl BlockedStart {
     fn new(fixture: &Fixture) -> Self {
+        Self::for_child(fixture, CHILD, "sonic")
+    }
+
+    pub(super) fn for_child(fixture: &Fixture, child_id: &str, agent_type: &str) -> Self {
         use std::os::unix::io::AsRawFd;
 
         let mut command =
@@ -205,7 +209,7 @@ impl BlockedStart {
         let capacity = unsafe { libc::fcntl(fd, libc::F_SETPIPE_SZ, 4096) };
         assert_eq!(capacity, 4096, "could not establish bounded output barrier");
         let payload = json!({"hook_event_name":"SubagentStart","cwd":fixture.product,
-            "session_id":SESSION,"agent_id":CHILD,"agent_type":"sonic"});
+            "session_id":SESSION,"agent_id":child_id,"agent_type":agent_type});
         use std::io::Write;
         child
             .stdin
@@ -228,7 +232,7 @@ impl BlockedStart {
         owned
     }
 
-    fn finish(mut self) -> Output {
+    pub(super) fn finish(mut self) -> Output {
         self.0.take().unwrap().wait_with_output().unwrap()
     }
 }

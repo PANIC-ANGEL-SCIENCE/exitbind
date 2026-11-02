@@ -34,6 +34,8 @@ const RESULT: &str = "Implemented; evidence attached.\n";
 mod delivery;
 #[path = "same_host_recover.rs"]
 mod recover;
+#[path = "same_host_retry.rs"]
+mod retry;
 #[path = "same_host_reviewer.rs"]
 mod reviewer;
 
@@ -98,6 +100,17 @@ impl Fixture {
         profile: &str,
         phase: Option<(&str, Option<&str>)>,
     ) -> Self {
+        Self::new_with_reviewer_write(name, check, write, profile, phase, None)
+    }
+
+    fn new_with_reviewer_write(
+        name: &str,
+        check: &str,
+        write: Option<&str>,
+        profile: &str,
+        phase: Option<(&str, Option<&str>)>,
+        reviewer_write: Option<&str>,
+    ) -> Self {
         let base = super::support::temp(name);
         let product = base.join("product");
         let store = base.join("session-goals");
@@ -124,6 +137,9 @@ impl Fixture {
         config["agents"]["worker"]["nativeName"] = json!("sonic");
         if let Some(path) = write {
             config["agents"]["worker"]["write"] = json!([path]);
+        }
+        if let Some(path) = reviewer_write {
+            config["agents"]["reviewer"]["write"] = json!([path]);
         }
         if let Some((path, body)) = phase {
             config["agents"]["worker"]["phaseGuidance"] =

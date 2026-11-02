@@ -92,6 +92,42 @@ pub(crate) fn read(loaded: &Loaded, work: &str, id: &str) -> Result<Value, Strin
             return Err("captured observation belongs to a different receiving binding".into());
         }
     }
+    let text = verified_text(loaded, &intent)?;
+    let raw = &intent["rawObservation"];
+    let mut result = json!({"work":work,"intent":id,"resultText":text,"resultSha256":raw["sha256"],
+        "bytes":text.len(),"credit":"none","reason":raw["reason"],
+        "sourceClass":"host_reported_native_child"});
+    if raw["diagnostic"].is_object() {
+        result["diagnostic"] = raw["diagnostic"].clone();
+    }
+    Ok(result)
+}
+
+/// Verify raw bytes for an independently verified receiving binding. Unlike
+/// the public reader, a host callback has a scoped session rather than an
+/// ambient session selector, so it must first match the current Work owner.
+pub(super) fn verified_for_binding(
+    loaded: &Loaded,
+    work: &str,
+    intent: &Value,
+    receiving: &Value,
+) -> Result<Value, String> {
+    if intent["receiving"] != super::same_host::RECEIVING {
+        return Err("retry observation is not a same-host child".into());
+    }
+    let (_, current) = super::binding_of(loaded, work, intent)?;
+    if current != *receiving
+        || intent["session"] != current["session"]
+        || intent["host"] != current["host"]
+        || intent["bindingRevision"] != current["revision"]
+    {
+        return Err("captured observation belongs to a different receiving binding".into());
+    }
+    let text = verified_text(loaded, intent)?;
+    Ok(json!(hash::text(&text)))
+}
+
+fn verified_text(loaded: &Loaded, intent: &Value) -> Result<String, String> {
     let raw = &intent["rawObservation"];
     let bytes = if raw["artifact"].is_object() {
         crate::run::artifact::read_exact(
@@ -107,18 +143,12 @@ pub(crate) fn read(loaded: &Loaded, work: &str, id: &str) -> Result<Value, Strin
             .as_bytes()
             .to_vec()
     };
-    let text = std::str::from_utf8(&bytes).map_err(|_| "captured host observation is not UTF-8")?;
-    if raw["sha256"] != hash::text(text)
+    let text = String::from_utf8(bytes).map_err(|_| "captured host observation is not UTF-8")?;
+    if raw["sha256"] != hash::text(&text)
         || intent["resultSha256"] != raw["sha256"]
-        || raw["bytes"].as_u64() != Some(bytes.len() as u64)
+        || raw["bytes"].as_u64() != Some(text.len() as u64)
     {
         return Err("captured raw observation changed".into());
     }
-    let mut result = json!({"work":work,"intent":id,"resultText":text,"resultSha256":raw["sha256"],
-        "bytes":text.len(),"credit":"none","reason":raw["reason"],
-        "sourceClass":"host_reported_native_child"});
-    if raw["diagnostic"].is_object() {
-        result["diagnostic"] = raw["diagnostic"].clone();
-    }
-    Ok(result)
+    Ok(text)
 }

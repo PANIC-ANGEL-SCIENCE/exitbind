@@ -178,12 +178,17 @@ pub(crate) fn route(loaded: &Loaded, work: &str, next: &Value) -> Option<Value> 
     let next = &next["next"];
     let assignment = next["assignment"].as_str()?;
     let native = next["packet"]["nativeTaskName"].as_str()?;
-    if next["action"] != "spawn"
-        || current(loaded, work).is_err()
-        || !super::can_prepare(loaded, work, assignment)
-    {
+    if next["action"] != "spawn" {
         return None;
     }
+    let receiving = current(loaded, work).ok()?;
+    let retry = if super::can_prepare(loaded, work, assignment) {
+        None
+    } else {
+        Some(super::reviewer_retry::route(
+            loaded, work, next, &receiving,
+        )?)
+    };
     let mut suffix = crate::emitted::Route::new([
         "work",
         "child",
@@ -195,6 +200,11 @@ pub(crate) fn route(loaded: &Loaded, work: &str, next: &Value) -> Option<Value> 
     ]);
     if let Some(binding) = next["current"]["binding"].as_str() {
         suffix = suffix.words(["--current-binding", binding]);
+    } else if retry.is_some() {
+        return None;
+    }
+    if let Some(old_id) = retry {
+        suffix = suffix.words(["--retry-of", &old_id]);
     }
     let (lenses, mut omitted) = lenses(loaded);
     let ids = lenses.iter().map(|(id, _)| id.clone()).collect::<Vec<_>>();

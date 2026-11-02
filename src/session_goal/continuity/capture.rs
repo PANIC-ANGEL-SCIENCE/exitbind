@@ -27,6 +27,8 @@ mod raw;
 mod recovery;
 #[path = "capture/return_result.rs"]
 mod return_result;
+#[path = "capture/reviewer_retry.rs"]
+mod reviewer_retry;
 #[path = "capture/same_host.rs"]
 mod same_host;
 #[path = "capture/storage.rs"]
@@ -147,6 +149,7 @@ fn continuation(loaded: &Loaded, work: &str) -> String {
 pub(crate) struct PrepareFence<'a> {
     pub(crate) continuation: Option<(u64, u64)>,
     pub(crate) action: Option<&'a str>,
+    pub(crate) retry_of: Option<&'a str>,
 }
 
 pub(crate) fn prepare(
@@ -159,12 +162,18 @@ pub(crate) fn prepare(
     replace: bool,
 ) -> Result<Value, String> {
     let assignment = bounded(assignment, "assignment", MAX_ASSIGNMENT)?;
+    let retry_of = fence.retry_of;
+    if retry_of.is_some() && (fence.continuation.is_some() || fence.action.is_none() || replace) {
+        return Err(
+            "reviewer retry requires the same-host current-binding route without --replace".into(),
+        );
+    }
     let agent_type = agent_type
         .map(|value| bounded(value, "agent type", MAX_AGENT_TYPE))
         .transpose()?;
     let perspectives = perspective::freeze(loaded, perspectives)?;
     crate::work::launch_fence::with_live_work(loaded, work, || {
-        with_intents(loaded, |intents| {
+        let prepare = |intents: &mut Vec<Value>| {
             let (binding, binding_revision) = match fence.continuation {
                 Some((expected_revision, binding_revision)) => {
                     let (goal, binding) = current_binding(loaded, work)?;
@@ -204,7 +213,8 @@ pub(crate) fn prepare(
                 && view["next"]["assignment"].as_str() == Some(assignment)
                 && agent_type.is_some()
                 && view["next"]["packet"]["nativeTaskName"].as_str() == agent_type;
-            if direct_assignment && direct_started(intents, work, assignment) {
+            if direct_assignment && retry_of.is_none() && direct_started(intents, work, assignment)
+            {
                 return Err("this named assignment already started a native child; inspect its captured result or follow the current Work instead of launching it again".into());
             }
             if let Some(expected) = fence.action {
@@ -291,10 +301,28 @@ pub(crate) fn prepare(
             if !specialist_binding.is_null() {
                 intent["specialistBinding"] = specialist_binding;
             }
+            if let Some(old_id) = retry_of {
+                if !direct_assignment {
+                    return Err("reviewer retry requires the current direct assignment".into());
+                }
+                let retry_fence = reviewer_retry::admission(
+                    loaded,
+                    work,
+                    &view["next"],
+                    &binding,
+                    old_id,
+                    intents,
+                )?;
+                intent["retryOf"] = json!(old_id);
+                intent["retryFence"] = retry_fence;
+            }
             if fence.continuation.is_none() {
                 intent["receiving"] = json!(same_host::RECEIVING);
             }
             let id = hash::value(&intent);
+            if let Some(old_id) = retry_of {
+                reviewer_retry::once(intents, old_id, &id)?;
+            }
             let mut effect = "prepared";
             let mut superseded = Vec::new();
             // A prepared intent of this work under an older binding can never be
@@ -340,7 +368,12 @@ pub(crate) fn prepare(
                 "perspectives": perspectives,
                 "next": format!("Launch the native child normally; the next compatible subagent this session starts is the one captured. Then read `{next}`."),
             }))
-        })
+        };
+        if retry_of.is_some() {
+            storage::with_retry_intents(loaded, prepare)
+        } else {
+            with_intents(loaded, prepare)
+        }
     })
 }
 
@@ -358,6 +391,20 @@ fn claimable(intent: &Value, session: &str, agent_type: Option<&str>) -> bool {
 
 fn same_observed_agent_type(intent: &Value, agent_type: Option<&str>) -> bool {
     intent["observedAgentType"].as_str() == agent_type
+}
+
+fn observed_child(intents: &[Value], session: &str, child: &str) -> bool {
+    intents
+        .iter()
+        .any(|intent| intent["session"] == session && intent["nativeChild"] == child)
+}
+
+fn existing_retry_child(intents: &[Value], session: &str, child: &str) -> bool {
+    intents.iter().any(|intent| {
+        intent["session"] == session
+            && intent["nativeChild"] == child
+            && reviewer_retry::has_marker(intent)
+    })
 }
 
 fn rejected<'a>(
@@ -395,6 +442,9 @@ pub(crate) fn claim(
     let agent_type = text(payload, "agent_type");
     // Ordinary subagents without a prepared intent cost one read, no write.
     let intents = load(loaded)?;
+    if existing_retry_child(&intents, session, child) {
+        return Ok(None);
+    }
     // A rejected child identity stays rejected even if another intent was
     // prepared for the same receiving session before a duplicate hook event.
     if let Some(intent) = rejected(&intents, session, child, agent_type) {
@@ -407,6 +457,11 @@ pub(crate) fn claim(
     let [candidate] = candidates.as_slice() else {
         return Ok(None);
     };
+    if reviewer_retry::marker(candidate)?.is_some() && observed_child(&intents, session, child) {
+        return Ok(Some(
+            "reviewer retry requires a distinct unobserved child identity".into(),
+        ));
+    }
     let selected_work = candidate["work"]
         .as_str()
         .ok_or("prepared child Work identity is unavailable")?
@@ -415,6 +470,9 @@ pub(crate) fn claim(
         with_intents(loaded, |intents| {
             // Re-read under the mutation lock. A concurrent callback may have
             // abandoned this child after the preliminary load above.
+            if existing_retry_child(intents, session, child) {
+                return Ok(None);
+            }
             if let Some(intent) = rejected(intents, session, child, agent_type) {
                 return Ok(Some(rejection_reason(intent)));
             }
@@ -427,6 +485,13 @@ pub(crate) fn claim(
             let [index] = matches[..] else {
                 return Ok(None);
             };
+            if reviewer_retry::marker(&intents[index])?.is_some()
+                && observed_child(intents, session, child)
+            {
+                return Ok(Some(
+                    "reviewer retry requires a distinct unobserved child identity".into(),
+                ));
+            }
             let work = intents[index]["work"]
                 .as_str()
                 .unwrap_or_default()

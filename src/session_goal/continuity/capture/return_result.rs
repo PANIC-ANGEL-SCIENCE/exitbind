@@ -145,10 +145,12 @@ pub(super) fn retain_raw(
 /// never by executing the child again.
 pub(super) fn process(loaded: &Loaded, id: &str) -> Result<Value, String> {
     super::with_intents(loaded, |intents| {
-        let intent = intents
-            .iter_mut()
-            .find(|intent| intent["id"] == id)
+        let index = intents
+            .iter()
+            .position(|intent| intent["id"] == id)
             .ok_or("prepared child intent is unknown")?;
+        let intent = &mut intents[index];
+        let retry = super::reviewer_retry::marker(intent)?.is_some();
         if intent["pendingReturn"] != true {
             return Err("this child has no captured Work return to recover".into());
         }
@@ -173,13 +175,29 @@ pub(super) fn process(loaded: &Loaded, id: &str) -> Result<Value, String> {
                 json!({"work":work_id,"intent":id,"effect":"retained","reason":intent["failure"]}),
             );
         }
-        let replay = work::replay_recorded_native(
-            loaded,
-            &work_id,
-            &assignment,
-            &intent["directResultIdentity"],
-            message.as_bytes(),
-        );
+        if retry {
+            if intent.get("retryReturnAttempted").is_some() {
+                intent["failure"] =
+                    json!("retry return attribution is unknown; inspect the current Work");
+                return Ok(
+                    json!({"work":work_id,"intent":id,"effect":"retained","reason":intent["failure"]}),
+                );
+            }
+            intent["retryReturnAttempted"] = json!(true);
+            super::storage::checkpoint_retry_return(loaded, intents)?;
+        }
+        let intent = &mut intents[index];
+        let replay = if retry {
+            Err("retry return cannot use assignment-and-bytes replay".to_owned())
+        } else {
+            work::replay_recorded_native(
+                loaded,
+                &work_id,
+                &assignment,
+                &intent["directResultIdentity"],
+                message.as_bytes(),
+            )
+        };
         let returned = if replay.is_ok() {
             replay
         } else if let Err(reason) = validate_capture(loaded, &work_id, intent, &message) {
@@ -203,14 +221,18 @@ pub(super) fn process(loaded: &Loaded, id: &str) -> Result<Value, String> {
                 } else {
                     work::action::return_host_result(loaded, &work_id, action, &message).or_else(
                         |error| {
-                            work::replay_recorded_native(
-                                loaded,
-                                &work_id,
-                                &assignment,
-                                identity,
-                                message.as_bytes(),
-                            )
-                            .map_err(|_| error)
+                            if retry {
+                                Err(error)
+                            } else {
+                                work::replay_recorded_native(
+                                    loaded,
+                                    &work_id,
+                                    &assignment,
+                                    identity,
+                                    message.as_bytes(),
+                                )
+                                .map_err(|_| error)
+                            }
                         },
                     )
                 }
@@ -220,7 +242,10 @@ pub(super) fn process(loaded: &Loaded, id: &str) -> Result<Value, String> {
             Ok(response)
                 if response["effect"] == "recorded"
                     && response["status"] != "refused"
-                    && response["eventSha256"].is_string() =>
+                    && response["eventSha256"].is_string()
+                    && (!retry
+                        || (response["idempotent"] != true
+                            && response["reason"]["code"] != "recorded_then_failed")) =>
             {
                 intent["returnEventSha256"] = response["eventSha256"].clone();
                 if let Some(object) = intent.as_object_mut() {

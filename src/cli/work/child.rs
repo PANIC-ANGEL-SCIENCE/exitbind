@@ -13,6 +13,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                     "agent-type",
                     "perspectives",
                     "replace",
+                    "retry-of",
                     "current-binding",
                 ],
             )?;
@@ -28,6 +29,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 crate::session_goal::PrepareFence {
                     continuation: fence,
                     action: a.options.get("current-binding").map(String::as_str),
+                    retry_of: a.options.get("retry-of").map(String::as_str),
                 },
                 assignment,
                 a.options.get("agent-type").map(String::as_str),
