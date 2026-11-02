@@ -5,11 +5,17 @@ fn member_currentness(
     record: Option<&Value>,
     state: &JourneyState,
     member: &Member,
+    mut observation: Option<&mut crate::run::ledger::observation::Observation>,
 ) -> Result<(&'static str, Option<String>), String> {
     let recovery = record
         .map(|record| super::super::recovery::context(loaded, record))
         .transpose()?
         .flatten();
+    if recovery.is_some() {
+        if let Some(observation) = observation.as_deref_mut() {
+            observation.disable();
+        }
+    }
     if recovery
         .as_ref()
         .is_some_and(|context| context.historical.contains(&member.work))
@@ -26,6 +32,17 @@ fn member_currentness(
         _ => loaded,
     };
     let project = project_loaded(selected, member)?;
+    if project.path != loaded.path
+        || project.source != loaded.source
+        || project.product_root != loaded.product_root
+        || project.control_root != loaded.control_root
+        || project.state_root != loaded.state_root
+        || project.project_id != loaded.project_id
+    {
+        if let Some(observation) = observation.as_deref_mut() {
+            observation.disable();
+        }
+    }
     let endpoint_loaded = recovered_endpoint.unwrap_or(super::config_stamp::evidence_under(
         selected, &project, member,
     ));
@@ -61,9 +78,24 @@ fn member_currentness(
             },
         },
     )?;
-    let Some(endpoint) = accepted_endpoint(endpoint_loaded, member)? else {
+    let endpoint = match observation.as_deref_mut() {
+        Some(observation) if recovered_endpoint.is_none() => {
+            super::integration::accepted_endpoint_observed(endpoint_loaded, member, observation)?
+        }
+        Some(observation) => {
+            observation.disable();
+            accepted_endpoint(endpoint_loaded, member)?
+        }
+        None => accepted_endpoint(endpoint_loaded, member)?,
+    };
+    let Some(endpoint) = endpoint else {
         return Ok(("unresolved", None));
     };
+    // Accepted results depend on artifact and input observations outside the
+    // carry witnesses. Keep their existing independently fresh evaluation.
+    if let Some(observation) = observation {
+        observation.disable();
+    }
     let evidence = crate::run::result_ref_evidence(endpoint_loaded, &endpoint.work)?
         .ok_or("journey member result evidence is unavailable")?;
     if evidence.accepted && evidence.artifact_current {
@@ -123,18 +155,20 @@ pub(in crate::session_goal) fn readiness_for_state(
     loaded: &Loaded,
     state: Option<JourneyState>,
 ) -> Readiness {
-    readiness_for_state_inner(loaded, None, state)
+    readiness_for_state_inner(loaded, None, state, None, None)
 }
 
-fn readiness_for_state_inner(
+pub(super) fn readiness_for_state_inner(
     loaded: &Loaded,
     record: Option<&Value>,
     state: Option<JourneyState>,
+    mut observation: Option<&mut crate::run::ledger::observation::Observation>,
+    selected_ledger: Option<&str>,
 ) -> Readiness {
     let Some(state) = state else {
         return Readiness {
             protocol: 0,
-            state: "unavailable",
+            state: ReadinessState::Unavailable,
             reason: Some("journey_membership_protocol_missing".into()),
             total: 0,
             current: 0,
@@ -174,6 +208,9 @@ fn readiness_for_state_inner(
         if let Some(record) = record {
             match super::super::quarantine::current_for_member(loaded, record, &member.work) {
                 Ok(Some(detail)) => {
+                    if let Some(observation) = observation.as_deref_mut() {
+                        observation.disable();
+                    }
                     if detail["state"] == "quarantined_uncredited" {
                         quarantined_uncredited += 1;
                         quarantined_details.push(detail);
@@ -187,13 +224,24 @@ fn readiness_for_state_inner(
                 }
                 Ok(None) => {}
                 Err(error) => {
+                    if let Some(observation) = observation.as_deref_mut() {
+                        observation.stop_on_error();
+                    }
                     unresolved
                         .push(json!({"work":member.work,"state":"unavailable","reason":error}));
                     continue;
                 }
             }
         }
-        match member_currentness(loaded, record, &state, member) {
+        let result = member_currentness(loaded, record, &state, member, observation.as_deref_mut());
+        if let Some(observation) = observation.as_deref_mut() {
+            if result.is_err() {
+                observation.stop_on_error();
+            } else if let Some(selected) = selected_ledger {
+                observation.seal_for(selected);
+            }
+        }
+        match result {
             Ok(("current", integration)) => {
                 current += 1;
                 if let Some(work) = integration {
@@ -209,14 +257,16 @@ fn readiness_for_state_inner(
                 "state":"accepted_at_binding",
                 "drift":drift.and_then(|drift| serde_json::from_str::<Value>(&drift).ok())})),
             Ok((status, _)) => unresolved.push(json!({"work":member.work,"state":status})),
-            Err(error) => unresolved.push(json!({"work":member.work,"state":"unavailable",
-                "reason":crate::drift::plain(&error)})),
+            Err(error) => {
+                unresolved.push(json!({"work":member.work,"state":"unavailable",
+                    "reason":crate::drift::plain(&error)}));
+            }
         }
     }
     let state_name = if unresolved.is_empty() {
-        "current"
+        ReadinessState::Current
     } else {
-        "blocked"
+        ReadinessState::Blocked
     };
     let historical_details = record
         .and_then(|record| {
@@ -228,7 +278,7 @@ fn readiness_for_state_inner(
     Readiness {
         protocol: state.protocol,
         state: state_name,
-        reason: (state_name != "current").then(|| {
+        reason: (state_name != ReadinessState::Current).then(|| {
             if state.protocol < MEMBERSHIP_PROTOCOL {
                 "historical_journey_membership_has_no_admission_coverage".into()
             } else if !state.admissions.is_empty() {
@@ -253,7 +303,7 @@ fn readiness_for_state_inner(
     }
 }
 
-fn belongs_to_current_session(
+pub(super) fn belongs_to_current_session(
     loaded: &Loaded,
     record: &Value,
 ) -> Result<Option<(super::super::native::Scope, Value)>, String> {
@@ -287,7 +337,7 @@ pub(crate) fn readiness_for_record(
     if current["goalId"] != record["goalId"] {
         return Ok(Some(Readiness {
             protocol: state(&current)?.map_or(0, |state| state.protocol),
-            state: "blocked",
+            state: ReadinessState::Blocked,
             reason: Some("a_newer_session_goal_is_current".into()),
             total: state(&current)?.map_or(0, |state| state.members.len()),
             current: 0,
@@ -307,7 +357,23 @@ pub(crate) fn readiness_for_record(
         loaded,
         Some(&current),
         state(&current)?,
+        None,
+        None,
     )))
+}
+
+pub(super) fn close_scope(
+    loaded: &Loaded,
+    root: &Path,
+) -> Result<Option<super::super::native::Scope>, String> {
+    if root == loaded.state_root {
+        return Ok(None);
+    }
+    let scope = super::super::native::scope(loaded, false)?;
+    if !scope.is_session() || !scope.owner_matches || scope.root != root {
+        return Ok(None);
+    }
+    Ok(Some(scope))
 }
 
 pub(crate) fn require_close_ready(
@@ -315,20 +381,18 @@ pub(crate) fn require_close_ready(
     root: &Path,
     record: &Value,
 ) -> Result<(), String> {
-    if root == loaded.state_root {
+    if close_scope(loaded, root)?.is_none() {
         return Ok(());
     }
-    let scope = super::super::native::scope(loaded, false)?;
-    if !scope.is_session() || !scope.owner_matches || scope.root != root {
-        return Ok(());
-    }
-    let readiness = readiness_for_state_inner(loaded, Some(record), state(record)?);
+    let readiness = readiness_for_state_inner(loaded, Some(record), state(record)?, None, None);
     if readiness.ready() {
         Ok(())
     } else {
         Err(format!(
             "native session journey is not ready to close: {}",
-            readiness.reason.unwrap_or_else(|| readiness.state.into())
+            readiness
+                .reason
+                .unwrap_or_else(|| readiness.state.as_str().into())
         ))
     }
 }

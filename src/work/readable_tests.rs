@@ -309,6 +309,388 @@ fn journey_projections_match_and_ancestor_changes_refuse_detail() {
     assert_eq!(std::fs::read(current_path).unwrap(), before, "{change}");
 }
 
+#[cfg(unix)]
+#[test]
+fn shared_journey_observation_rechecks_its_exact_inputs() {
+    if !crate::compatibility::is_exitbind() {
+        return;
+    }
+    const CHILD: &str = "EXITBIND_TEST_SHARED_JOURNEY_RACE";
+    if std::env::var_os(CHILD).is_none() {
+        for change in [
+            "ledger",
+            "ledger-replaced",
+            "ledger-symlink",
+            "claim",
+            "claim-replaced",
+            "terminal-claim",
+            "config",
+            "goal",
+            "owner",
+        ] {
+            let outer = crate::test_root::temp("shared-journey-child");
+            let store = outer.join("sessions");
+            crate::project::portability::create_private_directory(&store).unwrap();
+            // raw-spawn: each mutation owns its native selector and fixture.
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+            for key in [
+                "CODEX_THREAD_ID",
+                "CODEX_SESSION_ID",
+                "CLAUDE_CODE_SESSION_ID",
+                "EXITBIND_NATIVE_SESSION_ID",
+                "EXITBIND_SESSION_GOALS_DIR",
+                "CLAUDE_ENV_FILE",
+                "XDG_STATE_HOME",
+            ] {
+                child.env_remove(key);
+            }
+            let output = child
+                .args([
+                    "work::readable::tests::shared_journey_observation_rechecks_its_exact_inputs",
+                    "--exact",
+                    "--test-threads=1",
+                ])
+                .env(CHILD, change)
+                .env("CLAUDE_CODE_SESSION_ID", "fixture-shared-journey")
+                .env("EXITBIND_SESSION_GOALS_DIR", &store)
+                .env("TMPDIR", &*outer)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{change}: {}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"));
+        }
+        return;
+    }
+    let change = std::env::var(CHILD).unwrap();
+    let (_root, loaded) = configured("shared-journey-race");
+    let scope = crate::session_goal::native::scope(&loaded, true).unwrap();
+    scope.require_owner().unwrap();
+    revise_goal(
+        &loaded,
+        &scope.root,
+        "shared-journey-goal",
+        "Original",
+        true,
+    )
+    .unwrap();
+    let ancestor = begin(&loaded, "true", true);
+    scope_current_lead(&loaded, &ancestor);
+    let successor = crate::work::supersede::supersede(&loaded, &ancestor, "Fixture successor")
+        .unwrap()["work"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    scope_current_lead(&loaded, &successor);
+    let current = crate::work::resolve(&loaded, &successor).unwrap();
+    let snapshot = RunSnapshot::capture(&loaded, &current).unwrap();
+    let next = crate::work::next_from(&loaded, &successor, &snapshot).unwrap();
+    let current_path = loaded.state_root.join(&current);
+    let current_before = std::fs::read(&current_path).unwrap();
+    let mut observation = crate::session_goal::WorkGoalObservation::acquire(&loaded, &successor);
+    observation.progress(&next["progress"]).unwrap();
+    assert!(
+        observation.has_journey_observation(),
+        "fixture did not select shared observation"
+    );
+    assert!(
+        observation.used_blocked_close_route(),
+        "fixture did not use the blocked close-route observation"
+    );
+    let ledger = loaded
+        .state_root
+        .join(crate::work::resolve(&loaded, &ancestor).unwrap());
+    let mut claim = ledger.as_os_str().to_os_string();
+    claim.push(".supersede");
+    let claim = std::path::PathBuf::from(claim);
+    match change.as_str() {
+        "ledger" | "claim" => std::fs::write(
+            if change == "ledger" { &ledger } else { &claim },
+            b"invalid\n",
+        )
+        .unwrap(),
+        "ledger-replaced" | "claim-replaced" => {
+            let path = if change == "ledger-replaced" {
+                &ledger
+            } else {
+                &claim
+            };
+            let replacement = path.with_extension("replacement");
+            std::fs::write(&replacement, std::fs::read(path).unwrap()).unwrap();
+            std::fs::rename(replacement, path).unwrap();
+        }
+        "ledger-symlink" => {
+            let target = ledger.with_extension("saved");
+            std::fs::rename(&ledger, &target).unwrap();
+            std::os::unix::fs::symlink(&target, &ledger).unwrap();
+        }
+        "terminal-claim" => {
+            let mut path = current_path.as_os_str().to_os_string();
+            path.push(".supersede");
+            std::fs::write(std::path::PathBuf::from(path), b"{}\n").unwrap();
+        }
+        "config" => {
+            let mut bytes = std::fs::read(&loaded.path).unwrap();
+            bytes.push(b'\n');
+            std::fs::write(&loaded.path, bytes).unwrap();
+        }
+        "goal" => {
+            revise_goal(&loaded, &scope.root, "shared-journey-goal", "Later", true).unwrap();
+        }
+        "owner" => std::fs::write(scope.root.join("owner.json"), b"{}\n").unwrap(),
+        _ => unreachable!(),
+    }
+    let error = observation
+        .finish()
+        .expect_err("changed observed facts must refuse");
+    assert!(!error.is_empty());
+    assert_eq!(std::fs::read(current_path).unwrap(), current_before);
+}
+
+#[cfg(unix)]
+#[test]
+fn shared_journey_preserves_first_error_and_only_falls_back_for_unsupported_shape() {
+    if !crate::compatibility::is_exitbind() {
+        return;
+    }
+    const CHILD: &str = "EXITBIND_TEST_SHARED_JOURNEY_ERRORS";
+    if std::env::var_os(CHILD).is_none() {
+        for case in [
+            "marked-competing-errors",
+            "unrelated-members",
+            "later-successor",
+        ] {
+            let outer = crate::test_root::temp("shared-journey-errors-child");
+            let store = outer.join("sessions");
+            crate::project::portability::create_private_directory(&store).unwrap();
+            // raw-spawn: the native selector and state belong to this fixture.
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+            for key in [
+                "CODEX_THREAD_ID",
+                "CODEX_SESSION_ID",
+                "CLAUDE_CODE_SESSION_ID",
+                "EXITBIND_NATIVE_SESSION_ID",
+                "EXITBIND_SESSION_GOALS_DIR",
+                "CLAUDE_ENV_FILE",
+                "XDG_STATE_HOME",
+            ] {
+                child.env_remove(key);
+            }
+            let output = child.args([
+                "work::readable::tests::shared_journey_preserves_first_error_and_only_falls_back_for_unsupported_shape",
+                "--exact", "--test-threads=1",
+            ]).env(CHILD, case)
+                .env("CLAUDE_CODE_SESSION_ID", "fixture-shared-journey-errors")
+                .env("EXITBIND_SESSION_GOALS_DIR", &store)
+                .env("TMPDIR", &*outer).output().unwrap();
+            assert!(
+                output.status.success(),
+                "{case}: {}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"));
+        }
+        return;
+    }
+    let case = std::env::var(CHILD).unwrap();
+    let (_root, loaded) = configured("shared-journey-errors");
+    let scope = crate::session_goal::native::scope(&loaded, true).unwrap();
+    scope.require_owner().unwrap();
+    revise_goal(
+        &loaded,
+        &scope.root,
+        "journey-errors-goal",
+        "Original",
+        true,
+    )
+    .unwrap();
+    let first = begin(&loaded, "true", true);
+    scope_current_lead(&loaded, &first);
+    let selected = if case == "marked-competing-errors" || case == "later-successor" {
+        let value =
+            crate::work::supersede::supersede(&loaded, &first, "Fixture successor").unwrap();
+        let work = value["work"].as_str().unwrap().to_owned();
+        scope_current_lead(&loaded, &work);
+        if case == "later-successor" {
+            first.clone()
+        } else {
+            work
+        }
+    } else {
+        let work = begin(&loaded, "true", true);
+        scope_current_lead(&loaded, &work);
+        work
+    };
+    let record = crate::session_goal::read(&scope.root).unwrap().unwrap();
+    if case == "marked-competing-errors" {
+        let first_path = loaded
+            .state_root
+            .join(crate::work::resolve(&loaded, &first).unwrap());
+        let mut claim = first_path.as_os_str().to_os_string();
+        claim.push(".supersede");
+        std::fs::write(std::path::PathBuf::from(claim), b"invalid claim\n").unwrap();
+        let selected_path = loaded
+            .state_root
+            .join(crate::work::resolve(&loaded, &selected).unwrap());
+        std::fs::write(selected_path, b"invalid ledger\n").unwrap();
+    }
+    let (fresh, observed, used_fresh) =
+        crate::session_goal::compare_test_journey(&loaded, &record, &selected).unwrap();
+    assert_eq!(observed, fresh, "{case}");
+    if case == "marked-competing-errors" {
+        assert!(
+            !used_fresh,
+            "a validation error must not cause a fresh retry"
+        );
+        assert!(fresh.unwrap()["unresolved"][0]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("invalid supersession claim"));
+    } else {
+        assert!(
+            used_fresh,
+            "unrelated or later chains must use the original fresh route"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn close_route_reuses_only_matching_known_blocked_work_readiness() {
+    if !crate::compatibility::is_exitbind() {
+        return;
+    }
+    const CHILD: &str = "EXITBIND_TEST_SHARED_JOURNEY_CLOSE_ROUTE";
+    if std::env::var_os(CHILD).is_none() {
+        for case in [
+            "direct",
+            "governed",
+            "project-root",
+            "other-record",
+            "actual-close",
+        ] {
+            let outer = crate::test_root::temp("shared-close-route-child");
+            let store = outer.join("sessions");
+            crate::project::portability::create_private_directory(&store).unwrap();
+            // raw-spawn: each route comparison owns its native session and state.
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+            for key in [
+                "CODEX_THREAD_ID",
+                "CODEX_SESSION_ID",
+                "CLAUDE_CODE_SESSION_ID",
+                "EXITBIND_NATIVE_SESSION_ID",
+                "EXITBIND_SESSION_GOALS_DIR",
+                "CLAUDE_ENV_FILE",
+                "XDG_STATE_HOME",
+            ] {
+                child.env_remove(key);
+            }
+            let output = child.args([
+                "work::readable::tests::close_route_reuses_only_matching_known_blocked_work_readiness",
+                "--exact", "--test-threads=1",
+            ]).env(CHILD, case)
+                .env("CLAUDE_CODE_SESSION_ID", "fixture-shared-close-route")
+                .env("EXITBIND_SESSION_GOALS_DIR", &store)
+                .env("TMPDIR", &*outer).output().unwrap();
+            assert!(
+                output.status.success(),
+                "{case}: {}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"));
+        }
+        return;
+    }
+    let case = std::env::var(CHILD).unwrap();
+    let (_root, loaded) = configured("shared-close-route");
+    let scope = crate::session_goal::native::scope(&loaded, true).unwrap();
+    scope.require_owner().unwrap();
+    revise_goal(&loaded, &scope.root, "shared-close-goal", "Original", true).unwrap();
+    let work = begin(&loaded, "true", true);
+    scope_current_lead(&loaded, &work);
+    if case == "governed" {
+        crate::session_goal::incorporate(
+            &scope.root,
+            &loaded,
+            "shared-close-goal",
+            "Bound fixture Goal",
+            Some("Original"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("accepted"),
+            Some(&work),
+            None,
+            Some("findings,blockers,decisions,externalActions"),
+            true,
+        )
+        .unwrap();
+    }
+    let record = crate::session_goal::read(&scope.root).unwrap().unwrap();
+    if case == "actual-close" {
+        let journal = scope
+            .root
+            .join(crate::project::layout_types::state_namespace())
+            .join("session-goal.jsonl");
+        let changed = b"not a canonical Goal journal\n";
+        let error = crate::session_goal::test_close_route_change(
+            &loaded,
+            &record,
+            &work,
+            &scope.root,
+            || {
+                std::fs::write(&journal, changed).unwrap();
+                let error = crate::session_goal::close_direct(
+                    &scope.root,
+                    &loaded,
+                    "shared-close-goal",
+                    None,
+                )
+                .expect_err("actual close must freshly reject the malformed journal");
+                assert!(
+                    error.contains("invalid canonical session goal line"),
+                    "{error}"
+                );
+                assert_eq!(std::fs::read(&journal).unwrap(), changed);
+            },
+        )
+        .expect_err("changed Goal witness must prevent Work view publication");
+        assert!(!error.is_empty());
+        return;
+    }
+    let mut route_record = record.clone();
+    if case == "other-record" {
+        route_record["goalId"] = json!("a-different-goal");
+    }
+    let root = if case == "project-root" {
+        &loaded.state_root
+    } else {
+        &scope.root
+    };
+    let (fresh, observed, shortcut) = crate::session_goal::compare_test_close_routes(
+        &loaded,
+        &record,
+        &route_record,
+        &work,
+        root,
+    )
+    .unwrap();
+    assert_eq!(observed, fresh, "{case}");
+    assert_eq!(
+        shortcut,
+        matches!(case.as_str(), "direct" | "governed"),
+        "{case}"
+    );
+}
+
 #[test]
 fn selected_check_snapshot_refuses_changes_during_detail_assembly() {
     if !crate::compatibility::is_exitbind() {

@@ -658,7 +658,7 @@ fn typed_host_return_uses_the_bound_assignment_once_and_rejects_foreign_or_inval
         retained["rawObservation"]["reason"]
             .as_str()
             .unwrap()
-            .contains("presentation is unavailable"),
+            .contains("delivery proof is unavailable"),
         "{retained}"
     );
     assert!(retained.get("pendingResult").is_none());

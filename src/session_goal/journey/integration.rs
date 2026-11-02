@@ -1,7 +1,9 @@
 use super::*;
 
 mod lineage;
-pub(super) use lineage::{accepted_endpoint, ancestors, descends_from_member};
+pub(super) use lineage::{
+    accepted_endpoint, accepted_endpoint_observed, ancestors, descends_from_member,
+};
 
 #[derive(Clone, Debug)]
 struct Contract {

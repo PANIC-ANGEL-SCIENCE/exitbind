@@ -24,7 +24,9 @@ pub(crate) fn binding(
     next: &Value,
 ) -> Result<String, String> {
     let mut goal = crate::session_goal::WorkGoalObservation::acquire(loaded, work);
-    binding_with_goal(loaded, work, snapshot, next, &mut goal)
+    let binding = binding_with_goal(loaded, work, snapshot, next, &mut goal)?;
+    goal.finish()?;
+    Ok(binding)
 }
 
 fn binding_with_goal(
@@ -246,6 +248,7 @@ pub(super) fn attach(
     if next["action"] == "done" {
         next["current"]["completion"] = super::closeout::projection(loaded, work, snapshot, next);
     }
+    goal.finish()?;
     Ok(())
 }
 

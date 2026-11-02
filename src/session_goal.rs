@@ -86,6 +86,42 @@ fn records(root: &Path) -> Result<Vec<Value>, String> {
     records_from_raw(raw.as_deref())
 }
 
+#[cfg(test)]
+pub(crate) fn compare_test_journey(
+    loaded: &crate::config::Loaded,
+    record: &Value,
+    work: &str,
+) -> Result<(Option<Value>, Option<Value>, bool), String> {
+    let fresh = journey::progress_for_record(Some(loaded), record);
+    let observed = journey::observe_work(loaded, record, work)?;
+    let value = observed.value();
+    let used_fresh = observed.used_fresh();
+    observed.finish(loaded)?;
+    Ok((fresh, value, used_fresh))
+}
+
+#[cfg(test)]
+pub(crate) fn compare_test_close_routes(
+    loaded: &crate::config::Loaded,
+    observed_record: &Value,
+    route_record: &Value,
+    work: &str,
+    root: &Path,
+) -> Result<(Option<Value>, Option<Value>, bool), String> {
+    progress::compare_close_routes(loaded, observed_record, route_record, work, root)
+}
+
+#[cfg(test)]
+pub(crate) fn test_close_route_change(
+    loaded: &crate::config::Loaded,
+    record: &Value,
+    work: &str,
+    root: &Path,
+    change: impl FnOnce(),
+) -> Result<(), String> {
+    progress::finish_after_close_route_change(loaded, record, work, root, change)
+}
+
 fn records_from_raw(raw: Option<&str>) -> Result<Vec<Value>, String> {
     let Some(raw) = raw else {
         return Ok(Vec::new());

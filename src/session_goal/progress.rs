@@ -28,18 +28,105 @@ struct GoalProjectionContext<'a> {
     project_selected: bool,
 }
 
-/// Journey progress observed for one bound Work assembly. `Some(None)` keeps
-/// an unavailable projection distinct from an observation not yet attempted.
+/// Journey progress is reusable only for the exact record, configuration and
+/// Work that supplied the rechecked physical observation.
 #[derive(Default)]
-pub(super) struct JourneyObservation(Option<Option<Value>>);
+pub(super) struct JourneyObservation {
+    work: Option<String>,
+    key: Option<JourneyKey>,
+    observed: Option<super::journey::WorkJourney>,
+    error: Option<String>,
+}
+
+#[derive(PartialEq, Eq)]
+struct JourneyKey {
+    record: Value,
+    config: Option<JourneyConfig>,
+}
+
+#[derive(PartialEq, Eq)]
+struct JourneyConfig {
+    path: std::path::PathBuf,
+    source: String,
+    product_root: std::path::PathBuf,
+    control_root: std::path::PathBuf,
+    state_root: std::path::PathBuf,
+    project_id: Option<String>,
+}
 
 impl JourneyObservation {
+    pub(super) fn for_work(work: &str) -> Self {
+        Self {
+            work: Some(work.to_owned()),
+            ..Self::default()
+        }
+    }
+
     fn progress(&mut self, loaded: Option<&Loaded>, record: &Value) -> Option<Value> {
-        self.0
-            .get_or_insert_with(|| {
-                loaded.and_then(|loaded| super::journey::progress_for_record(Some(loaded), record))
-            })
-            .clone()
+        let config = loaded.map(|loaded| JourneyConfig {
+            path: loaded.path.clone(),
+            source: loaded.source.clone(),
+            product_root: loaded.product_root.clone(),
+            control_root: loaded.control_root.clone(),
+            state_root: loaded.state_root.clone(),
+            project_id: loaded.project_id.clone(),
+        });
+        let key = JourneyKey {
+            record: record.clone(),
+            config,
+        };
+        if self.key.as_ref().is_some_and(|prior| prior != &key) {
+            self.error = Some("Goal record or configuration changed during Work projection".into());
+            return None;
+        }
+        self.key.get_or_insert(key);
+        if let Some(observed) = &self.observed {
+            return observed.value();
+        }
+        match (loaded, self.work.as_deref()) {
+            (Some(loaded), Some(work)) => {
+                match super::journey::observe_work(loaded, record, work) {
+                    Ok(observed) => {
+                        let value = observed.value();
+                        if observed.reusable() {
+                            self.observed = Some(observed);
+                        }
+                        value
+                    }
+                    Err(error) => {
+                        self.error = Some(error);
+                        None
+                    }
+                }
+            }
+            (Some(loaded), None) => super::journey::progress_for_record(Some(loaded), record),
+            (None, _) => None,
+        }
+    }
+
+    pub(super) fn status(&self) -> Result<(), String> {
+        self.error
+            .as_ref()
+            .map_or(Ok(()), |error| Err(error.clone()))
+    }
+
+    #[cfg(test)]
+    pub(super) fn has_observation(&self) -> bool {
+        self.observed.is_some()
+    }
+
+    #[cfg(test)]
+    pub(super) fn used_blocked_close_route(&self) -> bool {
+        self.observed
+            .as_ref()
+            .is_some_and(|observed| observed.used_blocked_close_route())
+    }
+
+    pub(super) fn finish(self, loaded: &Loaded) -> Result<(), String> {
+        if let Some(observed) = self.observed {
+            observed.finish(loaded)?;
+        }
+        self.error.map_or(Ok(()), Err)
     }
 }
 
@@ -179,10 +266,14 @@ fn goal_view(
             "unavailable",
         );
     };
-    let journey = match journey {
+    let mut observation = journey;
+    let journey = match observation.as_deref_mut() {
         Some(observation) => observation.progress(loaded, record),
         None => loaded.and_then(|loaded| super::journey::progress_for_record(Some(loaded), record)),
     };
+    let observed = observation
+        .as_deref()
+        .and_then(|observation| observation.observed.as_ref());
     let Some(goal) = record["goal"]
         .as_str()
         .filter(|value| !value.trim().is_empty())
@@ -234,7 +325,7 @@ fn goal_view(
             overall_state,
         );
         return include_journey(
-            with_bounded_owner_routes(view, loaded, goal_root, project_selected, record),
+            with_bounded_owner_routes(view, loaded, goal_root, project_selected, record, observed),
             journey,
         );
     };
@@ -247,7 +338,7 @@ fn goal_view(
             overall_state,
         );
         return include_journey(
-            with_bounded_owner_routes(view, loaded, goal_root, project_selected, record),
+            with_bounded_owner_routes(view, loaded, goal_root, project_selected, record, observed),
             journey,
         );
     }
@@ -310,7 +401,8 @@ fn goal_view(
     });
     let overall = overall_state;
     let result_readiness = readiness(result);
-    let next_action = close_route::next_action(loaded, goal_root, project_selected, record);
+    let next_action =
+        close_route::next_action(loaded, goal_root, project_selected, record, observed);
     let mut view = json!({
         "overall": overall,
         "goal": display(goal),
@@ -340,15 +432,66 @@ fn with_bounded_owner_routes(
     goal_root: Option<&std::path::Path>,
     project_selected: bool,
     record: &Value,
+    journey: Option<&super::journey::WorkJourney>,
 ) -> Value {
     let mut view = categories::attach_when_goal_is_valid(view, loaded, record, project_selected);
     view["nextAction"] = json!(close_route::next_action(
         loaded,
         goal_root,
         project_selected,
-        record
+        record,
+        journey,
     ));
     view
+}
+
+#[cfg(test)]
+pub(super) fn compare_close_routes(
+    loaded: &Loaded,
+    observed_record: &Value,
+    route_record: &Value,
+    work: &str,
+    root: &std::path::Path,
+) -> Result<(Option<Value>, Option<Value>, bool), String> {
+    let mut observation = JourneyObservation::for_work(work);
+    observation.progress(Some(loaded), observed_record);
+    observation.status()?;
+    let observed = observation
+        .observed
+        .as_ref()
+        .ok_or("test expected a reusable Work observation")?;
+    let fresh = close_route::next_action(Some(loaded), Some(root), false, route_record, None);
+    let reused = close_route::next_action(
+        Some(loaded),
+        Some(root),
+        false,
+        route_record,
+        Some(observed),
+    );
+    let shortcut = observed.used_blocked_close_route();
+    observation.finish(loaded)?;
+    Ok((fresh, reused, shortcut))
+}
+
+#[cfg(test)]
+pub(super) fn finish_after_close_route_change(
+    loaded: &Loaded,
+    record: &Value,
+    work: &str,
+    root: &std::path::Path,
+    change: impl FnOnce(),
+) -> Result<(), String> {
+    let mut observation = JourneyObservation::for_work(work);
+    observation.progress(Some(loaded), record);
+    observation.status()?;
+    let observed = observation
+        .observed
+        .as_ref()
+        .ok_or("test expected a reusable Work observation")?;
+    let _ = close_route::next_action(Some(loaded), Some(root), false, record, Some(observed));
+    assert!(observed.used_blocked_close_route());
+    change();
+    observation.finish(loaded)
 }
 
 fn include_journey(mut view: Value, journey: Option<Value>) -> Value {
@@ -590,8 +733,17 @@ fn task_current(loaded: Option<&Loaded>, record: &Value, item: &Value) -> Option
 
 #[cfg(test)]
 mod tests {
-    use super::project;
+    use super::{project, JourneyObservation};
     use serde_json::{json, Value};
+
+    #[test]
+    fn journey_observation_refuses_a_different_record() {
+        let mut observation = JourneyObservation::default();
+        observation.progress(None, &json!({"goalId":"first", "revision":1}));
+        assert!(observation.status().is_ok());
+        observation.progress(None, &json!({"goalId":"second", "revision":1}));
+        assert!(observation.status().is_err());
+    }
 
     fn record(obligations: serde_json::Value) -> serde_json::Value {
         json!({

@@ -180,11 +180,11 @@ pub(crate) fn note_delivery(
                         .as_str()
                         .and_then(|id| context::host_context(loaded, work, id).ok())
                         .is_some_and(|current| {
-                            current["requiredAssignmentBinding"] == expected
-                                && current["requiredRecipientSha256"] == recipient
-                                && current["requiredInstructionsSha256"] == instructions
-                                && current["actorFactsSha256"] == actor
-                                && current["actorContractSha256"] == contract
+                            matching_facts(
+                                &current,
+                                expected,
+                                (required, recipient, instructions, actor, contract),
+                            )
                         })
             })
         });
@@ -226,9 +226,46 @@ pub(crate) fn note_delivery(
     })
 }
 
+fn matching_facts(
+    current: &Value,
+    binding: &str,
+    (required, recipient, instructions, actor, contract): (&str, &str, &str, &str, &str),
+) -> bool {
+    current["requiredAssignmentBinding"] == binding
+        && current["requiredFactsSha256"] == required
+        && current["requiredRecipientSha256"] == recipient
+        && current["requiredInstructionsSha256"] == instructions
+        && current["actorFactsSha256"] == actor
+        && current["actorContractSha256"] == contract
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn postrender_required_facts_must_match_even_when_actor_facts_match() {
+        let binding = "a".repeat(64);
+        let required = "b".repeat(64);
+        let changed = "c".repeat(64);
+        let recipient = "d".repeat(64);
+        let instructions = "e".repeat(64);
+        let actor = "f".repeat(64);
+        let contract = "0".repeat(64);
+        let current = json!({"requiredAssignmentBinding":binding, "requiredFactsSha256":required,
+            "requiredRecipientSha256":recipient, "requiredInstructionsSha256":instructions,
+            "actorFactsSha256":actor, "actorContractSha256":contract});
+        assert!(matching_facts(
+            &current,
+            &binding,
+            (&required, &recipient, &instructions, &actor, &contract)
+        ));
+        assert!(!matching_facts(
+            &current,
+            &binding,
+            (&changed, &recipient, &instructions, &actor, &contract)
+        ));
+    }
 
     #[test]
     fn delivered_permit_proof_requires_the_exact_work_assignment_form_and_facts() {

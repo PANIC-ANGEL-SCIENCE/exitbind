@@ -43,6 +43,7 @@ LeadPreparation	src/run/governor_recovery.rs	carried owner recovery evidence dif
 LeadPreparation	src/run/governor_recovery.rs	owner recovery assignment hash does not match the canonical pending worker
 LeadPreparation	src/run/governor_recovery.rs	owner recovery current configuration identity does not match
 Integrity	src/run/ledger.rs	superseded predecessor provenance mismatch
+Transient	src/run/ledger/observation.rs	carry observation configuration changed during projection
 Transient	src/run/lifecycle.rs	configuration changed while starting; reload configuration
 Transient	src/run/lifecycle.rs	quarantine verification inputs or configuration changed before start
 Integrity	src/run/mod.rs	check command does not match the configured run policy

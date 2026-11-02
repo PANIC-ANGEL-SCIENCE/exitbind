@@ -71,6 +71,22 @@ pub(in crate::session_goal::journey) fn accepted_endpoint(
     selected: &Loaded,
     member: &Member,
 ) -> Result<Option<Endpoint>, String> {
+    accepted_endpoint_with(selected, member, None)
+}
+
+pub(in crate::session_goal::journey) fn accepted_endpoint_observed(
+    selected: &Loaded,
+    member: &Member,
+    observation: &mut crate::run::ledger::observation::Observation,
+) -> Result<Option<Endpoint>, String> {
+    accepted_endpoint_with(selected, member, Some(observation))
+}
+
+fn accepted_endpoint_with(
+    selected: &Loaded,
+    member: &Member,
+    mut observation: Option<&mut crate::run::ledger::observation::Observation>,
+) -> Result<Option<Endpoint>, String> {
     const MAX_SUCCESSORS: usize = 64;
     let original = super::project_loaded(selected, member)?;
     let original_config_sha256 = hash::text(&original.source);
@@ -84,7 +100,10 @@ pub(in crate::session_goal::journey) fn accepted_endpoint(
         if !seen.insert(relative.clone()) {
             return Err("journey member successor lineage contains a cycle".into());
         }
-        let (ledger, events, source) = crate::run::ledger::load(selected, &relative)?;
+        let (ledger, events, source) = match observation.as_deref_mut() {
+            Some(observation) => observation.load(selected, &relative)?,
+            None => crate::run::ledger::load(selected, &relative)?,
+        };
         let start = events
             .first()
             .ok_or("journey Work ledger has no start event")?;
@@ -116,7 +135,11 @@ pub(in crate::session_goal::journey) fn accepted_endpoint(
                     && event["outcome"] == "accepted"
             });
         let claim_path = crate::run::ledger::claim_path(&ledger);
-        let Some(claim) = crate::run::ledger::valid_claim(&claim_path)? else {
+        let claim = match observation.as_deref_mut() {
+            Some(observation) => observation.claim(&claim_path)?,
+            None => crate::run::ledger::valid_claim(&claim_path)?,
+        };
+        let Some(claim) = claim else {
             if !accepted || start["configSha256"] != selected_config_sha256 {
                 return Ok(None);
             }

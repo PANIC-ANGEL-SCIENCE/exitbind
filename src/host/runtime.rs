@@ -420,7 +420,9 @@ pub fn run() -> Result<(), String> {
                     };
                     let message = context::unavailable_with_evidence(event, evidence);
                     emit(event, &message)?;
-                    let _ = retry_busy(|| context::note_delivery(&loaded, object, None));
+                    context::report_delivery_record(retry_busy(|| {
+                        context::note_delivery(&loaded, object, None)
+                    }));
                     return Ok(());
                 }
                 Ok(None) => {}
@@ -438,7 +440,9 @@ pub fn run() -> Result<(), String> {
     };
     emit(event, &text)?;
     if event == "SubagentStart" {
-        let _ = retry_busy(|| context::note_delivery(&loaded, object, presented_child.as_ref()));
+        context::report_delivery_record(retry_busy(|| {
+            context::note_delivery(&loaded, object, presented_child.as_ref())
+        }));
     }
     Ok(())
 }

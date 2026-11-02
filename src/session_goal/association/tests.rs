@@ -491,7 +491,10 @@ fn prestart_admission_reopens_closed_goal_blocks_readiness_and_survives_successo
         &loaded,
         super::super::journey::state(&reopened).expect("validate pending journey"),
     );
-    assert_eq!(readiness.state, "blocked");
+    assert_eq!(
+        readiness.state,
+        super::super::journey::ReadinessState::Blocked
+    );
     assert_eq!(readiness.pending_admissions, 1);
     assert_eq!(
         readiness.reason.as_deref(),

@@ -8,11 +8,15 @@ pub(super) fn next_action(
     goal_root: Option<&Path>,
     project_selected: bool,
     record: &Value,
+    journey: Option<&super::super::journey::WorkJourney>,
 ) -> Option<Value> {
     let loaded =
         loaded.filter(|_| goal_root.is_some() && !super::super::requirements::named(record))?;
     let root = goal_root.unwrap_or(&loaded.state_root);
     let goal_id = record["goalId"].as_str()?;
+    if journey.is_some_and(|observed| observed.blocks_close_route(loaded, root, record)) {
+        return None;
+    }
     let governed_ref = super::super::CATEGORIES
         .iter()
         .flat_map(|category| record[*category].as_array().into_iter().flatten())

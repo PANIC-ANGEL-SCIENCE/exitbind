@@ -49,7 +49,7 @@ pub(super) fn evaluate(
     };
     match journey {
         Ok(Some(readiness)) if !readiness.ready() => {
-            return if readiness.state == "unavailable" {
+            return if readiness.state == super::journey::ReadinessState::Unavailable {
                 Readiness::Unknown("journey_completion_unavailable")
             } else {
                 Readiness::Stale("journey_members_unresolved")

@@ -14,7 +14,7 @@ pub(super) fn validate_capture(
         if intent["assignmentDelivery"]["reason"] == super::actor_checks::CODEX_UNVERIFIED {
             return Err("Codex direct-hook context limit is unverified; no automatic Work return was credited".into());
         }
-        return Err("complete host assignment and evidence presentation is unavailable; no automatic Work return was credited".into());
+        return Err("current host assignment delivery proof is unavailable; no automatic Work return was credited".into());
     }
     if intent["directAssignment"] != true
         || !intent["assignment"].is_string()

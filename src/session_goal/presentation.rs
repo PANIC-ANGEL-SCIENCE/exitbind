@@ -210,16 +210,34 @@ impl<'a> WorkGoalObservation<'a> {
             context: association.context,
             owner_root: association.owner_root,
             local_record,
-            journey: progress::JourneyObservation::default(),
+            journey: progress::JourneyObservation::for_work(work),
         }
     }
 
     pub(crate) fn progress(&mut self, result: &Value) -> Result<Value, String> {
-        self.project(result, false)
+        let value = self.project(result, false)?;
+        self.journey.status()?;
+        Ok(value)
     }
 
     pub(crate) fn detail(&mut self, result: &Value) -> Result<Value, String> {
-        self.project(result, true)
+        let value = self.project(result, true)?;
+        self.journey.status()?;
+        Ok(value)
+    }
+
+    pub(crate) fn finish(self) -> Result<(), String> {
+        self.journey.finish(self.loaded)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_journey_observation(&self) -> bool {
+        self.journey.has_observation()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn used_blocked_close_route(&self) -> bool {
+        self.journey.used_blocked_close_route()
     }
 
     fn project(&mut self, result: &Value, detail: bool) -> Result<Value, String> {
@@ -298,7 +316,10 @@ pub(crate) fn progress_for_work(
     work: &str,
     result: &Value,
 ) -> Result<Value, String> {
-    WorkGoalObservation::acquire(loaded, work).progress(result)
+    let mut observation = WorkGoalObservation::acquire(loaded, work);
+    let value = observation.progress(result)?;
+    observation.finish()?;
+    Ok(value)
 }
 
 fn progress_from_record(
@@ -332,7 +353,10 @@ pub(crate) fn progress_detail_for_work(
     work: &str,
     result: &Value,
 ) -> Result<Value, String> {
-    WorkGoalObservation::acquire(loaded, work).detail(result)
+    let mut observation = WorkGoalObservation::acquire(loaded, work);
+    let value = observation.detail(result)?;
+    observation.finish()?;
+    Ok(value)
 }
 
 fn progress_detail_from_record(

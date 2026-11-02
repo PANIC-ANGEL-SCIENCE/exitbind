@@ -505,7 +505,7 @@ pub(crate) fn claimed_context(
         return Err("claimed child identity is malformed".into());
     };
     if intent["assignmentDelivery"]["state"] == "unavailable" {
-        return Err("the original child presentation is unavailable".into());
+        return Err("the original child delivery proof is unavailable".into());
     }
     context::host_context(loaded, work, id).map(Some)
 }

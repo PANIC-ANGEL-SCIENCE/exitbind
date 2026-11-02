@@ -245,6 +245,48 @@ impl Drop for BlockedStart {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn sent_context_with_failed_delivery_record_is_reported_without_return_credit() {
+    let profile = PROFILE_BODY.repeat(40);
+    let fixture = Fixture::new_with_material(
+        "r61-delivery-record-failure",
+        "true --mode strict",
+        Some("fixture.txt"),
+        &profile,
+        None,
+    );
+    fixture.prepare_sonic();
+    let blocked = BlockedStart::new(&fixture);
+    let path = fixture.product.join(".exitbind/child-intents.json");
+    let held = fixture.product.join(".exitbind/child-intents-held.json");
+    fs::rename(&path, &held).unwrap();
+    fs::create_dir(&path).unwrap();
+    let output = blocked.finish();
+    assert!(output.status.success(), "{}", text(&output));
+    let hook: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(hook["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap()
+        .contains("Automatic Work return. ENTIRE final message"));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("wrote hook output but could not record")
+    );
+    fs::remove_dir(&path).unwrap();
+    fs::rename(&held, &path).unwrap();
+    fixture.hook(
+        json!({"hook_event_name":"SubagentStop","session_id":SESSION,
+        "agent_id":CHILD,"agent_type":"sonic",
+        "last_assistant_message":r#"{"outcome":"completed","summary":"Fixture","reason":""}"#}),
+    );
+    let intent = &fixture.intents().unwrap()[0];
+    assert!(intent["returnEventSha256"].is_null(), "{intent}");
+    assert!(intent["rawObservation"]["reason"]
+        .as_str()
+        .unwrap()
+        .contains("delivery proof is unavailable"));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn postrender_changes_refuse_delivery_credit_before_note_delivery() {
     let profile = PROFILE_BODY.repeat(40);
     for change in ["rules", "profile", "config", "goal", "focus", "permit"] {

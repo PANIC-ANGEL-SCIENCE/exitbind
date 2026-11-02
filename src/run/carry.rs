@@ -295,11 +295,61 @@ pub(crate) fn validate_chain(
     ledger: &LedgerPath,
     events: &[Value],
 ) -> Result<(), String> {
+    validate_chain_with(loaded, ledger, events, &mut Reads::Fresh)
+}
+
+pub(crate) fn validate_chain_observed(
+    loaded: &Loaded,
+    ledger: &LedgerPath,
+    events: &[Value],
+    observation: &mut super::ledger::observation::Observation,
+) -> Result<(), String> {
+    validate_chain_with(loaded, ledger, events, &mut Reads::Observed(observation))
+}
+
+enum Reads<'a> {
+    Fresh,
+    Observed(&'a mut super::ledger::observation::Observation),
+}
+
+impl Reads<'_> {
+    fn path(&mut self, loaded: &Loaded, relative: &str) -> Result<LedgerPath, String> {
+        match self {
+            Self::Fresh => ledger_path(&loaded.state_root, relative, true),
+            Self::Observed(observation) => observation.path(loaded, relative, true),
+        }
+    }
+
+    fn claim(&mut self, path: &std::path::Path) -> Result<Option<Value>, String> {
+        match self {
+            Self::Fresh => super::ledger::valid_claim(path),
+            Self::Observed(observation) => observation.claim(path),
+        }
+    }
+
+    fn ledger(
+        &mut self,
+        loaded: &Loaded,
+        path: &LedgerPath,
+    ) -> Result<(LedgerPath, Vec<Value>, String), String> {
+        match self {
+            Self::Fresh => load_at_unchecked(loaded, path),
+            Self::Observed(observation) => observation.read(loaded, path),
+        }
+    }
+}
+
+fn validate_chain_with(
+    loaded: &Loaded,
+    ledger: &LedgerPath,
+    events: &[Value],
+    reads: &mut Reads<'_>,
+) -> Result<(), String> {
     let Some(start) = events.first() else {
         return Err("run ledger has no start event".into());
     };
     let mut seen = BTreeSet::new();
-    validate_edge(loaded, ledger, start, &mut seen, 0)
+    validate_edge(loaded, ledger, start, &mut seen, 0, reads)
 }
 
 fn validate_edge(
@@ -308,6 +358,7 @@ fn validate_edge(
     start: &Value,
     seen: &mut BTreeSet<String>,
     depth: usize,
+    reads: &mut Reads<'_>,
 ) -> Result<(), String> {
     if depth >= MAX_LINEAGE {
         return Err("supersession lineage exceeds the supported depth".into());
@@ -327,12 +378,12 @@ fn validate_edge(
         || replacement.is_some()
         || start.get("preReturnPolicy").is_some()
         || has_preparation_fields(start);
-    let predecessor = match ledger_path(&loaded.state_root, relative, true) {
+    let predecessor = match reads.path(loaded, relative) {
         Ok(predecessor) => predecessor,
         Err(_) if !needs_claim => return Ok(()),
         Err(error) => return Err(error),
     };
-    let claim_result = super::ledger::valid_claim(&super::ledger::claim_path(&predecessor));
+    let claim_result = reads.claim(&super::ledger::claim_path(&predecessor));
     let claim = if needs_claim {
         claim_result?
     } else {
@@ -412,7 +463,7 @@ fn validate_edge(
         return Err("governor carry marker is missing or differs from its persisted claim".into());
     }
     validate_start(start, 1)?;
-    let (_, predecessor_events, source) = load_at_unchecked(loaded, &predecessor)?;
+    let (_, predecessor_events, source) = reads.ledger(loaded, &predecessor)?;
     let head = predecessor_events
         .last()
         .ok_or("superseded predecessor is empty")?;
@@ -516,6 +567,7 @@ fn validate_edge(
             &predecessor_events[0],
             seen,
             depth + 1,
+            reads,
         )?;
         return Ok(());
     }
@@ -556,6 +608,7 @@ fn validate_edge(
         &predecessor_events[0],
         seen,
         depth + 1,
+        reads,
     )?;
     Ok(())
 }

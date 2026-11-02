@@ -152,10 +152,27 @@ impl Prepared {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ReadinessState {
+    Current,
+    Blocked,
+    Unavailable,
+}
+
+impl ReadinessState {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Current => "current",
+            Self::Blocked => "blocked",
+            Self::Unavailable => "unavailable",
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct Readiness {
     pub(crate) protocol: u64,
-    pub(crate) state: &'static str,
+    pub(crate) state: ReadinessState,
     pub(crate) reason: Option<String>,
     pub(crate) total: usize,
     pub(crate) current: usize,
@@ -171,13 +188,13 @@ pub(crate) struct Readiness {
 
 impl Readiness {
     pub(crate) fn ready(&self) -> bool {
-        self.state == "current"
+        self.state == ReadinessState::Current
     }
 
     pub(crate) fn value(&self) -> Value {
         json!({
             "protocol": self.protocol,
-            "state": self.state,
+            "state": self.state.as_str(),
             "reason": self.reason,
             "members": {"total":self.total,"current":self.current,"integrationSupported":self.integrated,"historical":self.historical,"retainedHistorical":self.historical_details,"quarantinedUncredited":self.quarantined_uncredited,"retainedQuarantinedUncredited":self.quarantined_details},
             "pendingAdmissions": self.pending_admissions,
@@ -754,6 +771,7 @@ fn config_binding(loaded: &Loaded) -> Result<String, String> {
 }
 mod config_stamp;
 mod integration;
+mod observation;
 mod readiness;
 pub(crate) use config_stamp::stamps;
 
@@ -766,6 +784,7 @@ use integration::{
 mod tests;
 
 pub(crate) use integration::{append_work, prepare, reject_unprepared_markers};
+pub(super) use observation::{observe_work, WorkJourney};
 #[cfg(test)]
 #[cfg(test)]
 pub(super) use readiness::readiness_for_state;

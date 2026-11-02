@@ -14,7 +14,12 @@ use std::{
 
 mod claim;
 mod memo;
+pub(crate) mod observation;
 use self::claim::validate_claim;
+
+type FileIdentity = (u64, u64);
+type ObservedLedger = (LedgerPath, Vec<Value>, String, FileIdentity);
+type ClaimSource = Option<(String, FileIdentity)>;
 
 #[derive(Clone)]
 pub(crate) struct LedgerPath {
@@ -58,9 +63,14 @@ pub(crate) fn load_at(
 /// Read and reduce one ledger without following predecessor links. The carry
 /// verifier uses this owner while it walks the bounded lineage itself.
 pub(crate) fn load_at_unchecked(
-    _loaded: &Loaded,
+    loaded: &Loaded,
     ledger: &LedgerPath,
 ) -> Result<(LedgerPath, Vec<Value>, String), String> {
+    let (ledger, events, source, _) = load_at_with_identity(loaded, ledger)?;
+    Ok((ledger, events, source))
+}
+
+fn load_at_with_identity(_loaded: &Loaded, ledger: &LedgerPath) -> Result<ObservedLedger, String> {
     let mut file = open_read_nofollow(&ledger.path).map_err(|error| error.to_string())?;
     let metadata = file.metadata().map_err(|error| error.to_string())?;
     if !metadata.is_file()
@@ -116,7 +126,7 @@ pub(crate) fn load_at_unchecked(
         run_state::reduce(&events)?;
         Ok(events)
     })?;
-    Ok((ledger.clone(), events, source))
+    Ok((ledger.clone(), events, source, inode(&metadata)))
 }
 
 pub(crate) fn ledger_path(
@@ -411,9 +421,13 @@ pub(crate) fn claim_path(ledger: &LedgerPath) -> PathBuf {
 /// Read and validate an existing supersession claim without requiring a
 /// caller to know the successor request that created it.
 pub(crate) fn valid_claim(path: &Path) -> Result<Option<Value>, String> {
+    Ok(claim_with_identity(path)?.0)
+}
+
+fn claim_with_identity(path: &Path) -> Result<(Option<Value>, ClaimSource), String> {
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok((None, None)),
         Err(error) => return Err(error.to_string()),
     };
     if metadata.file_type().is_symlink() || !metadata.is_file() {
@@ -440,7 +454,7 @@ pub(crate) fn valid_claim(path: &Path) -> Result<Option<Value>, String> {
     let value: Value =
         serde_json::from_str(&source).map_err(|_| "invalid supersession claim".to_string())?;
     validate_claim(&value)?;
-    Ok(Some(value))
+    Ok((Some(value), Some((source, inode(&opened)))))
 }
 
 pub(crate) fn obtain_claim(path: &Path, wanted: &Value) -> Result<SupersessionClaim, String> {

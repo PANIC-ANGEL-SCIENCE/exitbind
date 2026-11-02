@@ -40,6 +40,7 @@ Identity	src/session_goal/journey/integration/lineage.rs	journey Work start, con
 Integrity	src/session_goal/journey/integration/lineage.rs	journey successor claim does not bind the exact predecessor or same task Goal
 Integrity	src/session_goal/journey/integration/lineage.rs	journey successor start does not match its validated same-goal claim
 Identity	src/session_goal/native.rs	native session Goal owner digest mismatch
+Transient	src/session_goal/progress.rs	Goal record or configuration changed during Work projection
 NotARefusal	src/session_goal/progress/close_route.rs	 direct completion is stale or unknown
 NotARefusal	src/session_goal/progress/close_route.rs	 result reference is stale or unavailable:
 NotARefusal	src/session_goal/progress/close_route.rs	additional direct completion is stale or unknown

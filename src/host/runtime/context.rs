@@ -76,6 +76,12 @@ pub(super) fn note_delivery(
     crate::session_goal::note_child_delivery(loaded, payload, binding, permit, facts)
 }
 
+pub(super) fn report_delivery_record(result: Result<(), String>) {
+    if result.is_err() {
+        eprintln!("Exitbind wrote hook output but could not record the child delivery proof; automatic Work return cannot be credited.");
+    }
+}
+
 pub(super) fn format_agent_context(
     project: &Path,
     agent: &str,
