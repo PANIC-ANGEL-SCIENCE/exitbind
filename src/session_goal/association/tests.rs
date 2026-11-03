@@ -1,41 +1,43 @@
 use serde_json::{json, Value};
-use std::{env, ffi::OsString, fs};
+use std::{env, fs};
 
-struct NativeEnvironmentGuard(Vec<(&'static str, Option<OsString>)>);
-
-impl NativeEnvironmentGuard {
-    fn codex(identity: &str, store: &std::path::Path) -> Self {
-        let names = [
-            "CODEX_THREAD_ID",
-            "CODEX_SESSION_ID",
-            "CLAUDE_CODE_SESSION_ID",
-            "EXITBIND_NATIVE_SESSION_ID",
-            "EXITBIND_SESSION_GOALS_DIR",
-            "CLAUDE_ENV_FILE",
-            "XDG_STATE_HOME",
-        ];
-        let saved = names
-            .iter()
-            .map(|name| (*name, env::var_os(name)))
-            .collect::<Vec<_>>();
-        for name in names {
-            env::remove_var(name);
-        }
-        env::set_var("CODEX_THREAD_ID", identity);
-        env::set_var("EXITBIND_SESSION_GOALS_DIR", store);
-        Self(saved)
+fn isolated_native_test(marker: &str, test: &str) -> bool {
+    if env::var_os(marker).is_some() {
+        return false;
     }
-}
-
-impl Drop for NativeEnvironmentGuard {
-    fn drop(&mut self) {
-        for (name, value) in self.0.drain(..) {
-            match value {
-                Some(value) => env::set_var(name, value),
-                None => env::remove_var(name),
-            }
-        }
+    let outer = crate::test_root::temp("association-native-child");
+    let store = outer.join("sessions");
+    crate::project::portability::create_private_directory(&store).unwrap();
+    // raw-spawn: the child owns the native selector and session store.
+    let mut child = std::process::Command::new(env::current_exe().unwrap());
+    for name in [
+        "CODEX_THREAD_ID",
+        "CODEX_SESSION_ID",
+        "CLAUDE_CODE_SESSION_ID",
+        "EXITBIND_NATIVE_SESSION_ID",
+        "EXITBIND_SESSION_GOALS_DIR",
+        "CLAUDE_ENV_FILE",
+        "XDG_STATE_HOME",
+    ] {
+        child.env_remove(name);
     }
+    let output = child
+        .args([test, "--exact", "--test-threads=1", "--nocapture"])
+        .env(marker, "1")
+        .env("CODEX_THREAD_ID", "fixture-association-session")
+        .env("EXITBIND_SESSION_GOALS_DIR", &store)
+        .env("HOME", &*outer)
+        .env("TMPDIR", &*outer)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"));
+    true
 }
 
 fn goal(goal_id: &str, revision: u64) -> Value {
@@ -55,17 +57,13 @@ fn sealed(mut value: Value, previous: Option<&Value>) -> Value {
     super::super::sealed(value.take(), previous)
 }
 
-fn capacity_fixture(
-    sequence: u64,
-) -> (
+fn capacity_fixture() -> (
     crate::test_root::TempRoot,
     crate::config::Loaded,
     std::path::PathBuf,
     super::super::native::Session,
     super::super::native::Owner,
     Value,
-    String,
-    std::path::PathBuf,
 ) {
     let project_root = crate::test_root::temp("session-capacity");
     let config_path =
@@ -83,11 +81,6 @@ fn capacity_fixture(
         config_path.to_str().expect("UTF-8 fixture config path"),
     ))
     .expect("load isolated fixture project");
-    let identity = format!("capacity-session-{sequence}");
-    let session_store = project_root.join("native-session-store");
-    crate::project::portability::create_private_directory(&session_store)
-        .expect("create isolated private native session store");
-    let _environment = NativeEnvironmentGuard::codex(&identity, &session_store);
     let scope = super::super::native::scope(&loaded, true)
         .expect("resolve and own isolated native session");
     let session = scope.session.expect("fixture native session");
@@ -111,16 +104,7 @@ fn capacity_fixture(
         true,
     )
     .expect("incorporate native session Goal");
-    (
-        project_root,
-        loaded,
-        session_root,
-        session,
-        owner,
-        goal,
-        identity,
-        session_store,
-    )
+    (project_root, loaded, session_root, session, owner, goal)
 }
 
 fn capacity_member(
@@ -254,18 +238,20 @@ fn install_capacity_state(
 
 #[test]
 fn pending_admissions_reserve_the_last_member_slot_before_start() {
-    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let sequence = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let (project_root, loaded, session_root, session, owner, _, identity, session_store) =
-        capacity_fixture(sequence);
+    if isolated_native_test(
+        "EXITBIND_TEST_ASSOCIATION_CAPACITY",
+        "session_goal::association::tests::pending_admissions_reserve_the_last_member_slot_before_start",
+    ) {
+        return;
+    }
+    let (project_root, loaded, session_root, session, owner, _) = capacity_fixture();
     let _project_root = project_root;
     let current = install_capacity_state(&session_root, &loaded, &session, &owner, 31, 1);
-    let scope = super::super::native::Scope {
-        root: session_root.clone(),
-        session: Some(session.clone()),
-        owner: Some(owner.clone()),
-        owner_matches: true,
-    };
+    let scope = super::super::native::scope(&loaded, false).expect("resolve fixture owner");
+    scope
+        .require_owner()
+        .expect("fixture owner remains current");
+    assert_eq!(scope.root, session_root);
 
     assert!(
         super::prepare(&scope).is_err(),
@@ -303,7 +289,6 @@ fn pending_admissions_reserve_the_last_member_slot_before_start() {
     // With one fewer pending admission, the actual common Work-start path
     // reserves the last slot, starts, and links member 32 in one operation.
     install_capacity_state(&session_root, &loaded, &session, &owner, 31, 0);
-    let _environment = NativeEnvironmentGuard::codex(&identity, &session_store);
     let started = crate::work::begin(
         &loaded,
         crate::work::BeginOptions {
@@ -358,6 +343,53 @@ fn pending_admissions_reserve_the_last_member_slot_before_start() {
         journal_before_relink,
         "relinking the exact member must not mutate its Goal or Work"
     );
+
+    // This is an actual Work companion, not a synthetic local association.
+    // Damaged history, an invalid owner, and a legacy-marker downgrade must
+    // all refuse native authority and Goal closure.
+    let journal = session_root
+        .join(crate::project::layout_types::state_namespace())
+        .join("session-goal.jsonl");
+    assert!(matches!(
+        super::context_for_work_readonly(&loaded, work).context,
+        super::WorkContext::Owner(_)
+    ));
+    let owner_path = session_root.join("owner.json");
+    let owner_bytes = fs::read(&owner_path).unwrap();
+    let mut invalid_owner: Value = serde_json::from_slice(&owner_bytes).unwrap();
+    invalid_owner["sha256"] = json!("0".repeat(64));
+    for damage in ["history", "owner", "downgrade"] {
+        fs::write(&journal, &journal_before_relink).unwrap();
+        fs::write(&owner_path, &owner_bytes).unwrap();
+        match damage {
+            "history" => fs::write(&journal, b"invalid Goal history\n").unwrap(),
+            "owner" => fs::write(&owner_path, invalid_owner.to_string()).unwrap(),
+            "downgrade" => {
+                let mut raw = journal_before_relink.clone();
+                raw.extend_from_slice(b"{\"nativeGoalOwnerCorrections\":null}\n");
+                fs::write(&journal, raw).unwrap();
+            }
+            _ => unreachable!(),
+        }
+        let before = fs::read(&journal).unwrap();
+        let context = super::context_for_work_readonly(&loaded, work);
+        assert!(
+            matches!(context.context, super::WorkContext::Invalid),
+            "{damage}"
+        );
+        let progress = super::super::progress_for_work(&loaded, work, &json!({})).unwrap();
+        assert_eq!(progress["overall"], "unavailable", "{damage}: {progress}");
+        assert_eq!(
+            progress["decomposition"]["reason"], "native_session_goal_context_invalid",
+            "{damage}: {progress}"
+        );
+        assert!(
+            progress.get("journeyCompletion").is_none(),
+            "{damage}: {progress}"
+        );
+        assert!(super::super::close_direct(&session_root, &loaded, "main", None).is_err());
+        assert_eq!(fs::read(&journal).unwrap(), before, "{damage}");
+    }
 }
 
 #[test]
@@ -411,8 +443,12 @@ fn same_goal_sealing_preserves_associations_but_successors_start_unbound() {
 
 #[test]
 fn prestart_admission_reopens_closed_goal_blocks_readiness_and_survives_successor() {
-    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let _sequence = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    if isolated_native_test(
+        "EXITBIND_TEST_ASSOCIATION_PRESTART",
+        "session_goal::association::tests::prestart_admission_reopens_closed_goal_blocks_readiness_and_survives_successor",
+    ) {
+        return;
+    }
     let project_root = crate::test_root::temp("session-admission");
     let config_path =
         crate::project::onboarding::init_with_options(crate::project::onboarding::InitOptions {
@@ -429,13 +465,10 @@ fn prestart_admission_reopens_closed_goal_blocks_readiness_and_survives_successo
         config_path.to_str().expect("UTF-8 fixture config path"),
     ))
     .expect("load isolated fixture project");
-    let session_root = project_root.join("native-session-store");
-    crate::project::portability::create_private_directory(&session_root)
-        .expect("create isolated private native session root");
-    crate::project::portability::create_private_directory(
-        &session_root.join(crate::project::layout_types::state_namespace()),
-    )
-    .expect("create isolated private native session journal directory");
+    let scope = super::super::native::scope(&loaded, true).expect("own fixture native session");
+    scope.require_owner().expect("fixture native owner");
+    let session = scope.session.as_ref().expect("fixture native session");
+    let session_root = scope.root.clone();
     let goal = super::super::incorporate(
         &session_root,
         &loaded,
@@ -457,7 +490,7 @@ fn prestart_admission_reopens_closed_goal_blocks_readiness_and_survives_successo
     let closed = super::super::close_direct(&session_root, &loaded, "main", None)
         .expect("close empty journey before the next side Work");
     assert_eq!(closed["closure"]["closed"], true);
-    let owner = super::super::native::owner_for(&loaded).expect("fixture owner identity");
+    let owner = scope.owner.as_ref().expect("fixture owner identity");
     let work = format!("smw_{}", "a".repeat(64));
     let candidate = super::Candidate {
         goal_id: goal["goalId"].as_str().unwrap_or("main").to_owned(),
@@ -466,10 +499,10 @@ fn prestart_admission_reopens_closed_goal_blocks_readiness_and_survives_successo
             .as_str()
             .expect("closed Goal event")
             .to_owned(),
-        session_key: "b".repeat(64),
-        host: "codex",
+        session_key: session.key.clone(),
+        host: session.host,
         owner_project_id: owner.project_id.clone(),
-        owner_identity_sha256: owner.identity_sha256,
+        owner_identity_sha256: owner.identity_sha256.clone(),
     };
     let reopened = super::admit(
         &session_root,

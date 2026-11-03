@@ -39,9 +39,10 @@ fn readonly_scope_retains_and_rechecks_the_shared_journey_witness() {
                 .output().unwrap();
             assert!(
                 output.status.success(),
-                "{host}: {}{}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
+                "{host}: child exited {}; stderr:\n{}\nstdout:\n{}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr),
+                String::from_utf8_lossy(&output.stdout)
             );
             if String::from_utf8_lossy(&output.stderr).contains("COVERAGE UNAVAILABLE") {
                 eprintln!("{host}: {}", String::from_utf8_lossy(&output.stderr));

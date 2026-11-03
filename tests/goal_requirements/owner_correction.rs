@@ -868,6 +868,16 @@ fn restoring_a_legacy_owner_after_commit_cannot_hide_the_correction() {
     let original = fs::read(&owner).unwrap();
     let preview = fixture.preview("downgrade");
     value(&fixture.execute(&preview, "applyArgv"));
+    let work = fixture
+        .target
+        .begin_ordinary("Retain the native Work association", "true", &[]);
+    let attached = fixture
+        .target
+        .value(&["work", "next", &work, "--json"], None);
+    assert_eq!(
+        attached["presentation"]["goalProgress"]["goal"], "Import names safely and show a count",
+        "{attached}"
+    );
     let journal_after = fs::read(&journal).unwrap();
     fs::write(&owner, original).unwrap();
     assert!(!fixture
@@ -878,6 +888,20 @@ fn restoring_a_legacy_owner_after_commit_cannot_hide_the_correction() {
     assert!(!fixture
         .target
         .call(&["goal", "status", "--json"], None)
+        .status
+        .success());
+    let next = fixture
+        .target
+        .value(&["work", "next", &work, "--json"], None);
+    let progress = &next["presentation"]["goalProgress"];
+    assert_eq!(
+        progress["decomposition"]["reason"], "native_session_goal_context_invalid",
+        "{next}"
+    );
+    assert!(progress.get("journeyCompletion").is_none(), "{next}");
+    assert!(!fixture
+        .target
+        .call(&["goal", "close", "--goal-id", "import"], None)
         .status
         .success());
     assert_eq!(fs::read(journal).unwrap(), journal_after);

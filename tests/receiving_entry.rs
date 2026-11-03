@@ -436,7 +436,13 @@ fn unverified_codex_capacity_does_not_accept_a_missing_required_original() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(error.contains("no child was prepared"), "{error}");
+    // Removing the required original invalidates the captured assignment before
+    // transport capacity is considered; the stale route must still be inert.
+    assert!(
+        error.contains("current child assignment changed"),
+        "{error}"
+    );
+    assert!(error.contains("refresh the prepared route"), "{error}");
     assert!(!root.join(".exitbind/child-intents.json").exists());
     assert_eq!(std::fs::read(&ledger).unwrap(), before);
 }

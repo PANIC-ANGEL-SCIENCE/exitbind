@@ -377,19 +377,31 @@ impl Session {
         super::owner_correction::recovery_snapshot(self, access)
     }
 
-    pub(crate) fn owner_with_access(&self, access: Access) -> Result<Option<Owner>, String> {
+    /// Validate the owner envelope without deriving authority from the journal.
+    /// Callers must still resolve the effective owner before using it.
+    pub(super) fn validated_owner_value(&self, access: Access) -> Result<Option<Value>, String> {
         let Some(value) = self.owner_value(access)? else {
+            return Ok(None);
+        };
+        if value["protocol"] == 2 {
+            super::owner_correction::validate_marker_envelope(self, &value)?;
+        } else {
+            validate_owner_v1(&value, &self.key, self.host)?;
+            // The target journal must never itself be an adoption.
+            if value.get(ADOPTED_FIELD).is_some() {
+                return Err("native session Goal owner record names another session's journal that cannot be read".into());
+            }
+        }
+        Ok(Some(value))
+    }
+
+    pub(crate) fn owner_with_access(&self, access: Access) -> Result<Option<Owner>, String> {
+        let Some(value) = self.validated_owner_value(access)? else {
             return Ok(None);
         };
         if value["protocol"] == 2 {
             return super::owner_correction::resolve_owner(self, &value, access)
                 .map(|resolved| Some(resolved.owner));
-        }
-        validate_owner_v1(&value, &self.key, self.host)?;
-        // The journal an adoption names is never itself an adoption, and an
-        // adoption record that did not resolve names no journal to read.
-        if value.get(ADOPTED_FIELD).is_some() {
-            return Err("native session Goal owner record names another session's journal that cannot be read".into());
         }
         super::owner_correction::validate_legacy_history(self, &value, access)?;
         Ok(Some(Owner {
@@ -492,7 +504,7 @@ pub(crate) fn scope_for(
     scope_for_with_access(loaded, session, establish_owner, Access::RequireWritable)
 }
 
-fn scope_for_with_access(
+pub(super) fn scope_for_with_access(
     loaded: &Loaded,
     session: Session,
     establish_owner: bool,

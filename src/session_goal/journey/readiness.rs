@@ -337,12 +337,43 @@ pub(super) fn belongs_to_current_session(
     record: &Value,
     access: super::super::native::Access,
 ) -> Result<Option<(super::super::native::Scope, Value)>, SessionLookupError> {
-    let scope = super::super::native::scope_with_access(loaded, access)
+    let Some(session) =
+        super::super::native::current_with_access(access).map_err(SessionLookupError::Scope)?
+    else {
+        return Ok(None);
+    };
+    // A valid envelope is only a locator check, not effective owner credit.
+    // Do it first so a damaged owner is never treated as missing history.
+    let Some(owner_value) = session
+        .validated_owner_value(access)
+        .map_err(SessionLookupError::Scope)?
+    else {
+        return Ok(None);
+    };
+    let raw = super::super::raw_history(&session.root).map_err(SessionLookupError::History)?;
+    let history =
+        super::super::records_from_raw(raw.as_deref()).map_err(SessionLookupError::History)?;
+    let scope = super::super::native::scope_for_with_access(loaded, session, false, access)
         .map_err(SessionLookupError::Scope)?;
-    if !scope.is_session() || !scope.owner_matches {
+    let verified_owner = scope
+        .session
+        .as_ref()
+        .ok_or_else(|| SessionLookupError::Scope("native session identity changed".into()))?
+        .validated_owner_value(access)
+        .map_err(SessionLookupError::Scope)?;
+    if verified_owner.as_ref() != Some(&owner_value) {
+        return Err(SessionLookupError::Scope(
+            "native Goal owner changed during session lookup".into(),
+        ));
+    }
+    if !scope.owner_matches {
         return Ok(None);
     }
-    let history = super::super::records(&scope.root).map_err(SessionLookupError::History)?;
+    if super::super::raw_history(&scope.root).map_err(SessionLookupError::History)? != raw {
+        return Err(SessionLookupError::History(
+            "native Goal history changed during session lookup".into(),
+        ));
+    }
     if !history
         .iter()
         .any(|item| item["eventSha256"] == record["eventSha256"])

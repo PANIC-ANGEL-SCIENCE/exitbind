@@ -86,6 +86,39 @@ fn unavailable_ambient_history_stays_absent_without_close_authority() {
     let ambient_history = scope.root.join(relative);
     std::fs::write(&ambient_history, b"invalid disposable Goal history\n").unwrap();
 
+    // A native-associated observation and a native Goal writer must not treat
+    // this damaged history as the optional local Goal case.
+    let mut native_observation = JourneyObservation::for_work(work, false);
+    assert!(native_observation
+        .progress(Some(&loaded), &record)
+        .is_none());
+    assert!(native_observation.status().is_err());
+    assert!(native_observation.finish(&loaded).is_err());
+    assert!(session_goal::close_direct(&scope.root, &loaded, work, None).is_err());
+    assert_eq!(
+        std::fs::read(&ambient_history).unwrap(),
+        b"invalid disposable Goal history\n"
+    );
+
+    // An invalid owner is a scope failure even when the journal also fails.
+    let owner_path = scope.root.join("owner.json");
+    let owner_bytes = std::fs::read(&owner_path).unwrap();
+    let mut invalid_owner: serde_json::Value = serde_json::from_slice(&owner_bytes).unwrap();
+    invalid_owner["sha256"] = serde_json::json!("0".repeat(64));
+    std::fs::write(&owner_path, invalid_owner.to_string()).unwrap();
+    let mut invalid = JourneyObservation::for_work(work, true);
+    assert!(invalid.progress(Some(&loaded), &record).is_none());
+    assert!(invalid.status().is_err());
+    assert!(invalid.finish(&loaded).is_err());
+    std::fs::write(&owner_path, owner_bytes).unwrap();
+
+    std::env::set_var("CLAUDE_CODE_SESSION_ID", "conflicting-fixture-session");
+    let mut invalid_selector = JourneyObservation::for_work(work, true);
+    assert!(invalid_selector.progress(Some(&loaded), &record).is_none());
+    assert!(invalid_selector.status().is_err());
+    assert!(invalid_selector.finish(&loaded).is_err());
+    std::env::remove_var("CLAUDE_CODE_SESSION_ID");
+
     let mut observation = JourneyObservation::for_work(work, true);
     assert!(observation.progress(Some(&loaded), &record).is_none());
     observation.status().unwrap();
