@@ -221,20 +221,56 @@ pub(super) fn append(loaded: &Loaded, record: &Value, view: &mut Value) {
     view["systemText"] = Value::String(out);
 }
 
-/// The SessionStart line for the native Goal: journey from its record, and
-/// lessons from the verified owner configuration when one is available.
-pub(crate) fn hook_line(record: &Value, owner: Option<&Loaded>) -> Option<String> {
-    let journey = journey(record, None, false, None);
+/// The SessionStart line for the native Goal, with complete requirements
+/// preferred over optional journey and lesson detail within the byte budget.
+pub(crate) fn hook_line(
+    record: &Value,
+    owner: Option<&Loaded>,
+    max_bytes: usize,
+) -> Option<String> {
+    let full = journey(record, None, false, None);
     let lessons = owner.map(|loaded| lessons(loaded, record["goal"].as_str()));
     let unmapped = unmapped_text(record);
-    if journey.is_none() && lessons.is_none() && unmapped.is_none() {
+    if full.is_none() && lessons.is_none() && unmapped.is_none() {
         return None;
     }
-    Some(format!(
-        "Goal {}: {}",
-        record["goalId"].as_str().unwrap_or("unknown"),
-        joined(&[journey.as_deref(), unmapped.as_deref(), lessons.as_deref()])
-    ))
+    let head = format!("Goal {}: ", record["goalId"].as_str().unwrap_or("unknown"));
+    let line = |journey: Option<&str>, lessons: Option<&str>| {
+        let facts = joined(&[journey, unmapped.as_deref(), lessons]);
+        (!facts.is_empty()).then(|| format!("{head}{facts}"))
+    };
+    let complete = line(full.as_deref(), lessons.as_deref());
+    if complete
+        .as_ref()
+        .is_some_and(|value| value.len() <= max_bytes)
+    {
+        return complete;
+    }
+    let short = journey(record, None, true, None);
+    for (journey, lessons) in [
+        (short.as_deref(), lessons.as_deref()),
+        (None, lessons.as_deref()),
+        (None, None),
+    ] {
+        let candidate = line(journey, lessons);
+        if candidate
+            .as_ref()
+            .is_some_and(|value| value.len() <= max_bytes)
+        {
+            return candidate;
+        }
+    }
+    let notice = if unmapped.is_some() {
+        "Requirements without a Work omitted; read Goal status."
+    } else {
+        "Goal facts omitted; read Goal status."
+    };
+    let headed = format!("{head}{notice}");
+    if headed.len() <= max_bytes {
+        Some(headed)
+    } else {
+        (notice.len() <= max_bytes).then(|| notice.to_owned())
+    }
 }
 
 /// `Requirements without a Work: R2 (source S), R3 (source S)`, or nothing.
@@ -299,7 +335,7 @@ mod tests {
             assert!(!text.contains("not yet current") && !text.contains("closes"));
             assert!(!text.contains(&read_route()) && !text.contains("read:"));
         }
-        let line = hook_line(&record, None).unwrap();
+        let line = hook_line(&record, None, 384).unwrap();
         assert_eq!(line, format!("Goal goal: {expected}"));
         // A reopening admission resets closure, and the open text returns.
         record["closure"] = json!({"closed":false,"revision":null,"resultRefs":[]});

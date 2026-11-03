@@ -1,6 +1,6 @@
 //! Focused projection and recovery contract checks.
 
-use super::{project, MAX_RESPONSE_BYTES};
+use super::{continuation_route, project, MAX_RESPONSE_BYTES};
 use serde_json::json;
 use std::path::Path;
 
@@ -21,6 +21,70 @@ fn optional_bool_field(value: &serde_json::Value, key: &str) -> bool {
         Some(serde_json::Value::Bool(value)) => *value,
         Some(other) => panic!("{key} must be a boolean when present, got {other}"),
     }
+}
+
+#[test]
+fn compact_adoption_route_survives_minimal_and_pathological_fallbacks() {
+    for config_bytes in [32, 512, 4_096] {
+        let config = format!("/tmp/{}/exitbind.json", "c".repeat(config_bytes));
+        let session_key = "a".repeat(64);
+        let mut route = continuation_route(
+            Path::new(&config),
+            crate::emitted::Route::new(["goal", "adopt", "--session-key", session_key.as_str()]),
+        );
+        route["goalId"] = json!("import");
+        route["revision"] = json!(12);
+        let grouped =
+            crate::emitted::Route::new(["work", "expand", "smw_work", "ref:detail", "--json"])
+                .config(Path::new(&config))
+                .within(MAX_RESPONSE_BYTES - 2_048)
+                .command_json();
+        let response = json!({
+            "status":"resumed", "work":"smw_work",
+            "next":{"action":"lead_decision", "assignment":"sma_assignment", "current":{
+                "action":"lead_decision", "binding":"binding", "readiness":"IN_PROGRESS",
+                "details":{"grouped":grouped.clone()},
+                "actionForm":{"version":1,"state":"initial_scope"}
+            }},
+            "presentation":{"goalProgress":{"overall":"unavailable", "adoptRoute":route.clone(),
+                "systemText":"s".repeat(3_000)}, "state":{"review":"none"},
+                "terminal":"EXIT READY"},
+            "residual":{"humanHelp":{"whatHappened":"x".repeat(5_000)}}
+        });
+        let minimal = super::presentation::minimal_presentation(&response["presentation"]);
+        assert_eq!(minimal["goalProgress"]["adoptRoute"], route);
+        let output = project(&response, Path::new(&config), "resume")
+            .unwrap_or_else(|error| panic!("config bytes={config_bytes}: {error}"));
+        let bytes = serde_json::to_vec(&output).unwrap().len() + 1;
+        assert!(bytes <= MAX_RESPONSE_BYTES, "bytes={bytes}: {output}");
+        assert_eq!(
+            output["presentation"]["goalProgress"]["adoptRoute"], route,
+            "{output}"
+        );
+        assert_eq!(output["presentation"]["terminal"], "EXIT READY", "{output}");
+        assert_eq!(output["current"]["binding"], "binding", "{output}");
+        assert!(output["fullCommand"].is_array(), "{output}");
+        if config_bytes == 4_096 {
+            assert!(
+                output["omitted"]
+                    .to_string()
+                    .contains("required current executable and config"),
+                "{output}"
+            );
+            assert_eq!(output["fullCommandSameConfigRequired"], true, "{output}");
+            assert_eq!(route["sameConfigRequired"], true, "{route}");
+            assert_eq!(
+                output["current"]["details"]["grouped"]["sameConfigRequired"], true,
+                "{output}"
+            );
+            if crate::producer::exitbind_surface() {
+                assert_eq!(output["effectiveAction"]["detail"], grouped, "{output}");
+            }
+        }
+    }
+    let without_route = json!({"goalProgress":{"overall":"unavailable"}});
+    let minimal = super::presentation::minimal_presentation(&without_route);
+    assert!(minimal["goalProgress"].get("adoptRoute").is_none());
 }
 
 #[test]

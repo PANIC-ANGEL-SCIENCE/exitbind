@@ -1,3 +1,4 @@
+use super::super::native::Access;
 use super::*;
 use serde_json::json;
 
@@ -11,28 +12,46 @@ pub(crate) fn context_for_work_with_root(
     loaded: &crate::config::Loaded,
     work: &str,
 ) -> super::WorkContextResolution {
+    context_for_work_with_access(loaded, work, Access::RequireWritable)
+}
+
+pub(crate) fn context_for_work_readonly(
+    loaded: &crate::config::Loaded,
+    work: &str,
+) -> super::WorkContextResolution {
+    context_for_work_with_access(loaded, work, Access::ReadExisting)
+}
+
+fn context_for_work_with_access(
+    loaded: &crate::config::Loaded,
+    work: &str,
+    access: Access,
+) -> super::WorkContextResolution {
     let value = match companion(loaded, work) {
         Ok(Some(value)) => value,
         Ok(None) => {
-            return match super::super::native::current() {
+            return match super::super::native::current_with_access(access) {
                 Ok(None) => match super::super::read(&loaded.state_root) {
                     Ok(None) => resolution(WorkContext::NotRequested, None),
                     Ok(Some(_)) => resolution(WorkContext::Local, None),
                     Err(_) => resolution(WorkContext::Invalid, None),
                 },
                 Ok(Some(session)) => {
-                    let legacy_bound = match legacy_goal_is_bound(loaded, work, &session) {
+                    let legacy_bound = match legacy_goal_is_bound(loaded, work, &session, access) {
                         Ok(bound) => bound,
                         Err(_) => return resolution(WorkContext::Invalid, None),
                     };
                     if legacy_bound {
                         resolution(WorkContext::Local, None)
                     } else {
-                        match (session.owner(), super::super::read(&session.root)) {
+                        match (
+                            session.owner_with_access(access),
+                            super::super::read(&session.root),
+                        ) {
                             (Ok(None), Ok(None)) => resolution(WorkContext::NotRequested, None),
                             (Err(_), _) | (_, Err(_)) => resolution(WorkContext::Invalid, None),
                             (Ok(Some(_)), Ok(Some(_))) => {
-                                match native_successor_context(loaded, work, &session) {
+                                match native_successor_context(loaded, work, &session, access) {
                                     Ok(Some(context)) => context,
                                     Ok(None) => resolution(WorkContext::Unavailable, None),
                                     Err(_) => resolution(WorkContext::Invalid, None),
@@ -47,9 +66,9 @@ pub(crate) fn context_for_work_with_root(
         }
         Err(_) => return resolution(WorkContext::Invalid, None),
     };
-    let resolved = super::super::native::current()
+    let resolved = super::super::native::current_with_access(access)
         .and_then(|session| session.ok_or_else(|| "native session identity is unavailable".into()))
-        .and_then(|session| resolve_companion(loaded, work, &value, session));
+        .and_then(|session| resolve_companion(loaded, work, &value, session, access));
     match resolved {
         Ok((record, owner_matches, root)) if owner_matches => {
             resolution(WorkContext::Owner(record), Some(root))
@@ -75,6 +94,7 @@ fn native_successor_context(
     loaded: &crate::config::Loaded,
     work: &str,
     session: &super::super::native::Session,
+    access: Access,
 ) -> Result<Option<super::WorkContextResolution>, String> {
     let ledger = crate::work::resolve(loaded, work)?;
     let (_, events, _) = crate::run::ledger::load(loaded, &ledger)?;
@@ -86,7 +106,7 @@ fn native_successor_context(
         return Ok(None);
     }
     let owner = session
-        .owner()?
+        .owner_with_access(access)?
         .ok_or("native session owner is unavailable")?;
     let history = super::super::records(&session.root)?;
     let mut found = None;
@@ -115,7 +135,7 @@ fn native_successor_context(
         .last()
         .cloned()
         .ok_or("native parent Goal is unavailable")?;
-    let scope = super::super::native::scope(loaded, false)?;
+    let scope = super::super::native::scope_with_access(loaded, access)?;
     Ok(Some(if scope.owner_matches {
         resolution(WorkContext::Owner(parent), Some(scope.root))
     } else {
@@ -136,6 +156,7 @@ fn legacy_goal_is_bound(
     loaded: &crate::config::Loaded,
     work: &str,
     session: &super::super::native::Session,
+    access: Access,
 ) -> Result<bool, String> {
     let Some(record) = super::super::read(&loaded.state_root)? else {
         return Ok(false);
@@ -150,7 +171,7 @@ fn legacy_goal_is_bound(
         return Ok(false);
     };
     let owner = session
-        .owner()?
+        .owner_with_access(access)?
         .ok_or("native session Goal owner is unavailable")?;
     super::super::journey::validate_member_for_session(loaded, &member, session, &owner)?;
     let history = super::super::records(&session.root)?;
@@ -196,7 +217,8 @@ pub(crate) fn verify_owner_session(
 ) -> Result<(), String> {
     let value = companion(loaded, work)?
         .ok_or("this Work has no native session Goal context; it was not begun or linked in a native session")?;
-    let (_, owner_matches, _) = resolve_companion(loaded, work, &value, session)?;
+    let (_, owner_matches, _) =
+        resolve_companion(loaded, work, &value, session, Access::RequireWritable)?;
     if !owner_matches {
         return Err(
             "this Work's native session Goal is owned by another configured project".into(),
@@ -210,6 +232,7 @@ fn resolve_companion(
     work: &str,
     value: &Value,
     session: super::super::native::Session,
+    access: Access,
 ) -> Result<(Value, bool, std::path::PathBuf), String> {
     validate_companion(value)?;
     if value["work"].as_str() != Some(work) {
@@ -225,7 +248,7 @@ fn resolve_companion(
         return Err("Work start identity does not match its Goal context".into());
     }
     let owner = session
-        .owner()?
+        .owner_with_access(access)?
         .ok_or("native session Goal owner is unavailable")?;
     if owner.identity_sha256 != value["ownerIdentitySha256"]
         || owner.project_id.as_deref() != value["ownerProjectId"].as_str()

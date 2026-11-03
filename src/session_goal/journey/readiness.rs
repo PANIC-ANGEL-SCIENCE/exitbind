@@ -6,6 +6,7 @@ fn member_currentness(
     state: &JourneyState,
     member: &Member,
     mut observation: Option<&mut crate::run::ledger::observation::Observation>,
+    access: super::super::native::Access,
 ) -> Result<(&'static str, Option<String>), String> {
     let recovery = record
         .map(|record| super::super::recovery::context(loaded, record))
@@ -46,9 +47,9 @@ fn member_currentness(
     let endpoint_loaded = recovered_endpoint.unwrap_or(super::config_stamp::evidence_under(
         selected, &project, member,
     ));
-    let session =
-        super::super::native::current()?.ok_or("native session identity is unavailable")?;
-    let scope = super::super::native::scope(loaded, false)?;
+    let session = super::super::native::current_with_access(access)?
+        .ok_or("native session identity is unavailable")?;
+    let scope = super::super::native::scope_with_access(loaded, access)?;
     let owner = scope.owner.ok_or("native session owner is unavailable")?;
     if member.host != session.host
         || member.session_key != session.key
@@ -155,7 +156,14 @@ pub(in crate::session_goal) fn readiness_for_state(
     loaded: &Loaded,
     state: Option<JourneyState>,
 ) -> Readiness {
-    readiness_for_state_inner(loaded, None, state, None, None)
+    readiness_for_state_inner(
+        loaded,
+        None,
+        state,
+        None,
+        None,
+        super::super::native::Access::RequireWritable,
+    )
 }
 
 pub(super) fn readiness_for_state_inner(
@@ -164,6 +172,7 @@ pub(super) fn readiness_for_state_inner(
     state: Option<JourneyState>,
     mut observation: Option<&mut crate::run::ledger::observation::Observation>,
     selected_ledger: Option<&str>,
+    access: super::super::native::Access,
 ) -> Readiness {
     let Some(state) = state else {
         return Readiness {
@@ -233,7 +242,14 @@ pub(super) fn readiness_for_state_inner(
                 }
             }
         }
-        let result = member_currentness(loaded, record, &state, member, observation.as_deref_mut());
+        let result = member_currentness(
+            loaded,
+            record,
+            &state,
+            member,
+            observation.as_deref_mut(),
+            access,
+        );
         if let Some(observation) = observation.as_deref_mut() {
             if result.is_err() {
                 observation.stop_on_error();
@@ -319,8 +335,10 @@ impl SessionLookupError {
 pub(super) fn belongs_to_current_session(
     loaded: &Loaded,
     record: &Value,
+    access: super::super::native::Access,
 ) -> Result<Option<(super::super::native::Scope, Value)>, SessionLookupError> {
-    let scope = super::super::native::scope(loaded, false).map_err(SessionLookupError::Scope)?;
+    let scope = super::super::native::scope_with_access(loaded, access)
+        .map_err(SessionLookupError::Scope)?;
     if !scope.is_session() || !scope.owner_matches {
         return Ok(None);
     }
@@ -343,8 +361,20 @@ pub(crate) fn readiness_for_record(
     loaded: &Loaded,
     record: &Value,
 ) -> Result<Option<Readiness>, String> {
-    let Some((_scope, current)) =
-        belongs_to_current_session(loaded, record).map_err(SessionLookupError::into_message)?
+    readiness_for_record_with_access(
+        loaded,
+        record,
+        super::super::native::Access::RequireWritable,
+    )
+}
+
+pub(in crate::session_goal) fn readiness_for_record_with_access(
+    loaded: &Loaded,
+    record: &Value,
+    access: super::super::native::Access,
+) -> Result<Option<Readiness>, String> {
+    let Some((_scope, current)) = belongs_to_current_session(loaded, record, access)
+        .map_err(SessionLookupError::into_message)?
     else {
         return Ok(None);
     };
@@ -373,6 +403,7 @@ pub(crate) fn readiness_for_record(
         state(&current)?,
         None,
         None,
+        access,
     )))
 }
 
@@ -380,10 +411,18 @@ pub(super) fn close_scope(
     loaded: &Loaded,
     root: &Path,
 ) -> Result<Option<super::super::native::Scope>, String> {
+    close_scope_with_access(loaded, root, super::super::native::Access::RequireWritable)
+}
+
+pub(super) fn close_scope_with_access(
+    loaded: &Loaded,
+    root: &Path,
+    access: super::super::native::Access,
+) -> Result<Option<super::super::native::Scope>, String> {
     if root == loaded.state_root {
         return Ok(None);
     }
-    let scope = super::super::native::scope(loaded, false)?;
+    let scope = super::super::native::scope_with_access(loaded, access)?;
     if !scope.is_session() || !scope.owner_matches || scope.root != root {
         return Ok(None);
     }
@@ -398,7 +437,14 @@ pub(crate) fn require_close_ready(
     if close_scope(loaded, root)?.is_none() {
         return Ok(());
     }
-    let readiness = readiness_for_state_inner(loaded, Some(record), state(record)?, None, None);
+    let readiness = readiness_for_state_inner(
+        loaded,
+        Some(record),
+        state(record)?,
+        None,
+        None,
+        super::super::native::Access::RequireWritable,
+    );
     if readiness.ready() {
         Ok(())
     } else {
@@ -437,6 +483,17 @@ pub(crate) fn require_resolved_replacement_admissions(record: &Value) -> Result<
 pub(crate) fn progress_for_record(loaded: Option<&Loaded>, record: &Value) -> Option<Value> {
     let loaded = loaded?;
     readiness_for_record(loaded, record)
+        .ok()
+        .flatten()
+        .map(|readiness| readiness.value())
+}
+
+pub(in crate::session_goal) fn progress_for_record_readonly(
+    loaded: Option<&Loaded>,
+    record: &Value,
+) -> Option<Value> {
+    let loaded = loaded?;
+    readiness_for_record_with_access(loaded, record, super::super::native::Access::ReadExisting)
         .ok()
         .flatten()
         .map(|readiness| readiness.value())

@@ -173,10 +173,30 @@ fn local_work_view_survives_unreadable_ambient_session_history() {
         .is_none());
     let before_next = invoke(&root, &["work", "next", work, "--json"], session);
 
+    // Display storage can coexist with the native session's hashed directory.
+    fs::create_dir_all(root.join("sessions/display")).unwrap();
     let sessions: Vec<_> = fs::read_dir(root.join("sessions"))
         .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .filter(|path| path.is_dir())
+        .filter_map(|entry| {
+            let entry = entry.unwrap();
+            let name = entry.file_name();
+            let key = name.to_str()?.strip_prefix("session-")?;
+            if key.len() != 64
+                || !key
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+                || !entry.file_type().unwrap().is_dir()
+            {
+                return None;
+            }
+            let path = entry.path();
+            let owner: Value =
+                serde_json::from_slice(&fs::read(path.join("owner.json")).ok()?).ok()?;
+            (owner["kind"] == "native_session_goal_owner"
+                && owner["host"] == "codex"
+                && owner["sessionKey"] == key)
+                .then_some(path)
+        })
         .collect();
     assert_eq!(sessions.len(), 1, "{sessions:?}");
     let history = sessions[0].join(".exitbind/session-goal.jsonl");

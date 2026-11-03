@@ -19,7 +19,11 @@ pub(super) fn goal_status(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
     if a.options.get("view").is_some_and(|view| view != "event") {
         return Err("goal status --view accepts only event".into());
     }
-    let scope = super::goal::journal_scope(l, a, false)?;
+    let scope = if a.flags.contains_key("project") {
+        crate::session_goal::native::project_scope(l)
+    } else {
+        crate::session_goal::native::scope_readonly(l)?
+    };
     let record = crate::session_goal::read(&scope.root)?;
     if scope.is_session() && !scope.owner_matches {
         if a.options.contains_key("expected-sha256") {

@@ -3,6 +3,7 @@
 //! Host identifiers are correlation locators only. They are hashed before
 //! entering paths or persisted records and never grant host authority.
 
+pub(crate) use crate::project::portability::DirectoryAccess as Access;
 use crate::{config::Loaded, evidence::hash};
 use serde_json::{json, Value};
 use std::{
@@ -129,11 +130,15 @@ impl Scope {
 /// Resolve only host-reported selectors belonging to the current process.
 /// A missing selector is distinct from malformed, mixed, or conflicting IDs.
 pub(crate) fn current() -> Result<Option<Session>, String> {
+    current_with_access(Access::RequireWritable)
+}
+
+pub(crate) fn current_with_access(access: Access) -> Result<Option<Session>, String> {
     if let Some(session) = CALLBACK_SESSION.with(|slot| slot.borrow().clone()) {
         return Ok(Some(session));
     }
     match current_identity()? {
-        Some((host, identity)) => session(host, Some(identity)),
+        Some((host, identity)) => session_with_access(host, Some(identity), access),
         None => Ok(None),
     }
 }
@@ -190,6 +195,14 @@ fn selector(name: &str) -> Result<Option<String>, String> {
 }
 
 fn session(host: &'static str, identity: Option<String>) -> Result<Option<Session>, String> {
+    session_with_access(host, identity, Access::RequireWritable)
+}
+
+fn session_with_access(
+    host: &'static str,
+    identity: Option<String>,
+    access: Access,
+) -> Result<Option<Session>, String> {
     let Some(identity) = identity else {
         return Ok(None);
     };
@@ -197,7 +210,7 @@ fn session(host: &'static str, identity: Option<String>) -> Result<Option<Sessio
     // A session that adopted another session's journal reads and writes that
     // journal. An unreadable adoption record leaves the session on its own
     // root, where `owner()` reports the record's error.
-    Ok(Some(match own.adopted_key() {
+    Ok(Some(match own.adopted_key(access) {
         Ok(Some(journal)) => Session {
             selector_key: own.selector_key,
             ..Session::for_key(host, &journal)?
@@ -254,8 +267,8 @@ impl Session {
         self.key != self.selector_key
     }
 
-    fn owner_value(&self) -> Result<Option<Value>, String> {
-        if !self.ensure_root(false)? {
+    fn owner_value(&self, access: Access) -> Result<Option<Value>, String> {
+        if !self.ensure_root_with_access(false, access)? {
             return Ok(None);
         }
         let Some(bytes) = read_private(
@@ -273,8 +286,8 @@ impl Session {
     }
 
     /// The journal key this session's own owner record adopted, if any.
-    fn adopted_key(&self) -> Result<Option<String>, String> {
-        let Some(value) = self.owner_value()? else {
+    fn adopted_key(&self, access: Access) -> Result<Option<String>, String> {
+        let Some(value) = self.owner_value(access)? else {
             return Ok(None);
         };
         validate_owner(&value, &self.key, self.host)?;
@@ -302,6 +315,10 @@ impl Session {
     }
 
     pub(crate) fn ensure_root(&self, create: bool) -> Result<bool, String> {
+        self.ensure_root_with_access(create, Access::RequireWritable)
+    }
+
+    fn ensure_root_with_access(&self, create: bool, access: Access) -> Result<bool, String> {
         let base = self
             .root
             .parent()
@@ -311,7 +328,7 @@ impl Session {
         } else if !directory_exists(base)? {
             return Ok(false);
         } else {
-            crate::project::portability::verify_private_directory(base)?;
+            crate::project::portability::verify_private_directory_with_access(base, access)?;
         }
         if create {
             crate::project::portability::create_private_directory(&self.root)?;
@@ -325,18 +342,22 @@ impl Session {
         if !directory_exists(&self.root)? {
             return Ok(false);
         }
-        crate::project::portability::verify_private_directory(&self.root)?;
+        crate::project::portability::verify_private_directory_with_access(&self.root, access)?;
         let state = self
             .root
             .join(crate::project::layout_types::state_namespace());
         if directory_exists(&state)? {
-            crate::project::portability::verify_private_directory(&state)?;
+            crate::project::portability::verify_private_directory_with_access(&state, access)?;
         }
         Ok(true)
     }
 
     pub(crate) fn owner(&self) -> Result<Option<Owner>, String> {
-        let Some(value) = self.owner_value()? else {
+        self.owner_with_access(Access::RequireWritable)
+    }
+
+    pub(crate) fn owner_with_access(&self, access: Access) -> Result<Option<Owner>, String> {
+        let Some(value) = self.owner_value(access)? else {
             return Ok(None);
         };
         validate_owner(&value, &self.key, self.host)?;
@@ -392,10 +413,22 @@ fn write_owner(root: &Path, value: &Value) -> Result<(), String> {
 }
 
 pub(crate) fn scope(loaded: &Loaded, establish_owner: bool) -> Result<Scope, String> {
-    let Some(session) = current()? else {
+    scope_inner(loaded, establish_owner, Access::RequireWritable)
+}
+
+pub(crate) fn scope_readonly(loaded: &Loaded) -> Result<Scope, String> {
+    scope_with_access(loaded, Access::ReadExisting)
+}
+
+pub(crate) fn scope_with_access(loaded: &Loaded, access: Access) -> Result<Scope, String> {
+    scope_inner(loaded, false, access)
+}
+
+fn scope_inner(loaded: &Loaded, establish_owner: bool, access: Access) -> Result<Scope, String> {
+    let Some(session) = current_with_access(access)? else {
         return Ok(project_scope(loaded));
     };
-    scope_for(loaded, session, establish_owner)
+    scope_for_with_access(loaded, session, establish_owner, access)
 }
 
 /// A Claude Code session named by a hook payload rather than the environment.
@@ -417,10 +450,19 @@ pub(crate) fn scope_for(
     session: Session,
     establish_owner: bool,
 ) -> Result<Scope, String> {
+    scope_for_with_access(loaded, session, establish_owner, Access::RequireWritable)
+}
+
+fn scope_for_with_access(
+    loaded: &Loaded,
+    session: Session,
+    establish_owner: bool,
+    access: Access,
+) -> Result<Scope, String> {
     let owner = if establish_owner {
         Some(session.create_owner(loaded)?)
     } else {
-        session.owner()?
+        session.owner_with_access(access)?
     };
     let local = owner_for(loaded).ok();
     let owner_matches = owner

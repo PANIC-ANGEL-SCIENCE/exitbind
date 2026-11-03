@@ -318,10 +318,31 @@ fn contract_scope_for_start(
     start: &Value,
     contract: &Contract,
 ) -> Result<ContractScope, String> {
+    contract_scope_for_start_with_access(
+        loaded,
+        work_id,
+        start,
+        contract,
+        crate::session_goal::native::Access::RequireWritable,
+    )
+}
+
+fn contract_scope_for_start_with_access(
+    loaded: &Loaded,
+    work_id: &str,
+    start: &Value,
+    contract: &Contract,
+    access: crate::session_goal::native::Access,
+) -> Result<ContractScope, String> {
     if let Some(scope) = scope_companion(loaded, work_id, start, contract)? {
         return Ok(scope);
     }
-    match crate::session_goal::association::context_for_work(loaded, work_id) {
+    let context = if access == crate::session_goal::native::Access::RequireWritable {
+        crate::session_goal::association::context_for_work(loaded, work_id)
+    } else {
+        crate::session_goal::association::context_for_work_readonly(loaded, work_id).context
+    };
+    match context {
         crate::session_goal::association::WorkContext::Local => Ok(ContractScope::Project),
         _ => Err(
             "named Goal journal selector is missing; refusing to infer project or session scope"
@@ -355,7 +376,13 @@ pub(crate) fn project_progress_for_work(
     let Some(contract) = contract_if_named(loaded, work_id, start)? else {
         return Ok(None);
     };
-    let selected_scope = match contract_scope_for_start(loaded, work_id, start, &contract) {
+    let selected_scope = match contract_scope_for_start_with_access(
+        loaded,
+        work_id,
+        start,
+        &contract,
+        crate::session_goal::native::Access::ReadExisting,
+    ) {
         Ok(scope) => scope,
         Err(error) => {
             return Ok(Some(

@@ -58,9 +58,8 @@ pub(crate) fn hook_context(
     // The journey and lesson facts the Lead needs, from the Goal record and
     // the verified owner configuration (skipped once the budget is spent).
     let facts = (Instant::now() < deadline)
-        .then(|| session_goal::goal_summary::hook_line(&record, hinted.owner_loaded.as_ref()))
-        .flatten()
-        .map(|line| bounded_hook_text(&line, GOAL_FACTS_BYTES));
+        .then(|| goal_facts(&record, hinted.owner_loaded.as_ref()))
+        .flatten();
     if !hinted.derive {
         return Some(join(&[Some(&hinted.text), facts.as_deref()]));
     }
@@ -112,6 +111,11 @@ pub(crate) fn hook_context(
     .into_iter()
     .find(|text| text.len() <= RECOVERY_HOOK_BYTES)
     .or_else(|| Some(compose(&short, None)))
+}
+
+fn goal_facts(record: &Value, owner: Option<&config::Loaded>) -> Option<String> {
+    session_goal::goal_summary::hook_line(record, owner, GOAL_FACTS_BYTES)
+        .map(|line| bounded_hook_text(&line, GOAL_FACTS_BYTES))
 }
 
 fn join(parts: &[Option<&str>]) -> String {
@@ -384,6 +388,7 @@ mod tests {
         Reference, WorkRef, WorkSelection,
     };
     use super::*;
+    use crate::session_goal::goal_summary::{journey, unmapped_text};
     use serde_json::json;
 
     fn hint() -> Hint {
@@ -416,6 +421,58 @@ mod tests {
             recorded_by_session_key: None,
             sha256: String::new(),
         }
+    }
+
+    fn member(n: char) -> Value {
+        let sha = |c: char| c.to_string().repeat(64);
+        json!({"work":format!("smw_{}", sha(n)),"startEventSha256":sha('a'),
+            "parentGoalId":"goal","parentObservedGoalEventSha256":sha('b'),
+            "workGoalSha256":sha('c'),"host":"claude","sessionKey":sha('d'),
+            "ownerIdentitySha256":sha('e'),"ownerProjectId":null,
+            "projectIdentitySha256":sha('f'),"localIdentitySha256":sha('a'),
+            "configPath":"/tmp/p/exitbind.json","configSha256":sha('b'),
+            "productRoot":"/tmp/p","stateRoot":"/tmp/p/.exitbind"})
+    }
+
+    fn record_with_unmapped_sources(source_path: &str) -> Value {
+        let source_text = "Complete R2 and R3";
+        let source = json!({"ref":source_path,"text":source_text,
+            "sha256":crate::evidence::hash::text(source_text),"coverageConfirmed":true});
+        json!({"goal":"g","goalId":"goal","revision":1,
+            "journeyMembershipProtocol":2,"journeyMembers":[member('1')],
+            "journeyIntegrations":[],"journeyAdmissions":[],
+            "continuation":{"kind":"goal_requirements","version":2,"projectIdentity":"a".repeat(64),
+                "source":source.clone(),"requirements":[
+                    {"id":"R2","revision":1,"text":"R2","source":source.clone(),"history":[]},
+                    {"id":"R3","revision":1,"text":"R3","source":source,"history":[]}
+                ],"mappings":[]}})
+    }
+
+    #[test]
+    fn goal_facts_keep_complete_requirement_sources_before_optional_journey() {
+        let source = format!("{}/request.txt", "deep".repeat(20));
+        let record = record_with_unmapped_sources(&source);
+        let full = format!(
+            "Goal goal: {} | {}",
+            journey(&record, None, false, None).unwrap(),
+            unmapped_text(&record).unwrap()
+        );
+        assert!(full.len() > 384, "full bytes={}: {full}", full.len());
+        let line = goal_facts(&record, None).unwrap();
+        let required =
+            format!("Requirements without a Work: R2 (source {source}), R3 (source {source})");
+        assert!(line.len() <= 384, "bytes={}: {line}", line.len());
+        assert!(line.contains(&required), "bytes={}: {line}", line.len());
+
+        let too_long = format!("{}/request.txt", "deep".repeat(48));
+        let line = goal_facts(&record_with_unmapped_sources(&too_long), None).unwrap();
+        assert!(line.len() <= 384, "bytes={}: {line}", line.len());
+        assert!(
+            line.contains("Requirements without a Work omitted"),
+            "bytes={}: {line}",
+            line.len()
+        );
+        assert!(!line.contains(&too_long), "bytes={}: {line}", line.len());
     }
 
     #[test]
@@ -530,9 +587,10 @@ mod tests {
 
     #[test]
     fn graph_hook_presentation_keeps_long_unicode_observation_within_existing_bound() {
+        let original_query = "callers of 配置解析関数 ".repeat(30);
         let observation = json!({
             "summary":"é findings ".repeat(40),
-            "query":"callers of 配置解析関数 ".repeat(30),
+            "query":original_query.clone(),
             "sourceCurrent":null
         });
         let message = graph_hook_presentation(
@@ -548,36 +606,65 @@ mod tests {
             &observation,
         );
 
-        assert!(message.len() <= 900, "{message}");
+        let diagnostic = format!("bytes={}: {message}", message.len());
+        assert!(message.len() <= 900, "{diagnostic}");
         assert!(
-            message.contains("Prior CodeGraph observation: "),
-            "{message}"
+            message.contains("native Goal r51-product-architecture-joint-delivery rev 85"),
+            "{diagnostic}"
         );
         assert!(
-            message.contains("Original query `callers of 配置解析関数"),
-            "{message}"
+            message.contains("Prior CodeGraph observation: "),
+            "{diagnostic}"
+        );
+        let query = message
+            .split_once("Original query `")
+            .and_then(|(_, tail)| tail.split_once('`'))
+            .map(|(query, _)| query)
+            .unwrap_or_else(|| panic!("query missing; {diagnostic}"));
+        let prefix = query
+            .strip_suffix('…')
+            .unwrap_or_else(|| panic!("query not abbreviated; {diagnostic}"));
+        assert!(
+            !prefix.is_empty()
+                && prefix.len() < original_query.len()
+                && original_query.starts_with(prefix),
+            "invalid query prefix; {diagnostic}"
         );
         assert!(
             message.contains(&format!("smw_{}", "a".repeat(64))),
-            "{message}"
+            "{diagnostic}"
         );
         assert!(
-            message.contains("session recovery show --json"),
-            "{message}"
+            message.contains(
+                &crate::emitted::Route::new(["session", "recovery", "show", "--json"]).shell_text()
+            ),
+            "{diagnostic}"
         );
-        assert!(message.contains("historical"), "{message}");
-        assert!(message.contains("no saved action is replayed"), "{message}");
+        assert!(message.contains("historical"), "{diagnostic}");
+        assert!(
+            message.contains("no saved action is replayed"),
+            "{diagnostic}"
+        );
+        assert!(
+            message.contains("no current Work/action binding"),
+            "{diagnostic}"
+        );
         assert!(
             message.contains("Source identity is not revalidated"),
-            "{message}"
+            "{diagnostic}"
         );
         assert!(
             message.contains("provider/index currentness is not asserted"),
-            "{message}"
+            "{diagnostic}"
         );
         assert!(
-            message.contains('…'),
-            "long Unicode fields should be visibly abbreviated"
+            message.contains("display may be abbreviated")
+                && message.contains("full query and exact project route"),
+            "abbreviation and full query notice missing; {diagnostic}"
+        );
+        assert!(
+            message.contains("Requery before relying on the finding"),
+            "{diagnostic}"
         );
     }
 }

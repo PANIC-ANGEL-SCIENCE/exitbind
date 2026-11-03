@@ -181,10 +181,24 @@ pub(crate) fn owned_directory(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DirectoryAccess {
+    ReadExisting,
+    RequireWritable,
+}
+
 /// Validate a pre-existing Unix directory as private, owned state without
-/// creating or changing anything. Session-scoped Goal state fails closed on
-/// platforms where these ownership and no-follow guarantees are unavailable.
+/// creating or changing anything. Existing callers retain the writable check.
 pub(crate) fn verify_private_directory(root: &Path) -> Result<(), String> {
+    verify_private_directory_with_access(root, DirectoryAccess::RequireWritable)
+}
+
+/// Read-only observation and writable admission share the same path, owner and
+/// privacy checks. Unsupported platforms continue to fail closed.
+pub(crate) fn verify_private_directory_with_access(
+    root: &Path,
+    access: DirectoryAccess,
+) -> Result<(), String> {
     #[cfg(unix)]
     {
         normalized_storage(root)?;
@@ -205,14 +219,14 @@ pub(crate) fn verify_private_directory(root: &Path) -> Result<(), String> {
                 "session Goal storage must be owned by the current user and private (0700)".into(),
             );
         }
-        if !writable(root) {
+        if access == DirectoryAccess::RequireWritable && !writable(root) {
             return Err("session Goal storage is read-only".into());
         }
         Ok(())
     }
     #[cfg(not(unix))]
     {
-        let _ = root;
+        let _ = (root, access);
         Err("session Goal storage privacy cannot be verified on this platform".into())
     }
 }

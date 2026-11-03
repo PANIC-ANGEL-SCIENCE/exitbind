@@ -271,7 +271,8 @@ fn goal_view(
     let mut observation = journey;
     let journey = match observation.as_deref_mut() {
         Some(observation) => observation.progress(loaded, record),
-        None => loaded.and_then(|loaded| super::journey::progress_for_record(Some(loaded), record)),
+        None => loaded
+            .and_then(|loaded| super::journey::progress_for_record_readonly(Some(loaded), record)),
     };
     let observed = observation
         .as_deref()

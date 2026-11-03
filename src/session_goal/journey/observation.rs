@@ -38,13 +38,14 @@ struct Witness {
     history: Option<String>,
     record: Value,
     close_route_eligible: bool,
+    access: super::super::native::Access,
 }
 
 impl Witness {
     fn finish(self, loaded: &Loaded) -> Result<(), String> {
         self.lineage.finish(loaded)?;
         crate::work::details::ensure_current_config(loaded)?;
-        let scope = super::super::native::scope(loaded, false)?;
+        let scope = super::super::native::scope_with_access(loaded, self.access)?;
         if ScopeIdentity::from(&scope) != self.scope {
             return Err("native Goal owner or session changed during Work projection".into());
         }
@@ -104,7 +105,7 @@ impl WorkJourney {
         {
             return false;
         }
-        super::readiness::close_scope(loaded, root)
+        super::readiness::close_scope_with_access(loaded, root, witness.access)
             .ok()
             .flatten()
             .is_some_and(|scope| {
@@ -136,7 +137,10 @@ impl WorkJourney {
 
 fn fresh(loaded: &Loaded, record: &Value) -> WorkJourney {
     WorkJourney {
-        result: JourneyResult::Fresh(super::readiness::progress_for_record(Some(loaded), record)),
+        result: JourneyResult::Fresh(super::readiness::progress_for_record_readonly(
+            Some(loaded),
+            record,
+        )),
         witness: None,
         #[cfg(test)]
         used_fresh: true,
@@ -168,7 +172,8 @@ pub(in crate::session_goal) fn observe_work(
     if !cfg!(unix) {
         return Ok(fresh(loaded, record));
     }
-    let association = match super::readiness::belongs_to_current_session(loaded, record) {
+    let access = super::super::native::Access::ReadExisting;
+    let association = match super::readiness::belongs_to_current_session(loaded, record, access) {
         Ok(association) => association,
         // A separately bound local Goal keeps its legacy absent-journey view
         // when the unrelated ambient native history cannot first be read.
@@ -200,6 +205,7 @@ pub(in crate::session_goal) fn observe_work(
         journey_state,
         Some(&mut lineage),
         Some(&selected),
+        access,
     );
     lineage.seal_for(&selected);
     let fallback = lineage.fallback();
@@ -210,6 +216,7 @@ pub(in crate::session_goal) fn observe_work(
         history,
         record: record.clone(),
         close_route_eligible,
+        access,
     };
     if fallback || failed {
         witness.finish(loaded)?;

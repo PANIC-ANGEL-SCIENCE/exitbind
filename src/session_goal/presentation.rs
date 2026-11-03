@@ -133,7 +133,7 @@ pub(crate) fn terminal_for_work(
     if standalone.is_none() {
         return Ok(None);
     }
-    let association = super::association::context_for_work_with_root(loaded, work);
+    let association = super::association::context_for_work_readonly(loaded, work);
     let (record, goal_root) = match association.context {
         super::association::WorkContext::Owner(record) => {
             let Some(root) = association.owner_root else {
@@ -193,7 +193,7 @@ impl<'a> WorkGoalObservation<'a> {
         Self::from_resolution(
             loaded,
             work,
-            super::association::context_for_work_with_root(loaded, work),
+            super::association::context_for_work_readonly(loaded, work),
         )
     }
 

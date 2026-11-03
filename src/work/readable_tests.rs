@@ -1,6 +1,10 @@
 //! Focused current-detail and native Goal race controls.
 use super::*;
 
+#[cfg(unix)]
+#[path = "readable_tests/readonly.rs"]
+mod readonly;
+
 fn configured(label: &str) -> (crate::test_root::TempRoot, Loaded) {
     let root = crate::test_root::temp(label);
     let mut git = std::process::Command::new("git");

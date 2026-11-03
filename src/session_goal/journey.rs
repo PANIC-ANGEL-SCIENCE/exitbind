@@ -789,6 +789,9 @@ pub(super) use observation::{observe_work, WorkJourney};
 #[cfg(test)]
 pub(super) use readiness::readiness_for_state;
 pub(crate) use readiness::{
-    progress_for_record, readiness_for_record, require_close_ready,
-    require_resolved_replacement_admissions, result_ref_current_or_supported,
+    progress_for_record, require_close_ready, require_resolved_replacement_admissions,
+    result_ref_current_or_supported,
+};
+pub(in crate::session_goal) use readiness::{
+    progress_for_record_readonly, readiness_for_record_with_access,
 };

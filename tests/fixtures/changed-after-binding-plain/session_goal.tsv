@@ -21,6 +21,7 @@ RoutedInText	src/session_goal/continuity/capture.rs	work context is stale; read 
 RoutedInText	src/session_goal/continuity/capture/recovery.rs	work context is stale; read {route} for a fresh token
 ReadAsFact	src/session_goal/continuity/capture/delivery.rs	child recipient instructions changed during permit
 Integrity	src/session_goal/continuity/capture/raw.rs	captured raw observation changed
+Integrity	src/session_goal/continuity/capture/reviewer_retry.rs	reviewer retry identity or frozen fence changed
 Identity	src/session_goal/continuity/capture/return_result.rs	host result identity differs from the current assignment
 Identity	src/session_goal/continuity/capture/return_result.rs	host result identity differs from the current assignment
 Identity	src/session_goal/continuity/capture/adviser.rs	native adviser requested host differs from the bound receiving host

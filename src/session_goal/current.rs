@@ -45,7 +45,11 @@ pub(super) fn evaluate(
     let journey = if project_selected && root == loaded.state_root {
         Ok(None)
     } else {
-        super::journey::readiness_for_record(loaded, record)
+        super::journey::readiness_for_record_with_access(
+            loaded,
+            record,
+            super::native::Access::ReadExisting,
+        )
     };
     match journey {
         Ok(Some(readiness)) if !readiness.ready() => {
