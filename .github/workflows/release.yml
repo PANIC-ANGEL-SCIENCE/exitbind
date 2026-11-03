@@ -14,6 +14,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 env:
   PYTHONDONTWRITEBYTECODE: '1'
 
@@ -44,8 +45,11 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: '0'
       CARGO_PROFILE_TEST_DEBUG: '0'
       CARGO_BUILD_JOBS: '2'
+      EXITBIND_FETCH_VALIDATOR: '1'
     permissions:
       contents: read
+      actions: read
+      statuses: read
       id-token: write
       attestations: write
     steps:
@@ -100,12 +104,45 @@ jobs:
           cache-bin: false
           cache-all-crates: false
           cache-workspace-crates: false
+      - name: Find compatible executed source proof
+        id: source-proof
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tooling/repository/ci/source-proof.py find "${{ needs.channel.outputs.readiness_only == 'true' && 'readiness' || 'release' }}" >> "$GITHUB_OUTPUT"
       - name: Test paired prerelease controls without network writes
+        if: steps.source-proof.outputs.reuse != 'true'
         run: python3 -m unittest discover -s tests -p test_paired_prerelease.py -v
+      - name: Test source proof controls without network writes
+        if: steps.source-proof.outputs.reuse != 'true'
+        run: python3 -m unittest discover -s tests -p 'test_source_proof*.py' -v
       - name: Run shared native CI checks
+        id: source-checks
+        if: steps.source-proof.outputs.reuse != 'true'
         env:
           EXITBIND_FETCH_VALIDATOR: '1'
         run: ./tooling/repository/ci/ci-local.sh --checks-only
+      - name: Recheck changed source context
+        if: steps.source-proof.outputs.reuse == 'true'
+        env:
+          CI_REUSE_PRIVACY: ${{ steps.source-proof.outputs.privacy }}
+          CI_REUSE_SCHEMA: ${{ steps.source-proof.outputs.schema }}
+        run: ./tooling/repository/ci/ci-local.sh --context-only
+      - name: Write executed source proof
+        id: executed-proof
+        continue-on-error: true
+        if: needs.channel.outputs.readiness_only == 'true' && steps.source-checks.outcome == 'success'
+        run: |
+          name=$(python3 tooling/repository/ci/source-proof.py write "$RUNNER_TEMP/source-proof.json" native)
+          printf 'name=%s\n' "$name" >> "$GITHUB_OUTPUT"
+      - name: Upload executed source proof
+        continue-on-error: true
+        if: steps.executed-proof.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ steps.executed-proof.outputs.name }}
+          path: ${{ runner.temp }}/source-proof.json
+          if-no-files-found: error
+          retention-days: 30
       - run: cargo audit
       - name: Build native Linux stable release
         env:
@@ -171,6 +208,7 @@ jobs:
           - runner: macos-15-intel
             host_arch: x86_64
             target: x86_64-apple-darwin
+    name: macos-${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
     # A healthy macos-15-intel build took 37.7 min (v0.31.17); bound a hung runner instead of the 6 h default.
     timeout-minutes: 60
@@ -180,8 +218,11 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: '0'
       CARGO_PROFILE_TEST_DEBUG: '0'
       CARGO_BUILD_JOBS: '2'
+      EXITBIND_FETCH_VALIDATOR: '1'
     permissions:
       contents: read
+      actions: read
+      statuses: read
       id-token: write
       attestations: write
     steps:
@@ -231,10 +272,39 @@ jobs:
           cache-bin: false
           cache-all-crates: false
           cache-workspace-crates: false
+      - name: Find compatible executed source proof
+        id: source-proof
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tooling/repository/ci/source-proof.py find "${{ needs.channel.outputs.readiness_only == 'true' && 'readiness' || 'release' }}" >> "$GITHUB_OUTPUT"
       - name: Run shared native CI checks
+        id: source-checks
+        if: steps.source-proof.outputs.reuse != 'true'
         env:
           EXITBIND_FETCH_VALIDATOR: '1'
         run: ./tooling/repository/ci/ci-local.sh --checks-only
+      - name: Recheck changed source context
+        if: steps.source-proof.outputs.reuse == 'true'
+        env:
+          CI_REUSE_PRIVACY: ${{ steps.source-proof.outputs.privacy }}
+          CI_REUSE_SCHEMA: ${{ steps.source-proof.outputs.schema }}
+        run: ./tooling/repository/ci/ci-local.sh --context-only
+      - name: Write executed source proof
+        id: executed-proof
+        continue-on-error: true
+        if: needs.channel.outputs.readiness_only == 'true' && steps.source-checks.outcome == 'success'
+        run: |
+          name=$(python3 tooling/repository/ci/source-proof.py write "$RUNNER_TEMP/source-proof.json" native)
+          printf 'name=%s\n' "$name" >> "$GITHUB_OUTPUT"
+      - name: Upload executed source proof
+        continue-on-error: true
+        if: steps.executed-proof.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ steps.executed-proof.outputs.name }}
+          path: ${{ runner.temp }}/source-proof.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Build native macOS stable release
         env:
           EXITBIND_BUILD_COMMIT: ${{ github.sha }}
@@ -417,9 +487,10 @@ jobs:
           MACOS_RESULT: ${{ needs.macos.result }}
           WSL_RESULT: ${{ needs.windows-wsl.result }}
         run: python3 tooling/repository/release/write-stable-readiness.py
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - name: Upload stable readiness
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: stable-readiness-${{ github.sha }}
-          path: stable-readiness.json
+          name: stable-readiness-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/stable-readiness.json
           if-no-files-found: error
           retention-days: 30

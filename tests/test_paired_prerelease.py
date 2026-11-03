@@ -318,6 +318,8 @@ class RealGitObjectTests(unittest.TestCase):
             pass
 
         controls = ['tooling/repository/release/check-public-history.sh',
+                    'tooling/repository/ci/source-proof.py', 'tooling/repository/ci/ci-stages.sh',
+                    'tooling/repository/ci/verification-context.sh', 'tooling/repository/ci/check-repository-rules.sh',
                     'tooling/repository/release/publish-release-assets.sh',
                     'tooling/repository/release/paired-prerelease.py',
                     'tooling/repository/release/prepare-prerelease.py',

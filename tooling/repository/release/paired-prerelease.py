@@ -25,6 +25,8 @@ PROTECTED = ['.github/', 'tooling/repository/release/paired-prerelease.py', 'too
              'tooling/repository/release/installer-smoke.sh', 'tooling/repository/release/verify-binary.py',
              'tooling/repository/release/verify-release-evidence.sh',
              'tooling/repository/release/write-stable-readiness.py', 'install.sh',
+             'tooling/repository/ci/source-proof.py', 'tooling/repository/ci/ci-stages.sh',
+             'tooling/repository/ci/verification-context.sh', 'tooling/repository/ci/check-repository-rules.sh',
              'tooling/repository/ci/readme/ci_scope.py',
              'scripts/paired-prerelease.py', 'scripts/prepare-prerelease.py', 'scripts/release-channel.py',
              'scripts/ci-local.sh', 'scripts/ci-selected-history.sh', 'scripts/publish-release-assets.sh',

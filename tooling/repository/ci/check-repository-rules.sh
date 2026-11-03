@@ -7,7 +7,7 @@
 #   BASE      last published commit (default origin/main): changed-file
 #             headroom warning and commit-identity range
 #   PLATFORM  linux|macos (default: this host)
-#   MODE      pre-return|full (default: pre-return)
+#   MODE      pre-return|full|context (default: pre-return)
 # CANDIDATE_SHA, when set (a CI pull-request head), is checked for public
 # history in addition to HEAD: a merge can retain published ancestry while the
 # contributing head dropped it.
@@ -31,9 +31,9 @@ case $platform in
 esac
 mode=${3:-pre-return}
 case $mode in
-  pre-return|full) ;;
+  pre-return|full|context) ;;
   *)
-    printf 'repository-rules: unknown mode %s (pre-return or full)\n' "$mode" >&2
+    printf 'repository-rules: unknown mode %s (pre-return, full or context)\n' "$mode" >&2
     exit 2
     ;;
 esac

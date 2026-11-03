@@ -188,6 +188,16 @@ tests. Checker, workflow and tooling changes retain the non-Cargo regression
 checks. Unknown dependencies select every Cargo target and the binary's unit
 tests conservatively. Full native CI retains all integration, security,
 packaging and installer qualification; scoped pre-return is not release proof.
+Hosted CI can reuse a completed source check only when the checked commit,
+recipe, native runner and toolchain match a successful executed run. Changed
+history, event or comparison base reruns the affected context checks. Missing
+or incompatible evidence runs the source checks normally. Ordinary CI also
+reuses build, onboarding, package and installer qualification only when the
+validated origin completed that full CI path. Readiness and release build
+their distribution artifacts and check the newly produced bytes; the current
+advisory audit remains fresh.
+The proof records checks executed for those exact inputs; reviewed source and
+the normal promotion process establish whether the check recipe is accepted.
 No source-hash adaptation record is needed to change a test. The live target
 relation still validates feature requirements, reachable test sources and
 coverage prefixes. An explicit `test-affected.sh --skip-passed` caller can omit

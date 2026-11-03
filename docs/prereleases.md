@@ -51,8 +51,13 @@ the integration branch: change the `Cargo.toml` version, run
 CHANGELOG entry. Run the release workflow manually on that branch with
 mode `stable-readiness`. This checks Linux, native Apple Silicon and Intel Macs,
 and actual WSL; it creates no release and changes no main or tag. Its successful
-`stable-readiness-<commit>` artifact and exact workflow run identify the checked
+`stable-readiness-<commit>-<attempt>` artifact and exact workflow run identify the checked
 candidate. A change to that commit requires fresh readiness evidence. Only after
 that result is verified should the separately authorized main promotion and
 stable tag publication proceed. Stable publication retains the complete native,
 WSL, archive-provenance and installed-platform gates.
+
+An exact-source compatible Linux CI run can supply the readiness source checks;
+stable publication can reuse a matching all-platform readiness run. Different
+native platforms, changed check context and newly built release artifacts retain
+their own checks. Missing or incompatible proof causes the source checks to run.

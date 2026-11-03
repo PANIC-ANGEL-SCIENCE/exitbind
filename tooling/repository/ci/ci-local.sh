@@ -7,11 +7,13 @@ checks_only=false
 preflight_only=false
 ci_mode=full
 case "${1:-}" in
-  '') test "$#" -eq 0 || fail 'usage: ci-local.sh [--checks-only|--preflight|--pre-return]' ;;
-  --checks-only) test "$#" -eq 1 || fail 'usage: ci-local.sh [--checks-only|--preflight|--pre-return]'; checks_only=true ;;
-  --preflight) test "$#" -eq 1 || fail 'usage: ci-local.sh [--checks-only|--preflight|--pre-return]'; preflight_only=true ;;
-  --pre-return) test "$#" -eq 1 || fail 'usage: ci-local.sh [--checks-only|--preflight|--pre-return]'; ci_mode=pre-return ;;
-  *) fail 'usage: ci-local.sh [--checks-only|--preflight|--pre-return]' ;;
+  '') test "$#" -eq 0 || fail 'usage: ci-local.sh [--checks-only|--preflight|--pre-return|--context-only|--package-only]' ;;
+  --checks-only) test "$#" -eq 1 || fail 'usage: ci-local.sh [--checks-only|--preflight|--pre-return|--context-only|--package-only]'; checks_only=true ;;
+  --preflight) test "$#" -eq 1 || fail 'usage: ci-local.sh [--checks-only|--preflight|--pre-return|--context-only|--package-only]'; preflight_only=true ;;
+  --pre-return) test "$#" -eq 1 || fail 'usage: ci-local.sh [--checks-only|--preflight|--pre-return|--context-only|--package-only]'; ci_mode=pre-return ;;
+  --context-only) test "$#" -eq 1 || fail 'usage: ci-local.sh --context-only'; checks_only=true; ci_mode=context ;;
+  --package-only) test "$#" -eq 1 || fail 'usage: ci-local.sh --package-only'; ci_mode=package ;;
+  *) fail 'usage: ci-local.sh [--checks-only|--preflight|--pre-return|--context-only|--package-only]' ;;
 esac
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd -P)
@@ -36,6 +38,15 @@ fi
 if [ "$preflight_only" = true ]; then
   show_execution_preflight
   exit 0
+fi
+
+if [ "$ci_mode" = context ]; then
+  source_status=$(git status --porcelain --untracked-files=all) || fail 'cannot recheck source currentness'
+  test -z "$source_status" || fail 'source changed after proof discovery'
+  case "${CI_REUSE_PRIVACY:-1}:${CI_REUSE_SCHEMA:-1}" in
+    0:0|0:1|1:0|1:1) ;;
+    *) fail 'context-only requires explicit 0/1 reuse decisions' ;;
+  esac
 fi
 
 begin_verification_run
@@ -75,7 +86,7 @@ fi
 # on public CI) must be fetched by prepare_value_proof_base first. Pre-return
 # passes its declared base unchanged and prepares only when VALUE_PROOF_BASE is
 # set, as before.
-if [ "$ci_mode" = full ] || [ -n "${VALUE_PROOF_BASE:-}" ]; then
+if [ "$ci_mode" = full ] || [ "$ci_mode" = context ] || [ -n "${VALUE_PROOF_BASE:-}" ]; then
   prepare_value_proof_base
 fi
 
@@ -132,6 +143,13 @@ CLIPPY_TARGETS
     affected-tests)
       run affected-tests sh ./tooling/repository/ci/test-affected.sh --base "$affected_base"
       ;;
+    context-privacy)
+      run context-privacy "$CARGO" test --locked --features repository-checks --test privacy_gate
+      ;;
+    context-schema)
+      run context-schema "$CARGO" test --locked --features repository-checks --test value_contract schema_lock_matches_all_current_marked_schemas -- --exact
+      ./scripts/assert-test-ran.sh schema_lock_matches_all_current_marked_schemas < "$run_dir/context-schema.log" || fail 'schema lock target did not execute and pass'
+      ;;
     value-proof) run value-proof ./scripts/run-value-proof-suite.sh ;;
     drift-warning) run drift-warning ./scripts/demo-drift-warning.sh ;;
     native-handoff)
@@ -150,7 +168,7 @@ if [ "$ci_mode" = pre-return ]; then
   current_stage=pre-return-complete
   exit 0
 fi
-EXITBIND_BUILD_COMMIT=${GITHUB_SHA:-$(git rev-parse HEAD)}
+EXITBIND_BUILD_COMMIT=$(git rev-parse HEAD)
 export EXITBIND_BUILD_COMMIT
 if [ "$platform" = linux ]; then
   run release-build "$CARGO" build --release --locked

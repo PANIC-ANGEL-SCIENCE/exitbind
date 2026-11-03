@@ -3,15 +3,21 @@
 # changed-path relation; final native qualification retains the full recipe.
 ci_stage_order() {
   printf '%s\n' repository-rules workflows workflow-regression \
-    ci-stage-contract quiet-command-regression fmt clippy tests affected-tests \
+    ci-stage-contract quiet-command-regression fmt clippy tests affected-tests context-privacy context-schema \
     value-proof drift-warning native-handoff
 }
 
 ci_stage_selected() {
   mode=$1 stage=$2 platform=$3
   scope=${CI_PRE_RETURN_SCOPE:-broad}
+  case "$mode:$stage" in
+    context:repository-rules|context:context-privacy|context:context-schema) ;;
+    context:*|package:*) return 1 ;;
+  esac
   case "$stage" in
-    repository-rules) return 0 ;;
+    repository-rules) test "$mode" != package ;;
+    context-privacy) test "$mode" = context && test "${CI_REUSE_PRIVACY:-1}" = 1 ;;
+    context-schema) test "$mode" = context && test "${CI_REUSE_SCHEMA:-1}" = 1 ;;
     workflows|workflow-regression|ci-stage-contract|quiet-command-regression)
       test "$mode" = full && return 0
       case " $scope " in *" broad "*) return 0 ;; *) return 1 ;; esac ;;
@@ -32,6 +38,9 @@ ci_stage_selected() {
 
 ci_repository_rule_check_selected() {
   check=$1 platform=$2 mode=$3
+  case "$check:$mode" in
+    path-rendering:context|product-surface:context|release-refs:context) return 1 ;;
+  esac
   case "$check" in
     path-rendering|product-surface|release-refs) test "$platform" = linux ;;
     public-history|commit-identity) return 0 ;;

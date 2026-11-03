@@ -15,6 +15,7 @@ on:
         type: string
 permissions:
   contents: read
+  actions: read
 env:
   PYTHONDONTWRITEBYTECODE: '1'
   EXITBIND_EXPECTED_SHA: ${{ inputs.candidate_sha || github.sha }}
@@ -60,14 +61,21 @@ jobs:
     needs: scope
     if: needs.scope.outputs.scope != 'readme'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      statuses: read
     env:
       VALUE_PROOF_BASE: ${{ inputs.proof_base || github.event.pull_request.base.sha || github.event.before }}
+      CANDIDATE_SHA: ${{ inputs.candidate_sha || github.event.pull_request.head.sha || github.sha }}
       # Keep test runtime practical without changing the release profile or assertions.
       # Set these before cache restoration so the Cargo profile enters its key.
       CARGO_PROFILE_DEV_OPT_LEVEL: '1'
       CARGO_PROFILE_TEST_OPT_LEVEL: '1'
       CARGO_PROFILE_DEV_DEBUG: '0'
       CARGO_PROFILE_TEST_DEBUG: '0'
+      CARGO_BUILD_JOBS: '2'
+      EXITBIND_FETCH_VALIDATOR: '1'
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -80,6 +88,14 @@ jobs:
           GITHUB_REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
           CANDIDATE_SHA: ${{ inputs.candidate_sha || github.event.pull_request.head.sha || github.sha }}
         run: ./tooling/repository/ci/ci-selected-history.sh
+      - name: Prepare source proof paths
+        env:
+          PROOF_RUNNER_TEMP: ${{ runner.temp }}
+        run: |
+          printf 'CARGO_TARGET_DIR=%s/exitbind-target\nTMPDIR=%s/exitbind-fixtures\nCI_LOG_ROOT=%s/exitbind-logs\n' \
+            "$PROOF_RUNNER_TEMP" "$PROOF_RUNNER_TEMP" "$PROOF_RUNNER_TEMP" >> "$GITHUB_ENV"
+      - name: Prepare fixture and log roots
+        run: mkdir -p "$TMPDIR" "$CI_LOG_ROOT"
       - name: Prepare native handoff dependency
         run: command -v tmux >/dev/null || (sudo apt-get update && sudo apt-get install -y tmux)
       - name: Prepare dependency-cache target path
@@ -103,11 +119,22 @@ jobs:
           cache-bin: false
           cache-all-crates: false
           cache-workspace-crates: false
+      - name: Find compatible executed source proof
+        id: source-proof
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tooling/repository/ci/source-proof.py find ci >> "$GITHUB_OUTPUT"
       - name: Test paired prerelease controls without network writes
+        if: steps.source-proof.outputs.reuse != 'true'
         run: python3 -m unittest discover -s tests -p test_paired_prerelease.py -v
+      - name: Test source proof controls without network writes
+        if: steps.source-proof.outputs.reuse != 'true'
+        run: python3 -m unittest discover -s tests -p 'test_source_proof*.py' -v
       - name: Test README tooling
+        if: steps.source-proof.outputs.reuse != 'true' || steps.source-proof.outputs.ci_package != 'true'
         run: python3 -m unittest discover -s tooling/repository/ci/readme -v
       - name: Verify Cargo package excludes README presentation tooling
+        if: steps.source-proof.outputs.reuse != 'true' || steps.source-proof.outputs.ci_package != 'true'
         run: |
           package_list=$(mktemp)
           cargo package --list --locked > "$package_list"
@@ -121,6 +148,8 @@ jobs:
           fi
           echo 'Cargo package excludes README assets and tooling'
       - name: Run shared native CI checks and packaging
+        id: source-checks
+        if: steps.source-proof.outputs.reuse != 'true'
         env:
           CARGO_TARGET_DIR: ${{ runner.temp }}/exitbind-target
           TMPDIR: ${{ runner.temp }}/exitbind-fixtures
@@ -129,6 +158,34 @@ jobs:
           EXITBIND_FETCH_VALIDATOR: '1'
           CANDIDATE_SHA: ${{ inputs.candidate_sha || github.event.pull_request.head.sha || github.sha }}
         run: ./tooling/repository/ci/ci-local.sh
+      - name: Recheck changed source context
+        if: steps.source-proof.outputs.reuse == 'true'
+        env:
+          CI_REUSE_PRIVACY: ${{ steps.source-proof.outputs.privacy }}
+          CI_REUSE_SCHEMA: ${{ steps.source-proof.outputs.schema }}
+        run: ./tooling/repository/ci/ci-local.sh --context-only
+      - name: Rebuild and verify the current package
+        if: steps.source-proof.outputs.reuse == 'true' && steps.source-proof.outputs.ci_package != 'true'
+        run: ./tooling/repository/ci/ci-local.sh --package-only
+      - name: Reuse completed CI qualification
+        if: steps.source-proof.outputs.reuse == 'true' && steps.source-proof.outputs.ci_package == 'true'
+        run: echo 'Reused the originating CI build, onboarding, package, and installer checks.'
+      - name: Write executed source proof
+        id: executed-proof
+        continue-on-error: true
+        if: steps.source-checks.outcome == 'success' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.id == github.repository_id)
+        run: |
+          name=$(python3 tooling/repository/ci/source-proof.py write "$RUNNER_TEMP/source-proof.json" ci)
+          printf 'name=%s\n' "$name" >> "$GITHUB_OUTPUT"
+      - name: Upload executed source proof
+        continue-on-error: true
+        if: steps.executed-proof.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ steps.executed-proof.outputs.name }}
+          path: ${{ runner.temp }}/source-proof.json
+          if-no-files-found: error
+          retention-days: 30
   audit:
     needs: scope
     if: needs.scope.outputs.scope != 'readme'

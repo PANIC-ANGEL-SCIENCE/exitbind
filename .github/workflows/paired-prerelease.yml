@@ -48,6 +48,8 @@ jobs:
     if: needs.plan.outputs.ready == 'true'
     permissions:
       contents: read
+      actions: read
+      statuses: read
     uses: ./.github/workflows/ci.yml
     with:
       candidate_sha: ${{ needs.plan.outputs.sha }}
