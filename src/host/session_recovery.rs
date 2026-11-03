@@ -17,7 +17,7 @@ mod references;
 mod show;
 mod spend;
 
-pub(crate) use owner_config::{goal_owner, goal_owner_for_session_readonly, is_owner, GoalOwner};
+pub(crate) use owner_config::{goal_owner, goal_owner_for_snapshot, is_owner, GoalOwner};
 pub(crate) use pause::{
     decision_line, for_view as pause_routes, record as record_pause, SAVED_DECISIONS_MAX_BYTES,
 };

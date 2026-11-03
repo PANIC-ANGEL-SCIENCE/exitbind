@@ -13,6 +13,14 @@ as observation or hypothesis, not acceptance or a new decision. When a user
 requests a critical examination of an idea, test its assumptions with focused
 questions while preserving the user's actual goal and settled choices.
 
+For iOS development, identify the repository's actual build system and local
+prerequisites before proposing setup commands; add package tools only when the
+project uses them. Distinguish simulator execution from a signed device build,
+keep generated artifacts under the repository's existing ignore rules, and keep
+credentials outside project files. State which steps need a provider or network.
+Xcode and simulator or device results require an appropriate macOS environment;
+report unverified paths rather than claiming success from another host.
+
 When retiring guidance or an operating path, identify its useful responsibilities
 and their existing successors, preserve source and rollback, and check the actual
 transfer path. Leave a responsibility unresolved if the replacement or its
@@ -49,19 +57,25 @@ owner's actual authorization.
 
 For an explicitly requested version decision, identify the released baseline,
 artifact, actual change and governing policy. Follow the project's declared
-scheme and support promises before an ecosystem convention; if the relevant
-policy or evidence is missing, state the uncertainty instead of inventing a
-definitive class. Consider each affected public command, API, configuration,
+scheme and support promises before an ecosystem convention. If the scheme or
+pre-1.0 support policy needed to choose a class is missing, say policy is
+required; if compatibility evidence is missing, call the decision inconclusive.
+Do not automatically bump a pre-1.0 version without the selected policy.
+Consider each affected public command, API, configuration,
 persisted format, protocol, platform, dependency and authority boundary,
-including support windows, old and new consumers, mixed versions, migration and
-rollback as relevant.
+including support windows. Check old producers with new consumers, new producers
+with old consumers, supported mixed versions, and old readers after rollback
+from new writes; name unsupported combinations and migration as relevant.
+A stricter parser or new refusal is compatible
+only if the rejected input was outside the old supported contract; cite that
+contract and the relevant evidence before making the claim.
 Use the most consequential supported change. If no distributed artifact or
 public contract changes, the policy may require no release; bundled help can
 still require a new artifact. For a SemVer policy, compatible fixes and
 additions normally map to patch and minor, incompatible changes to major;
-prerelease handling and pre-1.0 promises follow the selected policy. For
-example, a new enum value can break an exhaustive old reader, and an urgent
-security fix can still be incompatible. A version choice is not release approval.
+prerelease handling and pre-1.0 promises follow the selected policy. An enum
+addition can break an exhaustive old reader, and an urgent security fix can
+still be incompatible. A version choice is not release approval.
 
 ## Managed agent configuration
 

@@ -959,6 +959,108 @@ fn a_committed_owner_change_is_reversed_only_by_another_bound_event() {
 }
 
 #[test]
+fn recovery_keeps_corrected_owner_after_the_goal_changes() {
+    let fixture = Fixture::new("owner-correction-next-goal-recovery");
+    let preview = fixture.preview("owner-before-next-goal");
+    value(&fixture.execute(&preview, "applyArgv"));
+    fixture.target.value(
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "next-goal",
+            "--goal",
+            "Continue with the next Goal",
+        ],
+        None,
+    );
+    let shown = fixture
+        .target
+        .value(&["session", "recovery", "show", "--json"], None);
+    assert_eq!(shown["goal"]["goalId"], "next-goal");
+    assert_eq!(fixture.target.status()["goalId"], "next-goal");
+    fixture.old.reject(
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "next-goal",
+            "--goal",
+            "An unauthorized update",
+        ],
+        "owned by another configured project",
+    );
+}
+
+#[test]
+fn recovery_show_refuses_over_limit_journals_for_legacy_and_corrected_owners() {
+    for protocol in [1, 2] {
+        let fixture = Fixture::new(&format!("owner-recovery-cli-bound-{protocol}"));
+        if protocol == 2 {
+            let preview = fixture.preview("before-limit-check");
+            value(&fixture.execute(&preview, "applyArgv"));
+        }
+        let current = if protocol == 1 {
+            &fixture.old
+        } else {
+            &fixture.target
+        };
+        let (_, journal) = paths(&fixture.old);
+        assert_eq!(
+            current.value(&["session", "recovery", "show", "--json"], None)["goal"]["goalId"],
+            "import"
+        );
+        fs::write(&journal, "{}\n".repeat(4097)).unwrap();
+        let records = current.call(&["session", "recovery", "show", "--json"], None);
+        assert!(
+            !records.status.success(),
+            "protocol {protocol}: {records:?}"
+        );
+        assert!(
+            String::from_utf8_lossy(&records.stdout).contains("4096 physical records"),
+            "{records:?}"
+        );
+        let (session, _) = current.native_session.as_ref().unwrap();
+        let payload = json!({"hook_event_name":"Stop","cwd":current.root,"session_id":session,
+            "stop_hook_active":false,"last_assistant_message":"A side answer."});
+        let mut command = concurrent_command(
+            current,
+            env!("CARGO_BIN_EXE_exitbind"),
+            &["hook-run".into(), "--host".into(), "codex".into()],
+        );
+        command.stdin(Stdio::piped());
+        let mut child = command.spawn().unwrap();
+        if let Err(error) = child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(payload.to_string().as_bytes())
+        {
+            assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
+        }
+        let stop = child.wait_with_output().unwrap();
+        assert!(stop.status.success(), "{stop:?}");
+        assert!(
+            stop.stdout.is_empty(),
+            "an over-limit Goal cannot provide Stop owner credit"
+        );
+        fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(&journal)
+            .unwrap()
+            .set_len(64 * 1024 * 1024 + 1)
+            .unwrap();
+        let bytes = current.call(&["session", "recovery", "show", "--json"], None);
+        assert!(!bytes.status.success(), "protocol {protocol}: {bytes:?}");
+        assert!(
+            String::from_utf8_lossy(&bytes.stdout).contains("byte bound"),
+            "{bytes:?}"
+        );
+    }
+}
+
+#[test]
 fn an_adopting_session_cannot_correct_another_sessions_goal() {
     let mut fixture = Fixture::new("owner-correction-adoption");
     fixture.old.begin("R1", "sh check.sh R1");

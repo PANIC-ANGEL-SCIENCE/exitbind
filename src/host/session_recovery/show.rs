@@ -21,10 +21,13 @@ use std::time::Instant;
 pub(crate) fn show() -> Result<Value, String> {
     let session = session_goal::native::current()?
         .ok_or("session recovery show requires a host-reported native session")?;
-    let owner = session
-        .owner()?
+    let snapshot = session
+        .recovery_snapshot(session_goal::native::Access::ReadExisting)?
         .ok_or("native session Goal owner is unavailable")?;
-    let record = session_goal::read_for_recovery(&session.root)?
+    let owner = snapshot.owner.clone();
+    let record = snapshot
+        .latest
+        .as_ref()
         .ok_or("native session has no canonical Goal to recover")?;
     let hint_result = read_hint(&session.root);
     let (hint, hint_issue) = match hint_result {
@@ -57,23 +60,16 @@ pub(crate) fn show() -> Result<Value, String> {
                     crate::drift::Route::RecoveryShow,
                 ));
             }
-            let scope = session_goal::native::scope(&loaded, false)?;
-            if !scope.owner_matches
-                || scope
-                    .owner
-                    .as_ref()
-                    .map(|value| value.identity_sha256.as_str())
-                    != Some(owner.identity_sha256.as_str())
-            {
+            if !super::owner_config::is_owner(&loaded, &owner) {
                 return Err(
                     "saved owner configuration no longer matches the fixed Goal owner".into(),
                 );
             }
             freshness["ownerConfigCurrent"] = json!(true);
-            let work_ok = verify_work_refs(&record, &session, &owner, &hint.work_refs).is_ok();
+            let work_ok = verify_work_refs(record, &session, &owner, &hint.work_refs).is_ok();
             let guidance_ok = verify_source_refs(
                 &loaded,
-                &record,
+                record,
                 &session,
                 &owner,
                 &hint.work_refs,
@@ -82,7 +78,7 @@ pub(crate) fn show() -> Result<Value, String> {
             .is_ok();
             let evidence_ok = verify_source_refs(
                 &loaded,
-                &record,
+                record,
                 &session,
                 &owner,
                 &hint.work_refs,
@@ -91,16 +87,16 @@ pub(crate) fn show() -> Result<Value, String> {
             .is_ok()
                 && hint.evidence_refs.iter()
                     .filter(|item| item.consumption == "generated_query_result")
-                    .all(|item| source_ref_current(&loaded, &record, &session, &owner, &hint.work_refs, item, &current_executable_sha256().unwrap_or_default()).unwrap_or(false));
+                    .all(|item| source_ref_current(&loaded, record, &session, &owner, &hint.work_refs, item, &current_executable_sha256().unwrap_or_default()).unwrap_or(false));
             let executable = current_executable_sha256().ok();
             reference_freshness = json!(hint.evidence_refs.iter().chain(&hint.guidance_refs).map(|item| {
                 let graph = if item.consumption == "generated_query_result" {
-                    generated_result_info(&loaded,&record,&session,&owner,&hint.work_refs,item).ok()
+                    generated_result_info(&loaded,record,&session,&owner,&hint.work_refs,item).ok()
                 } else { None };
                 let current = if let Some(graph) = graph.as_ref() {
                     graph["sourceCurrent"].as_bool() == Some(true)
                 } else {
-                    executable.as_deref().is_some_and(|sha| source_ref_current(&loaded,&record,&session,&owner,&hint.work_refs,item,sha).unwrap_or(false))
+                    executable.as_deref().is_some_and(|sha| source_ref_current(&loaded,record,&session,&owner,&hint.work_refs,item,sha).unwrap_or(false))
                 };
                 json!({"root":item.root,"path":item.path,"expectedSha256":item.sha256,
                     "work":item.work,
@@ -110,7 +106,7 @@ pub(crate) fn show() -> Result<Value, String> {
                     "current":current,
                     "restoredPriorObservation":graph})
             }).collect::<Vec<_>>());
-            let pending_ok = verify_pending(&loaded, &record, &session, &owner, &hint.work_refs, hint.pending_operation.as_ref()).is_ok();
+            let pending_ok = verify_pending(&loaded, record, &session, &owner, &hint.work_refs, hint.pending_operation.as_ref()).is_ok();
             freshness["workRefsCurrent"] = json!(work_ok);
             freshness["declaredGuidanceSourcesCurrent"] = json!(guidance_ok);
             freshness["pendingEvidenceCurrent"] = json!(evidence_ok && pending_ok);
@@ -159,7 +155,7 @@ pub(crate) fn show() -> Result<Value, String> {
             hint.evidence_refs.iter().chain(&hint.guidance_refs).map(|item| {
                 if item.consumption == "generated_query_result" {
                     let restored = route_owner.as_ref().and_then(|loaded| {
-                        generated_result_info(loaded, &record, &session, &owner, &hint.work_refs, item).ok()
+                        generated_result_info(loaded, record, &session, &owner, &hint.work_refs, item).ok()
                     });
                     let query_argv = restored.as_ref().and_then(|value| {
                         let work = item.work.as_deref()?;
@@ -203,9 +199,9 @@ pub(crate) fn show() -> Result<Value, String> {
             PendingOperation::EvidenceFile { handle, root, path, work, sha256, bytes, .. } => json!({"kind":"verified_file_read","handle":handle,"root":root,"path":path,"work":work,"sha256":sha256,"bytes":bytes,"authority":"read_only","historical":true}),
         })
     });
-    let verified_owner = route_owner.as_ref().filter(|loaded| {
-        session_goal::native::scope(loaded, false).is_ok_and(|scope| scope.owner_matches)
-    });
+    let verified_owner = route_owner
+        .as_ref()
+        .filter(|loaded| super::owner_config::is_owner(loaded, &owner));
     // The Lead's saved step and decisions, whether or not the Goal advanced
     // since; `goalCurrent` says which.
     let active_step = hint.as_ref().map_or(Value::Null, |value| {
@@ -214,20 +210,20 @@ pub(crate) fn show() -> Result<Value, String> {
     let pause_config = verified_owner
         .map(|loaded| loaded.path.clone())
         .or_else(|| {
-            super::owner_config::goal_owner(&serde_json::Map::new())
-                .and_then(|found| found.config)
+            super::owner_config::goal_owner_for_snapshot(&session, &snapshot)
+                .config
                 .map(|(path, _)| path.into())
         });
     let pause_record = match (
         pause_config,
-        session_goal::goal_summary::closed_revision(&record),
+        session_goal::goal_summary::closed_revision(record),
     ) {
         (Some(path), None) => super::pause::routes(&path).unwrap_or(Value::Null),
         _ => Value::Null,
     };
     let deadline = Instant::now() + HOOK_BUDGET;
     let derived = current_work::derive(
-        &record,
+        record,
         &session,
         &owner,
         verified_owner,
@@ -257,11 +253,11 @@ pub(crate) fn show() -> Result<Value, String> {
         },
         "activeSavedStep":active_step,
         "pauseRecord":pause_record,
-        "unmappedRequirements":session_goal::requirements::unmapped(&record).iter()
+        "unmappedRequirements":session_goal::requirements::unmapped(record).iter()
             .map(|(id, source)| json!({"id":id,"source":source})).collect::<Vec<_>>(),
         "savedHint":hint_value,
         "activeRecovery":active_recovery,
-        "milestone":super::milestone::project(&record, &session, &owner, hint.as_ref()),
+        "milestone":super::milestone::project(record, &session, &owner, hint.as_ref()),
         "freshness":freshness,
         "issue":dynamic_issue,
         "readRoutes":{"recoveryShowArgv":Route::new(["session","recovery","show","--json"]).run_by(&executable).shown_argv(),"goalStatusArgv":goal_route,"workDetailArgv":work_routes,"references":reference_routes,"pendingOperation":pending_route},

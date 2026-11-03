@@ -7,7 +7,9 @@ mod marker;
 mod model;
 mod source;
 
-pub(super) use self::marker::{resolve_owner, validate_legacy_history};
+pub(super) use self::marker::{
+    recovery_snapshot, resolve_owner, validate_legacy_history, validate_marker_envelope,
+};
 pub(crate) use self::model::same_owner_binding;
 use self::model::{decisions, OwnerCorrectionDecision, SavedRequest};
 pub(super) use self::model::{preserve_same_goal, validate_transition};
@@ -88,52 +90,58 @@ fn empty_goal(history: &[Value], goal_id: &str) -> Result<(), String> {
     let mut found = false;
     for record in history.iter().filter(|record| record["goalId"] == goal_id) {
         found = true;
-        for field in [
-            "journeyMembers",
-            "journeyIntegrations",
-            "journeyAdmissions",
-            "workAssociations",
-            "sessionAdoptions",
-        ] {
-            if record
-                .get(field)
-                .is_some_and(|value| !value.as_array().is_some_and(Vec::is_empty))
-            {
-                return Err("owner correction requires a Goal with no Work, member, integration, admission or adoption history".into());
-            }
-        }
-        if record.get("nativeGoalRecovery").is_some() || record.get("quarantineResiduals").is_some()
-        {
-            return Err("owner correction does not accept recovery or quarantine state".into());
-        }
-        if !record["continuation"].is_null() {
-            if !super::requirements::named(record) {
-                return Err("owner correction does not accept an incompatible continuation".into());
-            }
-            super::requirements::recorded_sources(record)?;
-            if !record["continuation"]["mappings"]
-                .as_array()
-                .is_some_and(Vec::is_empty)
-            {
-                return Err("owner correction requires no active or retired Work mappings".into());
-            }
-        }
-        for category in super::CATEGORIES {
-            let items = record[category]
-                .as_array()
-                .ok_or("Goal category is malformed")?;
-            if items.iter().any(|item| {
-                item["disposition"] == "direct"
-                    || !item["resultRefs"].as_array().is_some_and(Vec::is_empty)
-            }) {
-                return Err(
-                    "owner correction cannot carry a prior completion or accepted result".into(),
-                );
-            }
-        }
+        empty_record(record)?;
     }
     if !found {
         return Err("the named Goal history is unavailable".into());
+    }
+    Ok(())
+}
+
+/// One historical record's eligibility. Ordinary Goals may be ineligible;
+/// the correction fold records this fact and refuses only a correction claim.
+fn empty_record(record: &Value) -> Result<(), String> {
+    for field in [
+        "journeyMembers",
+        "journeyIntegrations",
+        "journeyAdmissions",
+        "workAssociations",
+        "sessionAdoptions",
+    ] {
+        if record
+            .get(field)
+            .is_some_and(|value| !value.as_array().is_some_and(Vec::is_empty))
+        {
+            return Err("owner correction requires a Goal with no Work, member, integration, admission or adoption history".into());
+        }
+    }
+    if record.get("nativeGoalRecovery").is_some() || record.get("quarantineResiduals").is_some() {
+        return Err("owner correction does not accept recovery or quarantine state".into());
+    }
+    if !record["continuation"].is_null() {
+        if !super::requirements::named(record) {
+            return Err("owner correction does not accept an incompatible continuation".into());
+        }
+        super::requirements::recorded_sources(record)?;
+        if !record["continuation"]["mappings"]
+            .as_array()
+            .is_some_and(Vec::is_empty)
+        {
+            return Err("owner correction requires no active or retired Work mappings".into());
+        }
+    }
+    for category in super::CATEGORIES {
+        let items = record[category]
+            .as_array()
+            .ok_or("Goal category is malformed")?;
+        if items.iter().any(|item| {
+            item["disposition"] == "direct"
+                || !item["resultRefs"].as_array().is_some_and(Vec::is_empty)
+        }) {
+            return Err(
+                "owner correction cannot carry a prior completion or accepted result".into(),
+            );
+        }
     }
     Ok(())
 }
@@ -703,22 +711,6 @@ pub(super) fn current_source_path(
     sha: &str,
 ) -> Result<String, String> {
     source::current_path(record, reference, sha)
-}
-
-/// A corrected owner configuration can be discovered without a Work member.
-pub(crate) fn owner_config_binding(
-    session: &super::native::Session,
-    access: super::native::Access,
-) -> Result<Option<super::recovery::ConfigBinding>, String> {
-    let value = session
-        .owner_value(access)?
-        .ok_or("native Goal owner record is unavailable")?;
-    if value["protocol"] != 2 {
-        return Ok(None);
-    }
-    Ok(marker::resolve_owner(session, &value, access)?
-        .latest
-        .map(|item| item.target_config))
 }
 
 /// Recover the exact interrupted request without requiring the caller to

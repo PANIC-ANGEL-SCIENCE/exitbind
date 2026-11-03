@@ -161,55 +161,112 @@ pub(crate) fn read(root: &Path) -> Result<Option<Value>, String> {
 /// reduce currentness, usage, evidence, or acceptance. It checks a cooperative
 /// time budget while validating; byte and record limits separately cap input.
 /// Exhausting the budget refuses recovery without returning partial metadata.
+#[allow(dead_code)] // Retained for bounded Goal-only recovery readers and tests.
 pub(crate) fn read_for_recovery(root: &Path) -> Result<Option<Value>, String> {
-    const MAX_BYTES: u64 = 64 * 1024 * 1024;
-    const MAX_EVENTS: usize = 4096;
-    const BUDGET: Duration = Duration::from_millis(750);
-    let started = Instant::now();
-    #[cfg(test)]
-    let acquire_timer = recovery_diagnostic::timer(recovery_diagnostic::Phase::Acquire);
+    Ok(recovery_fold(root, Instant::now(), &mut RecoveryNoop, false)?.latest)
+}
+
+const RECOVERY_MAX_BYTES: u64 = 64 * 1024 * 1024;
+const RECOVERY_MAX_EVENTS: usize = 4096;
+const RECOVERY_BUDGET: Duration = Duration::from_millis(750);
+
+trait RecoveryObserver {
+    fn physical(&mut self, _physical: &Value) -> Result<(), String> {
+        Ok(())
+    }
+    fn logical(&mut self, _record: &Value, _previous: Option<&Value>) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+struct RecoveryNoop;
+impl RecoveryObserver for RecoveryNoop {}
+
+struct RecoveryFold {
+    latest: Option<Value>,
+    fingerprint: Option<(usize, String)>,
+}
+
+fn recovery_time(started: Instant) -> Result<(), String> {
+    if started.elapsed() > RECOVERY_BUDGET {
+        return Err("native recovery Goal read exceeded its 750 ms cooperative budget".into());
+    }
+    Ok(())
+}
+
+fn recovery_bytes(root: &Path) -> Result<Option<Vec<u8>>, String> {
     let relative = relative();
-    let raw = match crate::project::path::secure_bytes_observation_bounded(
+    match crate::project::path::secure_bytes_observation_bounded(
         root,
         &relative,
         "native recovery Goal journal",
-        MAX_BYTES,
+        RECOVERY_MAX_BYTES,
     ) {
-        crate::project::path::SecureBytesResult::Bytes(bytes) => {
-            #[cfg(test)]
-            recovery_diagnostic::input_bytes(bytes.len());
-            Some(
-                String::from_utf8(bytes)
-                    .map_err(|_| "native recovery Goal journal is not valid UTF-8")?,
-            )
-        }
+        crate::project::path::SecureBytesResult::Bytes(bytes) => Ok(Some(bytes)),
         crate::project::path::SecureBytesResult::Absent(_) => {
             let legacy = root.join(format!(
                 "{}/session-goal.json",
                 crate::project::layout_types::state_namespace()
             ));
             match std::fs::symlink_metadata(legacy) {
-                Ok(_) => {
-                    return Err("legacy session Goal format is unsupported for recovery".into())
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-                Err(error) => return Err(format!("native recovery Goal lookup failed: {error}")),
+                Ok(_) => Err("legacy session Goal format is unsupported for recovery".into()),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+                Err(error) => Err(format!("native recovery Goal lookup failed: {error}")),
             }
         }
         crate::project::path::SecureBytesResult::Unsafe(error)
         | crate::project::path::SecureBytesResult::Unreadable(error) => {
-            return Err(format!("native recovery Goal lookup failed: {error}"))
+            Err(format!("native recovery Goal lookup failed: {error}"))
         }
         #[cfg(not(unix))]
         crate::project::path::SecureBytesResult::Unsupported(error) => {
-            return Err(format!("native recovery Goal lookup unsupported: {error}"))
+            Err(format!("native recovery Goal lookup unsupported: {error}"))
         }
-    };
+    }
+}
+
+fn recovery_recheck(
+    root: &Path,
+    started: Instant,
+    expected: &Option<(usize, String)>,
+) -> Result<(), String> {
+    recovery_time(started)?;
+    let bytes = recovery_bytes(root)?;
+    recovery_time(started)?;
+    let observed = bytes
+        .as_ref()
+        .map(|data| (data.len(), crate::evidence::hash::bytes(data)));
+    recovery_time(started)?;
+    if &observed != expected {
+        return Err("native Goal owner and journal snapshot is inconsistent; retry".into());
+    }
+    Ok(())
+}
+
+fn recovery_fold(
+    root: &Path,
+    started: Instant,
+    observer: &mut impl RecoveryObserver,
+    fingerprint: bool,
+) -> Result<RecoveryFold, String> {
+    #[cfg(test)]
+    let acquire_timer = recovery_diagnostic::timer(recovery_diagnostic::Phase::Acquire);
+    let bytes = recovery_bytes(root)?;
     #[cfg(test)]
     drop(acquire_timer);
-    let Some(raw) = raw else {
-        return Ok(None);
+    recovery_time(started)?;
+    let Some(bytes) = bytes else {
+        return Ok(RecoveryFold {
+            latest: None,
+            fingerprint: None,
+        });
     };
+    #[cfg(test)]
+    recovery_diagnostic::input_bytes(bytes.len());
+    let digest = fingerprint.then(|| (bytes.len(), crate::evidence::hash::bytes(&bytes)));
+    recovery_time(started)?;
+    let raw = std::str::from_utf8(&bytes)
+        .map_err(|_| "native recovery Goal journal is not valid UTF-8")?;
     #[cfg(test)]
     let newline_timer = recovery_diagnostic::timer(recovery_diagnostic::Phase::Newlines);
     // Count physical records before allocating per-line storage. Blank lines
@@ -219,20 +276,19 @@ pub(crate) fn read_for_recovery(root: &Path) -> Result<Option<Value>, String> {
         return Err("invalid canonical session goal journal: empty physical record".into());
     }
     let newline_count = raw.as_bytes().iter().filter(|byte| **byte == b'\n').count();
-    let physical = newline_count.saturating_sub(usize::from(raw.ends_with('\n')))
-        + usize::from(!raw.ends_with('\n'));
+    let physical = newline_count + usize::from(!raw.ends_with('\n'));
     #[cfg(test)]
     {
         drop(newline_timer);
         recovery_diagnostic::newline_counts(newline_count, physical);
     }
-    if physical > MAX_EVENTS {
+    if physical > RECOVERY_MAX_EVENTS {
         return Err("native recovery Goal journal exceeds 4096 physical records; use the exact Goal read route".into());
     }
     let mut previous: Option<Value> = None;
     let mut count = 0usize;
     for (index, line) in raw.split_terminator('\n').enumerate() {
-        if started.elapsed() > BUDGET {
+        if started.elapsed() > RECOVERY_BUDGET {
             #[cfg(test)]
             recovery_diagnostic::budget_refusal("beforeRecord");
             return Err("native recovery Goal read exceeded its 750 ms cooperative budget".into());
@@ -244,7 +300,7 @@ pub(crate) fn read_for_recovery(root: &Path) -> Result<Option<Value>, String> {
             ));
         }
         count += 1;
-        if count > MAX_EVENTS {
+        if count > RECOVERY_MAX_EVENTS {
             return Err("native recovery Goal journal exceeds 4096 physical records; use the exact Goal read route".into());
         }
         #[cfg(test)]
@@ -254,19 +310,21 @@ pub(crate) fn read_for_recovery(root: &Path) -> Result<Option<Value>, String> {
         let value: Value = serde_json::from_str(line).map_err(|error| {
             format!("invalid canonical session goal line {}: {error}", index + 1)
         })?;
+        observer.physical(&value)?;
         let value = journal_form::resolve(value, previous.as_ref(), index + 1)?;
         #[cfg(test)]
         drop(parse_timer);
         #[cfg(test)]
         let validate_timer = recovery_diagnostic::timer(recovery_diagnostic::Phase::Validate);
         validate_record(&value, previous.as_ref(), index + 1)?;
+        observer.logical(&value, previous.as_ref())?;
         #[cfg(test)]
         {
             drop(validate_timer);
             recovery_diagnostic::completed();
         }
         previous = Some(value);
-        if started.elapsed() > BUDGET {
+        if started.elapsed() > RECOVERY_BUDGET {
             #[cfg(test)]
             recovery_diagnostic::budget_refusal("afterValidation");
             return Err("native recovery Goal read exceeded its 750 ms cooperative budget".into());
@@ -277,12 +335,15 @@ pub(crate) fn read_for_recovery(root: &Path) -> Result<Option<Value>, String> {
             "invalid canonical session goal journal: trailing blank physical record".into(),
         );
     }
-    if started.elapsed() > BUDGET {
+    if started.elapsed() > RECOVERY_BUDGET {
         #[cfg(test)]
         recovery_diagnostic::budget_refusal("final");
         return Err("native recovery Goal read exceeded its 750 ms cooperative budget".into());
     }
-    Ok(previous)
+    Ok(RecoveryFold {
+        latest: previous,
+        fingerprint: digest,
+    })
 }
 
 fn valid_hash(value: &str) -> bool {

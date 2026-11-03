@@ -21,36 +21,46 @@ pub(crate) struct GoalOwner {
     pub(crate) owner: session_goal::native::Owner,
     /// The verified owner configuration and its canonical path, when found.
     pub(crate) config: Option<(String, config::Loaded)>,
+    /// The same bounded acquisition, available to the SessionStart display.
+    pub(crate) recovery: Option<
+        Box<(
+            session_goal::native::Session,
+            session_goal::native::RecoverySnapshot,
+        )>,
+    >,
 }
 
 /// `None` when the session has no native Goal owner (or its selectors are
 /// unusable); the caller then uses the working-directory project.
-pub(crate) fn goal_owner(payload: &serde_json::Map<String, Value>) -> Option<GoalOwner> {
+pub(crate) fn goal_owner(
+    payload: &serde_json::Map<String, Value>,
+) -> Result<Option<GoalOwner>, String> {
     goal_owner_with_access(payload, session_goal::native::Access::RequireWritable)
 }
 
 fn goal_owner_with_access(
     payload: &serde_json::Map<String, Value>,
     access: session_goal::native::Access,
-) -> Option<GoalOwner> {
-    let session = session(payload, access)?;
-    goal_owner_for_session(&session, access)
+) -> Result<Option<GoalOwner>, String> {
+    let Some(session) = session(payload, access) else {
+        return Ok(None);
+    };
+    let Some(snapshot) = session.recovery_snapshot(access)? else {
+        return Ok(None);
+    };
+    let mut result = goal_owner_for_snapshot(&session, &snapshot);
+    result.recovery = Some(Box::new((session, snapshot)));
+    Ok(Some(result))
 }
 
 /// Use a callback's explicit host and payload selector without inheriting an
 /// unrelated parent process's native session environment.
-pub(crate) fn goal_owner_for_session_readonly(
+pub(crate) fn goal_owner_for_snapshot(
     session: &session_goal::native::Session,
-) -> Option<GoalOwner> {
-    goal_owner_for_session(session, session_goal::native::Access::ReadExisting)
-}
-
-fn goal_owner_for_session(
-    session: &session_goal::native::Session,
-    access: session_goal::native::Access,
-) -> Option<GoalOwner> {
+    snapshot: &session_goal::native::RecoverySnapshot,
+) -> GoalOwner {
     let started = Instant::now();
-    let owner = session.owner_with_access(access).ok().flatten()?;
+    let owner = snapshot.owner.clone();
     let mut candidates = Vec::new();
     if let Ok(Some(hint)) = read_hint(&session.root) {
         if hint.host == session.host
@@ -61,8 +71,8 @@ fn goal_owner_for_session(
             candidates.push((hint.owner_config_path, None));
         }
     }
-    let correction = session_goal::owner_correction::owner_config_binding(session, access).ok()?;
-    if let Some(binding) = &correction {
+    let correction = &snapshot.owner_config;
+    if let Some(binding) = correction {
         candidates.clear();
         if binding.local_identity_sha256 == owner.identity_sha256
             && binding.project_id == owner.project_id
@@ -70,7 +80,7 @@ fn goal_owner_for_session(
             candidates.push((binding.path.clone(), Some(binding.clone())));
         }
     }
-    if let Ok(Some(record)) = session_goal::read_for_recovery(&session.root) {
+    if let Some(record) = &snapshot.latest {
         let members = record["journeyMembers"].as_array().into_iter().flatten();
         for member in
             members.filter(|member| member["ownerIdentitySha256"] == owner.identity_sha256.as_str())
@@ -96,7 +106,11 @@ fn goal_owner_for_session(
             }
             Some((path, loaded))
         });
-    Some(GoalOwner { owner, config })
+    GoalOwner {
+        owner,
+        config,
+        recovery: None,
+    }
 }
 
 /// Whether `loaded` is the project the owner record names.

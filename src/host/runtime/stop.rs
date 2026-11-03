@@ -4,7 +4,7 @@
 //! configuration, Goal, or host repeat flag leaves the host's stop unchanged.
 
 use super::project::{self, Resolution, Source};
-use crate::session_goal::{self, native};
+use crate::session_goal::native;
 use serde_json::{Map, Value};
 
 pub(super) fn should_block(host: Option<&str>, payload: &Map<String, Value>) -> bool {
@@ -22,21 +22,21 @@ pub(super) fn should_block(host: Option<&str>, payload: &Map<String, Value>) -> 
     let Ok(Some(session)) = native::host_session_readonly(host, reported) else {
         return false;
     };
-    let Ok(Some(owner)) = session.owner_with_access(native::Access::ReadExisting) else {
+    let Ok(Some(snapshot)) = session.recovery_snapshot(native::Access::ReadExisting) else {
         return false;
     };
     let Resolution::Project {
         loaded,
         source: Source::GoalOwner,
         ..
-    } = project::resolve_for_session_readonly(payload, &session)
+    } = project::resolve_for_session_readonly(payload, &session, &snapshot)
     else {
         return false;
     };
-    if !crate::host::session_recovery::is_owner(&loaded, &owner) {
+    if !crate::host::session_recovery::is_owner(&loaded, &snapshot.owner) {
         return false;
     }
-    let Ok(Some(goal)) = session_goal::read_for_recovery(&session.root) else {
+    let Some(goal) = snapshot.latest else {
         return false;
     };
     goal["closure"]["closed"] == false && !declared_wait(&goal, payload)

@@ -78,12 +78,13 @@ pub fn run(host: Option<&str>) -> Result<(), String> {
     } else {
         None
     };
-    let (loaded, config_path, source) = match project::resolve(object) {
+    let (loaded, config_path, source, recovery) = match project::resolve(object) {
         project::Resolution::Project {
             loaded,
             config_path,
             source,
-        } => (*loaded, config_path, source),
+            recovery,
+        } => (*loaded, config_path, source, recovery),
         project::Resolution::CleanAbsence => {
             emit_routing_with_recovery(
                 event,
@@ -115,7 +116,11 @@ pub fn run(host: Option<&str>) -> Result<(), String> {
     // Claude Code names an environment file for SessionStart; Codex does not.
     if event == "SessionStart" && std::env::var_os("CLAUDE_ENV_FILE").is_some() {
         if let Some(identity) = object.get("session_id").and_then(Value::as_str) {
-            crate::session_goal::display::refresh_claude_session(&loaded, identity);
+            crate::session_goal::display::refresh_claude_session(
+                &loaded,
+                identity,
+                recovery.as_deref(),
+            );
         }
     }
     let recovery_context = if event == "SessionStart" && crate::producer::exitbind_surface() {

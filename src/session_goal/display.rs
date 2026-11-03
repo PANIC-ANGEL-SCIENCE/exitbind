@@ -165,13 +165,127 @@ pub(crate) fn refresh(
     write(&path, &state)
 }
 
-/// Claude Code SessionStart (startup, resume, clear, compact): rebuild the
-/// display file of the hook payload's session so the status line shows the
-/// Goal before the next ledger command. Display only; every failure is silent.
-pub(crate) fn refresh_claude_session(loaded: &Loaded, identity: &str) {
-    if let Ok(Some(session)) = super::native::claude_session(identity) {
-        let _ = refresh(loaded, &session, None);
+/// SessionStart uses only an owner-verified, bounded Goal snapshot. It never
+/// runs the ordinary full display projection or evaluates Work and lessons.
+/// Failure is silent and must not interfere with the recovery prompt.
+pub(crate) fn refresh_claude_session(
+    loaded: &Loaded,
+    identity: &str,
+    recovery: Option<&(super::native::Session, super::native::RecoverySnapshot)>,
+) {
+    if let Some((session, snapshot)) =
+        recovery.filter(|(session, _)| session.host == "claude" && session.reports(identity))
+    {
+        let _ = refresh_recovery_metadata(loaded, session, snapshot);
+        return;
     }
+    let Ok(Some(session)) = super::native::host_session_readonly("claude", identity) else {
+        return;
+    };
+    // An explicitly selected project display is independent of this session.
+    let Ok(path) = path_for_key(&session.selector_key) else {
+        return;
+    };
+    if read(&path).is_some_and(|previous| previous["journal"] == "project") {
+        return;
+    }
+    let Ok(Some(snapshot)) = session.recovery_snapshot(super::native::Access::ReadExisting) else {
+        return;
+    };
+    let _ = refresh_recovery_metadata(loaded, &session, &snapshot);
+}
+
+fn refresh_recovery_metadata(
+    loaded: &Loaded,
+    session: &super::native::Session,
+    snapshot: &super::native::RecoverySnapshot,
+) -> Result<(), String> {
+    let path = path_for_key(&session.selector_key)?;
+    let previous = read(&path);
+    if previous
+        .as_ref()
+        .is_some_and(|state| state["journal"] == "project")
+    {
+        return Ok(());
+    }
+    let local = super::native::owner_for(loaded)?;
+    if local.identity_sha256 != snapshot.owner.identity_sha256
+        || local.project_id != snapshot.owner.project_id
+    {
+        return Err("native Goal display owner is unavailable".into());
+    }
+    let state = recovery_metadata(
+        session,
+        snapshot.latest.as_ref(),
+        previous.as_ref(),
+        &crate::memory::state::now(),
+    )?;
+    write(&path, &state)
+}
+
+/// Reuse progress only when this display names the same session journal and
+/// exact Goal event. An adopted session's display does not record the target
+/// journal key, so its older progress cannot be proven to name that journal.
+pub(super) fn recovery_metadata(
+    session: &super::native::Session,
+    record: Option<&Value>,
+    previous: Option<&Value>,
+    now: &str,
+) -> Result<Value, String> {
+    let Some(record) = record else {
+        return Ok(
+            json!({"kind":KIND,"version":1,"host":session.host,"journal":"session",
+            "state":"none","revision":Value::Null,"writtenAt":now}),
+        );
+    };
+    let goal = record["goal"]
+        .as_str()
+        .filter(|goal| !goal.trim().is_empty())
+        .ok_or("native Goal display text is unavailable")?;
+    let closed = record["closure"]["closed"]
+        .as_bool()
+        .ok_or("native Goal display closure is unavailable")?;
+    let goal_id = record["goalId"]
+        .as_str()
+        .filter(|id| !id.trim().is_empty())
+        .ok_or("native Goal display identity is unavailable")?;
+    let revision = record["revision"]
+        .as_u64()
+        .filter(|revision| *revision > 0)
+        .ok_or("native Goal display revision is unavailable")?;
+    let event = record["eventSha256"]
+        .as_str()
+        .filter(|event| super::native::valid_hash(event))
+        .ok_or("native Goal display event is unavailable")?;
+    let mut state = json!({"kind":KIND,"version":1,"host":session.host,"journal":"session",
+        "state":if closed {"closed"} else {"open"},
+        "goalId":goal_id,"goal":bounded(goal),
+        "revision":revision,"eventSha256":event,"writtenAt":now});
+    let same_event = previous.filter(|old| {
+        !session.adopted()
+            && old["journal"] == "session"
+            && old["host"] == session.host
+            && old["goalId"] == record["goalId"]
+            && old["revision"] == record["revision"]
+            && record["eventSha256"].as_str().is_some()
+            && old["eventSha256"] == record["eventSha256"]
+    });
+    if let Some(previous) = same_event {
+        for field in [
+            "closingRoute",
+            "requirements",
+            "met",
+            "total",
+            "currentWork",
+            "nextAction",
+            "lessonCount",
+        ] {
+            if let Some(value) = previous.get(field) {
+                state[field] = value.clone();
+            }
+        }
+    }
+    Ok(state)
 }
 
 /// Atomically replace the display file: write a private temporary file in the
@@ -229,6 +343,59 @@ pub(crate) fn read(path: &Path) -> Option<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_start_keeps_only_progress_bound_to_its_current_journal_event() {
+        let mut session = super::super::native::Session {
+            host: "claude",
+            key: "a".repeat(64),
+            selector_key: "a".repeat(64),
+            root: PathBuf::from("/fixture"),
+        };
+        let mut record = json!({"goalId":"g", "goal":"A Goal", "revision":3,
+            "eventSha256":"b".repeat(64), "closure":{"closed":false}});
+        let previous = json!({"kind":KIND,"version":1,"journal":"session","host":"claude",
+            "goalId":"g","revision":3,"eventSha256":"b".repeat(64),
+            "met":1,"total":2,"requirements":[{"id":"R1"}],"nextAction":"next",
+            "lessonCount":3,"currentWork":"smw_test","closingRoute":"close"});
+        let same = recovery_metadata(&session, Some(&record), Some(&previous), "now").unwrap();
+        for field in [
+            "met",
+            "total",
+            "requirements",
+            "nextAction",
+            "lessonCount",
+            "currentWork",
+            "closingRoute",
+        ] {
+            assert_eq!(same[field], previous[field], "{field}");
+        }
+        record["eventSha256"] = json!("c".repeat(64));
+        record["closure"]["closed"] = json!(true);
+        let changed = recovery_metadata(&session, Some(&record), Some(&previous), "now").unwrap();
+        assert_eq!(changed["state"], "closed");
+        assert_eq!(changed["eventSha256"], record["eventSha256"]);
+        for field in [
+            "met",
+            "total",
+            "requirements",
+            "nextAction",
+            "lessonCount",
+            "currentWork",
+            "closingRoute",
+        ] {
+            assert!(changed.get(field).is_none(), "unexpected retained {field}");
+        }
+        record["eventSha256"] = previous["eventSha256"].clone();
+        session.key = "d".repeat(64);
+        let adopted = recovery_metadata(&session, Some(&record), Some(&previous), "now").unwrap();
+        assert!(adopted.get("requirements").is_none());
+        let absent = recovery_metadata(&session, None, Some(&previous), "now").unwrap();
+        assert_eq!(absent["state"], "none");
+        assert!(absent.get("requirements").is_none());
+        record["closure"]["closed"] = Value::Null;
+        assert!(recovery_metadata(&session, Some(&record), Some(&previous), "now").is_err());
+    }
 
     #[test]
     fn atomic_write_replaces_the_state_and_reads_back_within_the_time_bound() {

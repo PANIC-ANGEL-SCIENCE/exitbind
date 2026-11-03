@@ -28,10 +28,12 @@ pub(crate) fn task_target(
             storage_work: None,
         }));
     };
-    let owner = session
-        .owner()?
+    let snapshot = session
+        .recovery_snapshot(session_goal::native::Access::ReadExisting)?
         .ok_or("native session Goal owner is unavailable")?;
-    let record = session_goal::read_for_recovery(&session.root)?
+    let owner = snapshot.owner;
+    let record = snapshot
+        .latest
         .ok_or("native session has no canonical Goal to recover")?;
     let hint = read_hint(&session.root)?.ok_or(
         "no validated recovery hint identifies a retained Work configuration for this session",
@@ -56,14 +58,7 @@ pub(crate) fn task_target(
             crate::drift::Route::RecoveryShow,
         ));
     }
-    let scope = session_goal::native::scope(&owner_loaded, false)?;
-    if !scope.owner_matches
-        || scope
-            .owner
-            .as_ref()
-            .map(|value| value.identity_sha256.as_str())
-            != Some(owner.identity_sha256.as_str())
-    {
+    if !super::owner_config::is_owner(&owner_loaded, &owner) {
         return Err("saved configuration no longer matches the fixed native Goal owner".into());
     }
     let mut validated_configs = validated_work_configs(&record, &session, &owner, &hint.work_refs)?;

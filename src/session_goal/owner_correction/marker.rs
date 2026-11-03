@@ -7,6 +7,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -127,70 +128,104 @@ fn owner(value: &Value) -> Owner {
     }
 }
 
-fn scan(
-    session: &Session,
-    original: &Value,
-    history: &[Value],
-) -> Result<Vec<OwnerCorrectionDecision>, String> {
-    let mut all: Vec<OwnerCorrectionDecision> = Vec::new();
-    let mut preceding = Vec::new();
-    let mut prior_goal = Value::Null;
-    let mut effective = owner(original);
-    for (index, record) in history.iter().enumerate() {
-        let current = decisions(record)?;
-        if record["goalId"] != prior_goal {
-            preceding.clear();
+/// Fold validated logical records without retaining the complete history. A
+/// Goal ID may recur later, so eligibility is retained across Goal transitions.
+struct OwnershipFold<'a> {
+    session: &'a Session,
+    effective: Owner,
+    latest: Option<OwnerCorrectionDecision>,
+    before_latest: Option<String>,
+    request_ids: BTreeSet<String>,
+    eligibility: BTreeMap<String, Option<String>>,
+    previous_goal: Option<String>,
+    preceding: usize,
+}
+
+impl<'a> OwnershipFold<'a> {
+    fn new(session: &'a Session, original: &Value) -> Self {
+        Self {
+            session,
+            effective: owner(original),
+            latest: None,
+            before_latest: None,
+            request_ids: BTreeSet::new(),
+            eligibility: BTreeMap::new(),
+            previous_goal: None,
+            preceding: 0,
         }
-        if current.len() > preceding.len() {
+    }
+
+    fn require_empty(&self, goal_id: &str) -> Result<(), String> {
+        match self.eligibility.get(goal_id) {
+            Some(None) => Ok(()),
+            Some(Some(error)) => Err(error.clone()),
+            None => Err("the named Goal history is unavailable".into()),
+        }
+    }
+
+    fn observe(&mut self, record: &Value, previous: Option<&Value>) -> Result<(), String> {
+        let goal_id = record["goalId"]
+            .as_str()
+            .ok_or("native Goal identity is unavailable")?;
+        let current = decisions(record)?;
+        if self.previous_goal.as_deref() != Some(goal_id) {
+            self.preceding = 0;
+        }
+        if current.len() > self.preceding {
+            if current.len() != self.preceding + 1 {
+                return Err("native Goal owner correction chain is inconsistent".into());
+            }
             let decision = current.last().ok_or("owner correction is missing")?;
-            let prior = index
-                .checked_sub(1)
-                .and_then(|position| history.get(position))
-                .ok_or("native Goal owner correction has no predecessor")?;
+            let prior = previous.ok_or("native Goal owner correction has no predecessor")?;
             super::validate_recorded_selection(prior, decision)?;
-            super::empty_goal(&history[..index], &decision.goal_id)?;
-            if decision.host != session.host
-                || decision.session_key != session.key
-                || decision.old_config.local_identity_sha256 != effective.identity_sha256
-                || decision.old_config.project_id != effective.project_id
-                || all
-                    .iter()
-                    .any(|item| item.request_id == decision.request_id)
+            self.require_empty(&decision.goal_id)?;
+            if decision.host != self.session.host
+                || decision.session_key != self.session.key
+                || decision.old_config.local_identity_sha256 != self.effective.identity_sha256
+                || decision.old_config.project_id != self.effective.project_id
+                || !self.request_ids.insert(decision.request_id.clone())
             {
                 return Err("native Goal owner correction chain is inconsistent".into());
             }
-            effective = Owner {
+            self.effective = Owner {
                 project_id: decision.target_config.project_id.clone(),
                 identity_sha256: decision.target_config.local_identity_sha256.clone(),
             };
-            all.push(decision.clone());
+            self.before_latest = self
+                .latest
+                .as_ref()
+                .map(|item| item.decision_sha256.clone());
+            self.latest = Some(decision.clone());
         }
-        preceding = current;
-        prior_goal = record["goalId"].clone();
+        let eligibility = self.eligibility.entry(goal_id.to_owned()).or_insert(None);
+        if eligibility.is_none() {
+            *eligibility = super::empty_record(record).err();
+        }
+        self.preceding = current.len();
+        self.previous_goal = Some(goal_id.to_owned());
+        Ok(())
     }
-    Ok(all)
 }
 
-pub(super) fn resolve_history(
-    session: &Session,
-    value: &Value,
-    history: &[Value],
+impl super::super::RecoveryObserver for OwnershipFold<'_> {
+    fn logical(&mut self, record: &Value, previous: Option<&Value>) -> Result<(), String> {
+        self.observe(record, previous)
+    }
+}
+
+fn finish(
+    marker: &Marker,
+    fold: OwnershipFold<'_>,
+    head: Option<&Value>,
 ) -> Result<Resolved, String> {
-    let marker = Marker::parse(session, value)?;
-    let chain = scan(session, &marker.original, history)?;
-    let latest = chain.last().cloned();
-    let last_sha = latest
+    let last_sha = fold
+        .latest
         .as_ref()
         .map(|decision| decision.decision_sha256.as_str());
     let base = marker.base_decision_sha256.as_deref();
     let pending = match &marker.pending {
         Some(decision) if last_sha == Some(decision.decision_sha256.as_str()) => {
-            let preceding = chain
-                .iter()
-                .rev()
-                .nth(1)
-                .map(|item| item.decision_sha256.as_str());
-            if preceding != base || latest.as_ref() != Some(decision) {
+            if fold.before_latest.as_deref() != base || fold.latest.as_ref() != Some(decision) {
                 return Err(
                     "native Goal owner marker does not match its committed correction".into(),
                 );
@@ -198,9 +233,7 @@ pub(super) fn resolve_history(
             false
         }
         Some(decision) if last_sha == base => {
-            let head = history
-                .last()
-                .ok_or("native Goal correction predecessor is unavailable")?;
+            let head = head.ok_or("native Goal correction predecessor is unavailable")?;
             if head["eventSha256"] != decision.previous_event_sha256
                 || head["goalId"] != decision.goal_id
                 || head["revision"] != decision.previous_revision
@@ -208,16 +241,9 @@ pub(super) fn resolve_history(
                 return Err("native Goal owner marker predecessor is inconsistent".into());
             }
             super::validate_recorded_selection(head, decision)?;
-            super::empty_goal(history, &decision.goal_id)?;
-            let effective = latest.as_ref().map_or_else(
-                || owner(&marker.original),
-                |prior| Owner {
-                    project_id: prior.target_config.project_id.clone(),
-                    identity_sha256: prior.target_config.local_identity_sha256.clone(),
-                },
-            );
-            if decision.old_config.local_identity_sha256 != effective.identity_sha256
-                || decision.old_config.project_id != effective.project_id
+            fold.require_empty(&decision.goal_id)?;
+            if decision.old_config.local_identity_sha256 != fold.effective.identity_sha256
+                || decision.old_config.project_id != fold.effective.project_id
             {
                 return Err("native Goal pending correction names another owner".into());
             }
@@ -226,18 +252,26 @@ pub(super) fn resolve_history(
         None if last_sha == base => false,
         _ => return Err("native Goal owner marker and Goal history disagree".into()),
     };
-    let effective = latest.as_ref().map_or_else(
-        || owner(&marker.original),
-        |decision| Owner {
-            project_id: decision.target_config.project_id.clone(),
-            identity_sha256: decision.target_config.local_identity_sha256.clone(),
-        },
-    );
     Ok(Resolved {
-        owner: effective,
+        owner: fold.effective,
         pending,
-        latest,
+        latest: fold.latest,
     })
+}
+
+pub(super) fn resolve_history(
+    session: &Session,
+    value: &Value,
+    history: &[Value],
+) -> Result<Resolved, String> {
+    let marker = Marker::parse(session, value)?;
+    let mut fold = OwnershipFold::new(session, &marker.original);
+    let mut previous = None;
+    for record in history {
+        fold.observe(record, previous)?;
+        previous = Some(record);
+    }
+    finish(&marker, fold, previous)
 }
 
 pub(in crate::session_goal) fn resolve_owner(
@@ -283,31 +317,109 @@ fn legacy_contains_correction(raw: &str) -> Result<bool, String> {
     for line in raw.lines() {
         let physical: Value = serde_json::from_str(line)
             .map_err(|_| "native Goal journal contains malformed JSON")?;
-        if physical.get(super::model::FIELD).is_some() {
+        if legacy_physical_contains_correction(&physical)? {
             return Ok(true);
-        }
-        if physical["kind"] == "lead_session_goal_delta" {
-            let changes = physical["changes"]
-                .as_array()
-                .ok_or("native Goal journal delta is malformed")?;
-            if changes
-                .iter()
-                .any(|change| change[1].as_array().is_some_and(Vec::is_empty))
-            {
-                return Err("native Goal journal has an unsupported root replacement delta".into());
-            }
-            if changes.iter().any(|change| {
-                change[1]
-                    .as_array()
-                    .and_then(|path| path.first())
-                    .and_then(Value::as_str)
-                    == Some(super::model::FIELD)
-            }) {
-                return Ok(true);
-            }
         }
     }
     Ok(false)
+}
+
+fn legacy_physical_contains_correction(physical: &Value) -> Result<bool, String> {
+    if physical.get(super::model::FIELD).is_some() {
+        return Ok(true);
+    }
+    if physical["kind"] == "lead_session_goal_delta" {
+        let changes = physical["changes"]
+            .as_array()
+            .ok_or("native Goal journal delta is malformed")?;
+        if changes
+            .iter()
+            .any(|change| change[1].as_array().is_some_and(Vec::is_empty))
+        {
+            return Err("native Goal journal has an unsupported root replacement delta".into());
+        }
+        return Ok(changes.iter().any(|change| {
+            change[1]
+                .as_array()
+                .and_then(|path| path.first())
+                .and_then(Value::as_str)
+                == Some(super::model::FIELD)
+        }));
+    }
+    Ok(false)
+}
+
+struct LegacyObserver;
+impl super::super::RecoveryObserver for LegacyObserver {
+    fn physical(&mut self, physical: &Value) -> Result<(), String> {
+        if legacy_physical_contains_correction(physical)? {
+            return Err("native Goal owner marker is missing for correction history".into());
+        }
+        Ok(())
+    }
+}
+
+/// The version-2 envelope never represents an adoption. Its locator can be
+/// resolved before reading a journal, but it grants no owner credit.
+pub(in crate::session_goal) fn validate_marker_envelope(
+    session: &Session,
+    value: &Value,
+) -> Result<(), String> {
+    Marker::parse(session, value).map(|_| ())
+}
+
+/// Resolve effective ownership and the latest Goal from one bounded logical
+/// fold, then compare a second bounded byte fingerprint and the owner record.
+pub(in crate::session_goal) fn recovery_snapshot(
+    session: &Session,
+    access: Access,
+) -> Result<Option<native::RecoverySnapshot>, String> {
+    recovery_snapshot_inner(session, access, || {})
+}
+
+fn recovery_snapshot_inner(
+    session: &Session,
+    access: Access,
+    after_fold: impl FnOnce(),
+) -> Result<Option<native::RecoverySnapshot>, String> {
+    let started = std::time::Instant::now();
+    let Some(value) = session.owner_value(access)? else {
+        return Ok(None);
+    };
+    super::super::recovery_time(started)?;
+    let (owner, correction, goal) = if value["protocol"] == 2 {
+        let marker = Marker::parse(session, &value)?;
+        let mut observer = OwnershipFold::new(session, &marker.original);
+        let goal = super::super::recovery_fold(&session.root, started, &mut observer, true)?;
+        let resolved = finish(&marker, observer, goal.latest.as_ref())?;
+        (
+            resolved.owner,
+            resolved.latest.map(|item| item.target_config),
+            goal,
+        )
+    } else {
+        native::validate_owner_v1(&value, &session.key, session.host)?;
+        if value.get("journalSessionKey").is_some() {
+            return Err("native session Goal owner record names another session's journal that cannot be read".into());
+        }
+        let goal = super::super::recovery_fold(&session.root, started, &mut LegacyObserver, true)?;
+        (owner(&value), None, goal)
+    };
+    after_fold();
+    super::super::recovery_time(started)?;
+    if session.owner_value(access)?.as_ref() != Some(&value) {
+        return Err("native Goal owner and journal snapshot is inconsistent; retry".into());
+    }
+    super::super::recovery_recheck(&session.root, started, &goal.fingerprint)?;
+    if session.owner_value(access)?.as_ref() != Some(&value) {
+        return Err("native Goal owner and journal snapshot is inconsistent; retry".into());
+    }
+    super::super::recovery_time(started)?;
+    Ok(Some(native::RecoverySnapshot {
+        owner,
+        latest: goal.latest,
+        owner_config: correction,
+    }))
 }
 
 pub(super) fn replace(session: &Session, current: &Value, next: &Marker) -> Result<(), String> {
@@ -374,10 +486,154 @@ mod tests {
     #[test]
     fn legacy_marker_scan_sees_physical_deltas_and_json_escapes() {
         let direct = r#"{"nativeGoalOwner\u0043orrections":[]}"#;
+        let null = r#"{"nativeGoalOwnerCorrections":null}"#;
         let delta = r#"{"kind":"lead_session_goal_delta","changes":[["set",["nativeGoalOwnerCorrections"],[]]]}"#;
+        let root = r#"{"kind":"lead_session_goal_delta","changes":[["set",[],{}]]}"#;
         let ordinary = r#"{"source":"nativeGoalOwnerCorrections","kind":"lead_session_goal"}"#;
         assert!(legacy_contains_correction(direct).unwrap());
+        assert!(legacy_contains_correction(null).unwrap());
         assert!(legacy_contains_correction(delta).unwrap());
+        assert!(legacy_contains_correction(root).is_err());
         assert!(!legacy_contains_correction(ordinary).unwrap());
+        for value in [direct, null, delta, root] {
+            let physical: Value = serde_json::from_str(value).unwrap();
+            assert!(super::super::super::RecoveryObserver::physical(
+                &mut LegacyObserver,
+                &physical
+            )
+            .is_err());
+        }
+    }
+
+    #[cfg(unix)]
+    fn fixture(label: &str, protocol: u64) -> (crate::test_root::TempRoot, Session) {
+        let root = crate::test_root::temp(label);
+        let base = root.join("private");
+        crate::project::portability::create_private_directory(&base).unwrap();
+        let key = "a".repeat(64);
+        let session = Session {
+            host: "codex",
+            key: key.clone(),
+            selector_key: key.clone(),
+            root: base.join(format!("session-{key}")),
+        };
+        crate::project::portability::create_private_directory(&session.root).unwrap();
+        let state = session
+            .root
+            .join(crate::project::layout_types::state_namespace());
+        crate::project::portability::create_private_directory(&state).unwrap();
+        let mut original = serde_json::json!({"kind":"native_session_goal_owner", "protocol":1,
+            "host":"codex", "sessionKey":key, "ownerProjectId":"fixture",
+            "ownerIdentitySha256":"b".repeat(64)});
+        original["sha256"] = serde_json::json!(hash::value(&original));
+        let owner = if protocol == 1 {
+            original
+        } else {
+            Marker::new(&session, &original, None, None, None)
+                .unwrap()
+                .value()
+                .unwrap()
+        };
+        std::fs::write(session.root.join(native::OWNER_FILE), owner.to_string()).unwrap();
+        std::fs::write(
+            state.join("session-goal.jsonl"),
+            include_str!("../../../tests/fixtures/session-goal-complete-records.jsonl"),
+        )
+        .unwrap();
+        (root, session)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recovery_owner_refuses_over_budget_journals_before_credit_for_both_protocols() {
+        for protocol in [1, 2] {
+            let (_root, session) = fixture(&format!("owner-recovery-bound-{protocol}"), protocol);
+            assert!(session
+                .recovery_snapshot(Access::ReadExisting)
+                .unwrap()
+                .unwrap()
+                .latest
+                .is_some());
+            let journal = session
+                .root
+                .join(crate::project::layout_types::state_namespace())
+                .join("session-goal.jsonl");
+            std::fs::write(&journal, "{}\n".repeat(4097)).unwrap();
+            let error = match session.recovery_snapshot(Access::ReadExisting) {
+                Err(error) => error,
+                _ => panic!("protocol {protocol} credited a journal with too many records"),
+            };
+            assert!(error.contains("4096 physical records"), "{error}");
+            std::fs::OpenOptions::new()
+                .write(true)
+                .truncate(true)
+                .open(&journal)
+                .unwrap()
+                .set_len(64 * 1024 * 1024 + 1)
+                .unwrap();
+            let error = match session.recovery_snapshot(Access::ReadExisting) {
+                Err(error) => error,
+                _ => panic!("protocol {protocol} credited an oversized journal"),
+            };
+            assert!(error.contains("byte bound"), "{error}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recovery_rechecks_owner_and_same_length_journal_drift() {
+        for protocol in [1, 2] {
+            let (_root, session) = fixture(&format!("owner-recovery-drift-{protocol}"), protocol);
+            let journal = session
+                .root
+                .join(crate::project::layout_types::state_namespace())
+                .join("session-goal.jsonl");
+            let original = std::fs::read(&journal).unwrap();
+            let mut changed = original.clone();
+            changed[0] = b'[';
+            let result = recovery_snapshot_inner(&session, Access::ReadExisting, || {
+                std::fs::write(&journal, &changed).unwrap();
+            });
+            assert!(matches!(result, Err(ref error) if error.contains("snapshot is inconsistent")));
+            std::fs::write(&journal, original).unwrap();
+            let path = session.root.join(native::OWNER_FILE);
+            let result = recovery_snapshot_inner(&session, Access::ReadExisting, || {
+                let mut owner: Value =
+                    serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+                owner["sha256"] = serde_json::json!("0".repeat(64));
+                std::fs::write(&path, owner.to_string()).unwrap();
+            });
+            assert!(matches!(result, Err(ref error) if error.contains("snapshot is inconsistent")));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fold_preserves_removed_work_and_reused_goal_id_ineligibility() {
+        let (_root, session) = fixture("owner-recovery-history-eligibility", 1);
+        let original: Value =
+            serde_json::from_slice(&std::fs::read(session.root.join(native::OWNER_FILE)).unwrap())
+                .unwrap();
+        for field in ["journeyAdmissions", "mappings"] {
+            let clean = super::super::tests::goal();
+            let mut old = clean.clone();
+            if field == "mappings" {
+                let source = &clean["continuation"]["requirements"][0];
+                old["continuation"]["mappings"] = serde_json::json!([{"work":format!("smw_{}", "a".repeat(64)),
+                    "active":false,"startEventSha256":"b".repeat(64),
+                    "requirement":{"id":"R1","revision":1,"text":source["text"],"sourceSha256":source["source"]["sha256"]}}]);
+            } else {
+                old[field] = serde_json::json!([{}]);
+            }
+            let mut other = clean.clone();
+            other["goalId"] = serde_json::json!("other");
+            let mut fold = OwnershipFold::new(&session, &original);
+            fold.observe(&old, None).unwrap();
+            fold.observe(&clean, Some(&old)).unwrap();
+            fold.observe(&other, Some(&clean)).unwrap();
+            fold.observe(&clean, Some(&other)).unwrap();
+            assert!(fold.require_empty("g").is_err(), "{field}");
+            assert!(fold.require_empty("other").is_ok());
+        }
     }
 }

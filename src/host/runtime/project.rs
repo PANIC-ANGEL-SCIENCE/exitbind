@@ -22,6 +22,12 @@ pub(super) enum Resolution {
         loaded: Box<Loaded>,
         config_path: PathBuf,
         source: Source,
+        recovery: Option<
+            Box<(
+                crate::session_goal::native::Session,
+                crate::session_goal::native::RecoverySnapshot,
+            )>,
+        >,
     },
     CleanAbsence,
     /// The configuration that was found but could not be used, if any.
@@ -29,17 +35,23 @@ pub(super) enum Resolution {
 }
 
 pub(super) fn resolve(object: &serde_json::Map<String, Value>) -> Resolution {
-    resolve_inner(object, crate::host::session_recovery::goal_owner(object))
+    match crate::host::session_recovery::goal_owner(object) {
+        Ok(owner) => resolve_inner(object, owner),
+        Err(_) => Resolution::Unresolved(None),
+    }
 }
 
 /// Resolve a hook's explicit session and existing owner without writes.
 pub(super) fn resolve_for_session_readonly(
     object: &serde_json::Map<String, Value>,
     session: &crate::session_goal::native::Session,
+    snapshot: &crate::session_goal::native::RecoverySnapshot,
 ) -> Resolution {
     resolve_inner(
         object,
-        crate::host::session_recovery::goal_owner_for_session_readonly(session),
+        Some(crate::host::session_recovery::goal_owner_for_snapshot(
+            session, snapshot,
+        )),
     )
 }
 
@@ -47,9 +59,10 @@ fn resolve_inner(
     object: &serde_json::Map<String, Value>,
     goal_owner: Option<crate::host::session_recovery::GoalOwner>,
 ) -> Resolution {
-    let owner = match goal_owner {
+    let (owner, recovery) = match goal_owner {
         Some(crate::host::session_recovery::GoalOwner {
             config: Some((path, loaded)),
+            recovery,
             ..
         }) => {
             if !usable_control_root(&loaded) {
@@ -59,10 +72,11 @@ fn resolve_inner(
                 loaded: Box::new(loaded),
                 config_path: PathBuf::from(path),
                 source: Source::GoalOwner,
+                recovery,
             };
         }
-        Some(found) => Some(found.owner),
-        None => None,
+        Some(found) => (Some(found.owner), found.recovery),
+        None => (None, None),
     };
     let cwd = object
         .get("cwd")
@@ -123,6 +137,7 @@ fn resolve_inner(
         loaded: Box::new(loaded),
         config_path,
         source,
+        recovery,
     }
 }
 

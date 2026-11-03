@@ -87,7 +87,18 @@ fn adopt_route(loaded: &Loaded, adoption: &Route) -> Value {
 /// project does not name exactly one open journal of the same owner.
 pub(crate) fn route(loaded: &Loaded, bounded: bool) -> Option<Route> {
     let session = native::current().ok()??;
-    if session.adopted() || session.owner().ok()?.is_some() {
+    if session.adopted() {
+        return None;
+    }
+    let owner_exists = if bounded {
+        session
+            .recovery_snapshot(native::Access::ReadExisting)
+            .ok()?
+            .is_some()
+    } else {
+        session.owner().ok()?.is_some()
+    };
+    if owner_exists {
         return None;
     }
     let reach = reach(loaded, &session, bounded).ok()?;
@@ -128,20 +139,23 @@ fn reach(loaded: &Loaded, session: &Session, bounded: bool) -> Result<Reach, Str
             continue;
         }
         let candidate = Session::for_key(session.host, key)?;
-        if !candidate
-            .owner()
-            .ok()
-            .flatten()
-            .is_some_and(|owner| same(&owner, &local))
-        {
-            continue;
-        }
         let latest = if bounded {
-            super::read_for_recovery(&candidate.root)
+            match candidate.recovery_snapshot(native::Access::ReadExisting) {
+                Ok(Some(snapshot)) if same(&snapshot.owner, &local) => snapshot.latest,
+                _ => None,
+            }
         } else {
-            super::read(&candidate.root)
+            if !candidate
+                .owner()
+                .ok()
+                .flatten()
+                .is_some_and(|owner| same(&owner, &local))
+            {
+                continue;
+            }
+            super::read(&candidate.root).ok().flatten()
         };
-        let Ok(Some(latest)) = latest else {
+        let Some(latest) = latest else {
             continue;
         };
         if super::goal_summary::closed_revision(&latest).is_none() {

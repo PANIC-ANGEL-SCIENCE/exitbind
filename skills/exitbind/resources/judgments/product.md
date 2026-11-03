@@ -32,6 +32,14 @@ appropriate evidence. A roadmap, badge, self-report or build result is not
 evidence for an unrelated safety, compatibility or adoption claim. If a
 supported path or evidence is unavailable, state the gap.
 
+Organize the main story around the user's problem, intended outcome and how the
+product creates that value, then progressively disclose details when the reader
+needs them. Check decision points such as granted authority, telemetry or data
+sharing, how to inspect effects, and how to revert or recover. Where a claim
+matters to a reader's decision, connect it to its current source or observation
+and distinguish demonstrated, inferred and unverified statements; use an
+existing mapping when useful without creating a new ledger or approval gate.
+
 For an active product, give a new reader the useful outcome and one supported
 first-success path, including material prerequisites, cost, data and authority
 boundaries. Show how to recognize success and, where relevant, stop, recover,

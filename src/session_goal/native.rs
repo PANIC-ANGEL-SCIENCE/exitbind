@@ -87,6 +87,13 @@ pub(crate) struct Owner {
     pub(crate) identity_sha256: String,
 }
 
+/// The owner and Goal from the same bounded recovery acquisition.
+pub(crate) struct RecoverySnapshot {
+    pub(crate) owner: Owner,
+    pub(crate) latest: Option<Value>,
+    pub(crate) owner_config: Option<super::recovery::ConfigBinding>,
+}
+
 pub(crate) struct Scope {
     pub(crate) root: PathBuf,
     pub(crate) session: Option<Session>,
@@ -294,7 +301,7 @@ impl Session {
             return Ok(None);
         };
         if value["protocol"] == 2 {
-            super::owner_correction::resolve_owner(self, &value, access)?;
+            super::owner_correction::validate_marker_envelope(self, &value)?;
             return Ok(None);
         }
         validate_owner_v1(&value, &self.key, self.host)?;
@@ -361,6 +368,13 @@ impl Session {
 
     pub(crate) fn owner(&self) -> Result<Option<Owner>, String> {
         self.owner_with_access(Access::RequireWritable)
+    }
+
+    pub(crate) fn recovery_snapshot(
+        &self,
+        access: Access,
+    ) -> Result<Option<RecoverySnapshot>, String> {
+        super::owner_correction::recovery_snapshot(self, access)
     }
 
     pub(crate) fn owner_with_access(&self, access: Access) -> Result<Option<Owner>, String> {

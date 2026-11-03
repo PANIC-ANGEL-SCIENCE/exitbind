@@ -3,7 +3,7 @@
 use super::*;
 use crate::evidence::hash;
 
-fn goal() -> Value {
+pub(super) fn goal() -> Value {
     let text = "A recorded requirement.";
     let source =
         json!({"ref":"request.txt","text":text,"sha256":hash::text(text),"coverageConfirmed":true});

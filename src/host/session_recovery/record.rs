@@ -32,9 +32,11 @@ pub(crate) fn attach_graph_result(
         return Ok(false);
     };
     with_record_lock(&session.root, || {
-        let owner = session.owner()?.ok_or("native Goal owner is unavailable")?;
-        let record =
-            session_goal::read_for_recovery(&session.root)?.ok_or("native Goal is unavailable")?;
+        let snapshot = session
+            .recovery_snapshot(session_goal::native::Access::RequireWritable)?
+            .ok_or("native Goal owner is unavailable")?;
+        let owner = snapshot.owner;
+        let record = snapshot.latest.ok_or("native Goal is unavailable")?;
         let Some(mut hint) = read_hint(&session.root)? else {
             return Ok(false);
         };
@@ -59,14 +61,7 @@ pub(crate) fn attach_graph_result(
         {
             return Ok(false);
         }
-        let scope = session_goal::native::scope(&owner_loaded, false)?;
-        if !scope.owner_matches
-            || scope
-                .owner
-                .as_ref()
-                .map(|value| value.identity_sha256.as_str())
-                != Some(owner.identity_sha256.as_str())
-        {
+        if !super::owner_config::is_owner(&owner_loaded, &owner) {
             return Ok(false);
         }
         verify_work_refs(&record, &session, &owner, &hint.work_refs)?;
@@ -110,19 +105,15 @@ pub(super) struct Owned {
 pub(super) fn owned(owner_loaded: &config::Loaded) -> Result<Owned, String> {
     let session = session_goal::native::current()?
         .ok_or("session recovery record requires a host-reported native session")?;
-    let scope = session_goal::native::scope(owner_loaded, false)?;
-    scope.require_owner()?;
-    if scope
-        .session
-        .as_ref()
-        .map_or(true, |current| current.key != session.key)
-    {
-        return Err("session recovery owner config belongs to another native session".into());
-    }
-    let owner = scope
-        .owner
+    let snapshot = session
+        .recovery_snapshot(session_goal::native::Access::RequireWritable)?
         .ok_or("native session Goal owner is unavailable")?;
-    let record = session_goal::read_for_recovery(&session.root)?
+    let owner = snapshot.owner;
+    if !super::owner_config::is_owner(owner_loaded, &owner) {
+        return Err("native session Goal is owned by another configured project; this project may read context only".into());
+    }
+    let record = snapshot
+        .latest
         .ok_or("native session has no canonical Goal to recover")?;
     Ok(Owned {
         session,
@@ -436,8 +427,11 @@ fn checkpoint_locked(payload: &serde_json::Map<String, Value>, event: &str) -> R
         if !session.reports(id) {
             return Err("host event session ID disagrees with selectors".into());
         }
-        let owner = session.owner()?.ok_or("native Goal owner is unavailable")?;
-        let Some(record) = session_goal::read_for_recovery(&session.root)? else {
+        let snapshot = session
+            .recovery_snapshot(session_goal::native::Access::RequireWritable)?
+            .ok_or("native Goal owner is unavailable")?;
+        let owner = snapshot.owner;
+        let Some(record) = snapshot.latest else {
             return Err("native Goal is unavailable".into());
         };
         if started.elapsed() > HOOK_BUDGET {
@@ -466,14 +460,7 @@ fn checkpoint_locked(payload: &serde_json::Map<String, Value>, event: &str) -> R
                 crate::drift::Route::RecoveryShow,
             ));
         }
-        let owner_scope = session_goal::native::scope(&owner_config, false)?;
-        if !owner_scope.owner_matches
-            || owner_scope
-                .owner
-                .as_ref()
-                .map(|actual| actual.identity_sha256.as_str())
-                != Some(owner.identity_sha256.as_str())
-        {
+        if !super::owner_config::is_owner(&owner_config, &owner) {
             return Err(
                 "recovery hint owner configuration no longer matches the fixed Goal owner".into(),
             );

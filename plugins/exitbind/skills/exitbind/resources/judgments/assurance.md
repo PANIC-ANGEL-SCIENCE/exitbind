@@ -23,6 +23,9 @@ boundaries, invalid states, permissions and lifecycle effects. A simulator is
 evidence only for the boundary it actually models. Report a counterexample or
 the missing observation; do not silently repair the subject being verified or
 claim that a simulated physical, radio or timing boundary was exercised.
+Trace the mechanism through applicable aliases, wrappers and alternate spellings;
+verify a selected test actually ran its intended cases and produced the expected
+result rather than treating a successful empty selection as evidence.
 
 For an invariant claim, obtain the approved invariant and source, then trace
 the changed data and state across relevant observers, persistence, recovery,
@@ -35,12 +38,17 @@ inventing a guarantee.
 For a security or privacy claim, define the actor, assets, permitted effects,
 observation boundary and success condition. Examine only authorized code and
 controlled fixtures; preserve secrets and do not target external systems or
-create persistence. Use a safe discriminating check for the relevant boundary.
+create persistence. Use safe negative cases that exercise the named actor's
+attempt to cross the relevant trust boundary, including applicable alternate
+routes and invalid authority, and observe the actual result.
 Where the claim depends on repeated observations or combined information,
 include the specified duration, applicable combinations and measurable success
 condition. State the model and limits of the evidence; no finite local check
 establishes a universal security guarantee. Use PASS, FAIL or INCONCLUSIVE
 only for the named claim, and name the specific evidence or missing condition.
+Prioritize each material finding by consequence: identify the concrete scenario,
+supporting location or observation, affected contract and smallest decisive
+check, and distinguish work that blocks the decision from work that can wait.
 
 ## Preparing an independent review
 

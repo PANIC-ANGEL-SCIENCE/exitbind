@@ -70,7 +70,7 @@ impl Session {
         serde_json::from_slice(&output.stdout).unwrap()
     }
 
-    fn display(&self) -> Value {
+    fn display_path(&self) -> PathBuf {
         let files = fs::read_dir(self.store.join("display"))
             .unwrap()
             .filter_map(Result::ok)
@@ -78,7 +78,11 @@ impl Session {
             .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
             .collect::<Vec<_>>();
         assert_eq!(files.len(), 1, "one display file per session: {files:?}");
-        serde_json::from_slice(&fs::read(&files[0]).unwrap()).unwrap()
+        files[0].clone()
+    }
+
+    fn display(&self) -> Value {
+        serde_json::from_slice(&fs::read(self.display_path()).unwrap()).unwrap()
     }
 
     fn status_line(&self) -> (String, u128) {
@@ -212,9 +216,7 @@ fn display_file_follows_every_ledger_command_and_feeds_the_status_line() {
     eprintln!("statusline p95 over 100 runs: {p95} us");
     assert!(p95 < 50_000, "status line p95 {p95} us");
 
-    // A SessionStart (resume, /clear) rebuilds a missing display file.
-    fs::remove_dir_all(session.store.join("display")).unwrap();
-    assert_eq!(session.status_line().0, "");
+    // SessionStart retains progress only for the same session Goal event.
     let env_file = session.home.join("claude-env");
     fs::write(&env_file, "").unwrap();
     {
@@ -228,11 +230,91 @@ fn display_file_follows_every_ledger_command_and_feeds_the_status_line() {
     let payload = json!({"hook_event_name":"SessionStart","source":"resume",
         "session_id":hook_session.id,"cwd":hook_session.root});
     let hook = hook_session.call(
-        &[env!("CARGO_BIN_EXE_exitbind"), "hook-run"],
+        &[
+            env!("CARGO_BIN_EXE_exitbind"),
+            "hook-run",
+            "--host",
+            "claude",
+        ],
         payload.to_string().as_bytes(),
     );
     assert!(hook.status.success(), "{hook:?}");
     assert_eq!(hook_session.status_line().0.trim_end(), line.trim_end());
+    let kept = hook_session.display();
+    for field in ["requirements", "met", "total", "nextAction", "lessonCount"] {
+        assert_eq!(kept[field], display[field], "{field}");
+    }
+
+    // A different event cannot retain progress, even when the Goal ID agrees.
+    let mut stale = kept.clone();
+    stale["eventSha256"] = json!("0".repeat(64));
+    fs::write(hook_session.display_path(), stale.to_string()).unwrap();
+    let hook = hook_session.call(
+        &[
+            env!("CARGO_BIN_EXE_exitbind"),
+            "hook-run",
+            "--host",
+            "claude",
+        ],
+        payload.to_string().as_bytes(),
+    );
+    assert!(hook.status.success(), "{hook:?}");
+    let refreshed = hook_session.display();
+    assert_eq!(refreshed["eventSha256"], display["eventSha256"]);
+    for field in [
+        "requirements",
+        "met",
+        "total",
+        "nextAction",
+        "lessonCount",
+        "currentWork",
+        "closingRoute",
+    ] {
+        assert!(refreshed.get(field).is_none(), "stale {field}: {refreshed}");
+    }
+    assert_eq!(
+        hook_session.status_line().0.trim_end(),
+        "◎ Ship the R9 parser and report"
+    );
+
+    // An explicitly selected project journal display is not touched.
+    let mut project = kept.clone();
+    project["journal"] = json!("project");
+    let project_bytes = project.to_string();
+    fs::write(hook_session.display_path(), &project_bytes).unwrap();
+    let hook = hook_session.call(
+        &[
+            env!("CARGO_BIN_EXE_exitbind"),
+            "hook-run",
+            "--host",
+            "claude",
+        ],
+        payload.to_string().as_bytes(),
+    );
+    assert!(hook.status.success(), "{hook:?}");
+    assert_eq!(
+        fs::read_to_string(hook_session.display_path()).unwrap(),
+        project_bytes
+    );
+
+    // A missing display is recreated from metadata only.
+    fs::remove_dir_all(hook_session.store.join("display")).unwrap();
+    assert_eq!(hook_session.status_line().0, "");
+    let hook = hook_session.call(
+        &[
+            env!("CARGO_BIN_EXE_exitbind"),
+            "hook-run",
+            "--host",
+            "claude",
+        ],
+        payload.to_string().as_bytes(),
+    );
+    assert!(hook.status.success(), "{hook:?}");
+    assert_eq!(
+        hook_session.status_line().0.trim_end(),
+        "◎ Ship the R9 parser and report"
+    );
+    assert_eq!(hook_session.display()["revision"], display["revision"]);
     hook_session.extra.clear();
     let session = hook_session;
 
@@ -301,6 +383,111 @@ fn a_closed_goal_reads_closed_after_the_tree_moves() {
         session.status_line().0.trim_end(),
         "◎ Close the display test goal · closed"
     );
+
+    // A fresh SessionStart restores the recorded closed state without
+    // re-evaluating its old Work, inputs or lesson history.
+    fs::remove_dir_all(session.store.join("display")).unwrap();
+    let env_file = session.home.join("claude-env");
+    fs::write(&env_file, "").unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&env_file, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    let session = Session {
+        extra: vec![("CLAUDE_ENV_FILE", env_file)],
+        ..session
+    };
+    let payload = json!({"hook_event_name":"SessionStart","source":"resume",
+        "session_id":session.id,"cwd":session.root});
+    let hook = session.call(
+        &[exe, "hook-run", "--host", "claude"],
+        payload.to_string().as_bytes(),
+    );
+    assert!(hook.status.success(), "{hook:?}");
+    let metadata = session.display();
+    assert_eq!(metadata["state"], "closed");
+    assert_eq!(metadata["revision"], closed["revision"]);
+    assert_eq!(metadata["eventSha256"], closed["eventSha256"]);
+    assert!(metadata.get("requirements").is_none());
+    assert_eq!(
+        session.status_line().0.trim_end(),
+        "◎ Close the display test goal · closed"
+    );
+}
+
+#[test]
+fn claude_session_start_refuses_over_limit_history_without_replacing_display() {
+    let session = Session::new("native-display-recovery-limits");
+    let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
+        .args(["init", "--mode", "portable", "--skip-skills", "--root"])
+        .arg(&session.root)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let config = session.config();
+    let exe = env!("CARGO_BIN_EXE_exitbind");
+    session.json(&[
+        exe,
+        "goal",
+        "incorporate",
+        "--goal-id",
+        "g",
+        "--goal",
+        "Keep the Goal",
+        "--config",
+        &config,
+        "--json",
+    ]);
+    let display_path = session.display_path();
+    let previous_display = fs::read(&display_path).unwrap();
+    let journal = fs::read_dir(&session.store)
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path().join(".exitbind/session-goal.jsonl"))
+        .find(|path| path.is_file())
+        .expect("the native Goal journal");
+    let valid = fs::read(&journal).unwrap();
+    let env_file = session.home.join("claude-env");
+    fs::write(&env_file, "").unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&env_file, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    let session = Session {
+        extra: vec![("CLAUDE_ENV_FILE", env_file)],
+        ..session
+    };
+    let payload = json!({"hook_event_name":"SessionStart","source":"resume",
+        "session_id":session.id,"cwd":session.root});
+    for (bytes, expected) in [(false, "4096 physical records"), (true, "byte bound")] {
+        if bytes {
+            fs::OpenOptions::new()
+                .write(true)
+                .truncate(true)
+                .open(&journal)
+                .unwrap()
+                .set_len(64 * 1024 * 1024 + 1)
+                .unwrap();
+        } else {
+            fs::write(&journal, "{}\n".repeat(4097)).unwrap();
+        }
+        let hook = session.call(
+            &[exe, "hook-run", "--host", "claude"],
+            payload.to_string().as_bytes(),
+        );
+        assert!(hook.status.success(), "{hook:?}");
+        let result: Value = serde_json::from_slice(&hook.stdout).unwrap();
+        let context = result["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap();
+        assert!(
+            context.contains("session recovery is unresolved"),
+            "{context}"
+        );
+        assert!(context.contains(expected), "{context}");
+        assert_eq!(fs::read(&display_path).unwrap(), previous_display);
+    }
+    fs::write(journal, valid).unwrap();
 }
 
 #[test]

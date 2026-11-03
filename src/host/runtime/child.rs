@@ -119,6 +119,7 @@ pub(crate) fn preflight(
             loaded: hook_loaded,
             config_path,
             source: project::Source::GoalOwner,
+            ..
         } => (hook_loaded, config_path),
         project::Resolution::Project { .. } => {
             return Ok(json!({"host":host,"state":"unknown",

@@ -2,6 +2,7 @@
 """Exercise the portable rollout metrics and checkout-bound target resources."""
 from __future__ import annotations
 
+import datetime
 import hashlib
 import importlib.util
 import io
@@ -37,14 +38,17 @@ metrics = load("portable_rollout_metrics", METRICS_PATH)
 selector = load("portable_bind_target", RESOURCES / "verification/bind-target.py")
 
 
-def record(kind, payload=None):
-    return json.dumps({"type": kind, "payload": payload}).encode() + b"\n"
+def record(kind, payload=None, timestamp=None):
+    item = {"type": kind, "payload": payload}
+    if timestamp is not None:
+        item["timestamp"] = timestamp
+    return json.dumps(item).encode() + b"\n"
 
 
-def command(identity, exit_code=0):
+def command(identity, exit_code=0, text="fixture secret", timestamp=None):
     return record("event_msg", {"type": "item_completed", "item": {
         "type": "CommandExecution", "id": identity, "exit_code": exit_code,
-        "command": "fixture secret", "stdout": "fixture secret"}})
+        "command": text, "stdout": "fixture secret"}}, timestamp)
 
 
 class RolloutMetricsTests(unittest.TestCase):
@@ -62,11 +66,75 @@ class RolloutMetricsTests(unittest.TestCase):
         for omitted in ("fixture secret", "item-1", "12345", "23456"):
             self.assertNotIn(omitted, encoded)
 
-    def test_deduplication_is_limited_to_the_declared_window(self):
+    def test_deduplication_retains_exact_ids_and_reports_cap_overflow(self):
         result = metrics.analyze(io.BytesIO(command("a") + command("b") + command("c") + command("a")), window=2)
-        self.assertEqual(result["command_events"], 4)
-        self.assertEqual(result["command_replays_in_window"], 0)
+        self.assertEqual(result["command_event_records"], 4)
+        self.assertEqual(result["command_events"], 2)
+        self.assertEqual(result["command_replays_in_window"], 1)
+        self.assertEqual(result["command_id_overflow"], 1)
+        self.assertFalse(result["dedupe_complete"])
         self.assertEqual(result["dedupe_window"], 2)
+
+    def test_hour_and_pattern_aggregates_distinguish_replays_from_repeats(self):
+        data = (record("compacted")
+                + command("first-id", text="git status --private-example", timestamp="2026-11-03T13:45:12+01:00")
+                + command("second-id", text="git status --private-example", timestamp="2026-11-03T12:55:00Z")
+                + command("first-id", text="git status --private-example", timestamp="2026-11-03T12:59:00Z")
+                + command("third-id", text="rg private-example", timestamp="2026-11-03T13:05:00Z"))
+        result = metrics.analyze(io.BytesIO(data))
+        self.assertEqual(result["record_types"]["compacted"], 1)
+        self.assertEqual(result["command_event_records"], 4)
+        self.assertEqual(result["command_events"], 3)
+        self.assertEqual(result["command_replays_in_window"], 1)
+        self.assertEqual(result["commands_per_hour"], {"2026-11-03T12:00Z": 2, "2026-11-03T13:00Z": 1})
+        self.assertEqual(result["command_families"]["version_control"], 2)
+        self.assertEqual(result["command_families"]["search"], 1)
+        self.assertEqual(result["repeated_command_patterns"], 1)
+        self.assertEqual(result["repeated_command_excess"], 1)
+        self.assertTrue(result["dedupe_complete"])
+        self.assertTrue(result["hourly_complete"])
+        self.assertTrue(result["command_patterns_complete"])
+        self.assertIsNone(result["command_duration_seconds"])
+        self.assertIsNone(result["token_totals"])
+        encoded = json.dumps(result)
+        for private in ("first-id", "second-id", "third-id", "private-example", "git status", "rg private"):
+            self.assertNotIn(private, encoded)
+
+    def test_missing_invalid_or_overlong_identity_and_command_remain_untracked(self):
+        data = (command(None) + command("") + command("x" * 257) + command("\ud800")
+                + command("valid-1", text="s" * 1025)
+                + command("valid-2", text="\ud800") + command("valid-3", text=None))
+        result = metrics.analyze(io.BytesIO(data))
+        self.assertEqual(result["command_event_records"], 7)
+        self.assertEqual(result["command_events"], 3)
+        self.assertEqual(result["command_missing_id"], 2)
+        self.assertEqual(result["command_invalid_id"], 2)
+        self.assertEqual(result["command_text_untracked"], 3)
+        self.assertFalse(result["dedupe_complete"])
+        self.assertFalse(result["command_patterns_complete"])
+        self.assertNotIn("valid-1", json.dumps(result))
+
+    def test_hour_limit_and_invalid_timestamps_are_reported(self):
+        start = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+        data = b"".join(command(str(i), text="git status", timestamp=(start + datetime.timedelta(hours=i)).isoformat())
+                        for i in range(metrics.MAX_HOURS + 1))
+        data += command("missing-time", timestamp="private malformed timestamp")
+        data += command("naive-time", timestamp="2026-01-01T12:00:00")
+        result = metrics.analyze(io.BytesIO(data))
+        self.assertEqual(len(result["commands_per_hour"]), metrics.MAX_HOURS)
+        self.assertEqual(result["command_hour_overflow"], 1)
+        self.assertEqual(result["command_hour_missing"], 2)
+        self.assertFalse(result["hourly_complete"])
+        self.assertNotIn("private malformed timestamp", json.dumps(result))
+
+    def test_snapshot_limit_reads_the_first_record_and_no_later_bytes(self):
+        first = command("first", text="cargo test", timestamp="2026-11-03T12:00:00Z")
+        source = io.BytesIO(first + command("second", text="git status"))
+        result = metrics.analyze(source, max_bytes=len(first))
+        self.assertEqual(result["records"], 1)
+        self.assertEqual(result["command_events"], 1)
+        self.assertEqual(result["bytes_read"], len(first))
+        self.assertEqual(source.tell(), len(first))
 
     def test_invalid_and_oversized_records_do_not_consume_the_next_record(self):
         data = b"x" * 300 + b"\ninvalid\n" + record("compacted")
@@ -95,8 +163,32 @@ class RolloutMetricsTests(unittest.TestCase):
             _, peak = tracemalloc.get_traced_memory()
         finally:
             tracemalloc.stop()
-        self.assertEqual(result["command_events"], 50000)
+        self.assertEqual(result["command_event_records"], 50000)
+        self.assertEqual(result["command_events"], 16)
+        self.assertEqual(result["command_id_overflow"], 49984)
+        self.assertFalse(result["dedupe_complete"])
         self.assertLess(peak, 2_000_000)
+
+    def test_maximum_retained_id_and_command_sizes_stay_bounded(self):
+        class FullWindowStream:
+            count = 0
+            def readline(self, limit):
+                if self.count == metrics.MAX_WINDOW:
+                    return b""
+                identity = f"{self.count:04d}" + "i" * (metrics.MAX_ID_BYTES - 4)
+                text = f"{self.count:04d}" + "c" * (metrics.MAX_COMMAND_BYTES - 4)
+                self.count += 1
+                return command(identity, text=text)
+        tracemalloc.start()
+        try:
+            result = metrics.analyze(FullWindowStream())
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        self.assertEqual(result["command_events"], metrics.MAX_WINDOW)
+        self.assertTrue(result["dedupe_complete"])
+        self.assertTrue(result["command_patterns_complete"])
+        self.assertLess(peak, 16_000_000)
 
     @unittest.skipUnless(hasattr(os, "mkfifo"), "FIFO check requires a POSIX host")
     def test_cli_rejects_symlink_and_pipe_without_echoing_paths(self):
@@ -116,8 +208,17 @@ class RolloutMetricsTests(unittest.TestCase):
             good = subprocess.run([sys.executable, str(METRICS_PATH), str(data)], capture_output=True,
                                   text=True, timeout=3, check=False)
             self.assertEqual(good.returncode, 0)
-            self.assertEqual(json.loads(good.stdout)["records"], 1)
+            observation = json.loads(good.stdout)
+            self.assertEqual(observation["records"], 1)
+            self.assertEqual(observation["snapshot_bytes"], data.stat().st_size)
+            self.assertFalse(observation["input_metadata_changed"])
             self.assertNotIn(str(data), good.stdout)
+            invalid = subprocess.run([sys.executable, str(METRICS_PATH), str(data),
+                                      "--dedupe-window", "private-option-value"],
+                                     capture_output=True, text=True, timeout=3, check=False)
+            self.assertEqual(invalid.returncode, 2)
+            self.assertNotIn(str(data), invalid.stderr)
+            self.assertNotIn("private-option-value", invalid.stderr)
 
 
 class BindTargetTests(unittest.TestCase):

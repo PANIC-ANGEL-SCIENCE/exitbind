@@ -37,14 +37,20 @@ pub(crate) fn hook_context(
     if !session.reports(id) {
         return Some("Exitbind session recovery declined: host payload session ID disagrees with current session selectors; no Work was selected.".into());
     }
-    let owner = match session.owner() {
-        Ok(Some(owner)) => owner,
-        _ => return Some(session_goal::adoption::hook_text(cwd_config_path)),
+    let snapshot = match session.recovery_snapshot(session_goal::native::Access::ReadExisting) {
+        Ok(Some(snapshot)) => snapshot,
+        Ok(None) => return Some(session_goal::adoption::hook_text(cwd_config_path)),
+        Err(error) => {
+            return Some(format!(
+                "Exitbind session recovery is unresolved: {}; no Work was selected.",
+                crate::drift::plain(&error)
+            ))
+        }
     };
-    let record = match session_goal::read_for_recovery(&session.root) {
-        Ok(Some(record)) => record,
-        Ok(None) => return Some("Exitbind session recovery is unresolved: no canonical native Goal is available; no Work was selected.".into()),
-        Err(error) => return Some(format!("Exitbind session recovery is unresolved: {}; no Work was selected.", crate::drift::plain(&error))),
+    let owner = snapshot.owner;
+    let record = match snapshot.latest {
+        Some(record) => record,
+        None => return Some("Exitbind session recovery is unresolved: no canonical native Goal is available; no Work was selected.".into()),
     };
     // A closed Goal leaves nothing to resume: state that one fact only.
     if let Some(revision) = session_goal::goal_summary::closed_revision(&record) {
@@ -184,15 +190,7 @@ fn hint_text(
         {
             continue;
         }
-        let Ok(scope) = session_goal::native::scope(&loaded, false) else {
-            continue;
-        };
-        if scope.owner_matches
-            && scope.owner.as_ref().is_some_and(|actual| {
-                actual.identity_sha256 == owner.identity_sha256
-                    && actual.project_id == owner.project_id
-            })
-        {
+        if super::owner_config::is_owner(&loaded, owner) {
             owner_match = true;
             owner_loaded = Some(loaded);
             if hint.as_ref().is_some_and(|hint| {

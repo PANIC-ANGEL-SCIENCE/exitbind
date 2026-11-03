@@ -359,6 +359,56 @@ fn recovery_reads_a_complete_journal_past_the_former_16_mib_bound() {
     }
     let read = first.unwrap().unwrap();
     assert_eq!(&read, records.last().unwrap());
+
+    // Exercise native selector -> owner -> bounded recovery as one snapshot,
+    // not just the journal reader. The fixture's ordinary Work history must
+    // remain readable even though it is ineligible for owner correction.
+    let base = root.join("private");
+    crate::project::portability::create_private_directory(&base).unwrap();
+    let key = "a".repeat(64);
+    let session = crate::session_goal::native::Session {
+        host: "claude",
+        key: key.clone(),
+        selector_key: key.clone(),
+        root: base.join(format!("session-{key}")),
+    };
+    crate::project::portability::create_private_directory(&session.root).unwrap();
+    let state = session
+        .root
+        .join(crate::project::layout_types::state_namespace());
+    crate::project::portability::create_private_directory(&state).unwrap();
+    let mut owner = json!({"kind":"native_session_goal_owner","protocol":1,
+        "host":"claude","sessionKey":key,"ownerProjectId":"fixture",
+        "ownerIdentitySha256":"b".repeat(64)});
+    owner["sha256"] = json!(crate::evidence::hash::value(&owner));
+    std::fs::write(session.root.join("owner.json"), owner.to_string()).unwrap();
+    std::fs::write(state.join("session-goal.jsonl"), &raw).unwrap();
+    let snapshot = session
+        .recovery_snapshot(crate::session_goal::native::Access::ReadExisting)
+        .unwrap()
+        .unwrap();
+    assert_eq!(snapshot.latest.as_ref(), records.last());
+    let display = crate::session_goal::display::recovery_metadata(
+        &session,
+        snapshot.latest.as_ref(),
+        None,
+        "now",
+    )
+    .unwrap();
+    assert_eq!(display["goalId"], "R55");
+    assert_eq!(display["state"], "open");
+    assert!(display.get("requirements").is_none());
+    let mut marker = json!({"kind":"native_session_goal_owner","protocol":2,
+        "host":"claude","sessionKey":session.key,"original":owner,
+        "previousOwnerRecordSha256":owner["sha256"],"baseDecisionSha256":null,
+        "pending":null,"request":null});
+    marker["sha256"] = json!(crate::evidence::hash::value(&marker));
+    std::fs::write(session.root.join("owner.json"), marker.to_string()).unwrap();
+    let corrected_protocol = session
+        .recovery_snapshot(crate::session_goal::native::Access::ReadExisting)
+        .unwrap()
+        .unwrap();
+    assert_eq!(corrected_protocol.latest.as_ref(), records.last());
 }
 
 #[test]
@@ -380,4 +430,32 @@ fn failed_first_recovery_remains_decisive_after_a_successful_second_read() {
     assert!(matches!(read_for_recovery(&root), Ok(Some(_))));
     let failed_as_before = std::panic::catch_unwind(|| first.unwrap().unwrap());
     assert!(failed_as_before.is_err());
+}
+
+#[test]
+fn recovery_record_limit_does_not_change_exact_goal_reads() {
+    let root = crate::test_root::temp("goal-read-unbounded-record-count");
+    let directory = root.join(crate::project::layout_types::state_namespace());
+    std::fs::create_dir_all(&directory).unwrap();
+    let mut previous: Value =
+        serde_json::from_str(COMPLETE_FIXTURE.lines().next().unwrap()).unwrap();
+    let mut raw = format!("{previous}\n");
+    for _ in 1..=4096 {
+        let revision = previous["revision"].as_u64().unwrap();
+        let mut next = previous.clone();
+        next.as_object_mut().unwrap().remove("eventSha256");
+        next["revision"] = json!(revision + 1);
+        next["predecessor"] = json!({"goalId":previous["goalId"],"revision":revision});
+        next["successorOf"] = Value::Null;
+        let next = sealed(next, Some(&previous));
+        raw.push_str(&format!("{}\n", stored(&next, Some(&previous))));
+        previous = next;
+    }
+    std::fs::write(directory.join("session-goal.jsonl"), raw).unwrap();
+    assert_eq!(
+        crate::session_goal::read(&root).unwrap().as_ref(),
+        Some(&previous)
+    );
+    let error = read_for_recovery(&root).unwrap_err();
+    assert!(error.contains("4096 physical records"), "{error}");
 }
