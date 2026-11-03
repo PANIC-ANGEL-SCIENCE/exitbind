@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.31.25
+
+Release: https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/tag/v0.31.25 — the tag sits on this entry's release commit, and the page lists its assets once they are published.
+
+Keep each existing Work's governor and configuration pinned. Read-only reviewer
+recovery creates a fresh eligible attempt without replaying a worker, resetting
+accounting or granting mutation authority. A complete actor packet that exceeds
+the native host's context limit remains unavailable and receives no automatic
+return credit.
+
+- Prepare native recipients with current assignment, requirement and pre-effect
+  facts, with working source routes and explicit bounded omissions.
+- Reuse validated operation-local journey and ledger observations on linked
+  history. Recheck exact inputs before publication; actual Goal close and
+  positive authorization keep their independent fresh validation.
+- Recover an eligible ended read-only reviewer on the same Work while preserving
+  its checked worker result, prior attempts, receiving fence and result owner.
+- Validate canonical actor evidence aliases and completed mutation history;
+  contradictory or unknown fields still refuse automatic delivery credit.
+- Read existing private Goal storage without requiring write access for factual
+  views. Goal mutations, adoption and close admission retain writable checks.
+- Preserve adoption routes, requirement sources and complete update advisories
+  in bounded recovery and session context. Optional resources omit whole lines
+  with a complete facts route instead of producing incomplete instructions.
+- Preserve source-query missing, stale, denied and omitted-result distinctions
+  under the recipient's frozen access and budget.
+
 ## 0.31.24
 
 Release: https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/tag/v0.31.24 — the tag sits on this entry's release commit, and the page lists its assets once they are published.
