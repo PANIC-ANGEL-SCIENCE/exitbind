@@ -29,7 +29,24 @@ pub(super) enum Resolution {
 }
 
 pub(super) fn resolve(object: &serde_json::Map<String, Value>) -> Resolution {
-    let goal_owner = crate::host::session_recovery::goal_owner(object);
+    resolve_inner(object, crate::host::session_recovery::goal_owner(object))
+}
+
+/// Resolve a hook's explicit session and existing owner without writes.
+pub(super) fn resolve_for_session_readonly(
+    object: &serde_json::Map<String, Value>,
+    session: &crate::session_goal::native::Session,
+) -> Resolution {
+    resolve_inner(
+        object,
+        crate::host::session_recovery::goal_owner_for_session_readonly(session),
+    )
+}
+
+fn resolve_inner(
+    object: &serde_json::Map<String, Value>,
+    goal_owner: Option<crate::host::session_recovery::GoalOwner>,
+) -> Resolution {
     let owner = match goal_owner {
         Some(crate::host::session_recovery::GoalOwner {
             config: Some((path, loaded)),

@@ -2,7 +2,18 @@ use super::*;
 
 #[test]
 fn ended_worker_resumes_the_same_work_once_after_identity_check() {
-    let fixture = Fixture::new("save-return-ended");
+    assert_legacy_resume(Fixture::new("save-return-ended"), false);
+}
+
+#[test]
+fn marker_free_legacy_request_resumes_with_the_git_flag() {
+    let Some(fixture) = Fixture::marker_free("save-return-ended-no-git") else {
+        return;
+    };
+    assert_legacy_resume(fixture, true);
+}
+
+fn assert_legacy_resume(fixture: Fixture, expect_skip_git: bool) {
     let (work, _) = fixture.worker_journal_with_submission(false);
     let directory = fixture.root.join(".exitbind/native-actions").join(&work);
     let path = fs::read_dir(directory)
@@ -28,12 +39,16 @@ fn ended_worker_resumes_the_same_work_once_after_identity_check() {
     });
     fs::write(&path, serde_json::to_vec(&journal).unwrap()).unwrap();
     let marker = fixture.captures.join("resumed-once");
+    let argv = fixture.captures.join("resumed-argv");
     let executable = fixture.root.join("fake-resume-codex");
+    let quote =
+        |path: &std::path::Path| format!("'{}'", path.to_str().unwrap().replace('\'', "'\\''"));
     fs::write(
         &executable,
         format!(
-            "#!/bin/sh\ncat >/dev/null\nprintf x >> '{}'\nprintf '%s\\n' \\\n'{{\"type\":\"thread.started\",\"thread_id\":\"thread-r18\"}}' \\\n'{{\"type\":\"item.completed\",\"item\":{{\"type\":\"agent_message\",\"text\":\"{{\\\"outcome\\\":\\\"completed\\\",\\\"summary\\\":\\\"resumed\\\",\\\"reason\\\":\\\"\\\"}}\"}}}}' \\\n'{{\"type\":\"turn.completed\",\"status\":\"completed\",\"usage\":{{\"input_tokens\":1,\"cached_input_tokens\":0,\"output_tokens\":1}}}}'\n",
-            marker.display()
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > {}\ncat >/dev/null\nprintf x >> {}\nprintf '%s\\n' \\\n'{{\"type\":\"thread.started\",\"thread_id\":\"thread-r18\"}}' \\\n'{{\"type\":\"item.completed\",\"item\":{{\"type\":\"agent_message\",\"text\":\"{{\\\"outcome\\\":\\\"completed\\\",\\\"summary\\\":\\\"resumed\\\",\\\"reason\\\":\\\"\\\"}}\"}}}}' \\\n'{{\"type\":\"turn.completed\",\"status\":\"completed\",\"usage\":{{\"input_tokens\":1,\"cached_input_tokens\":0,\"output_tokens\":1}}}}'\n",
+            quote(&argv),
+            quote(&marker)
         ),
     )
     .unwrap();
@@ -59,6 +74,14 @@ fn ended_worker_resumes_the_same_work_once_after_identity_check() {
     );
     assert!(output.status.success(), "{}", text(&output));
     assert_eq!(fs::read(&marker).unwrap(), b"x");
+    let argv = fs::read_to_string(argv).unwrap();
+    assert!(argv.lines().any(|arg| arg == "resume"), "{argv}");
+    assert!(argv.lines().any(|arg| arg == "thread-r18"), "{argv}");
+    assert_eq!(
+        argv.lines().any(|arg| arg == "--skip-git-repo-check"),
+        expect_skip_git,
+        "{argv}"
+    );
     let compact = fixture.value(&["work", "next", &work], b"");
     let compact_action = compact["next"]["action"]
         .as_str()

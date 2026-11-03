@@ -330,6 +330,9 @@ fn permit_rebinds_current_detail_and_fresh_managed_action_remains_usable() {
             for flag in ["--hypothesis", "--scope-decision", "--evidence-request"] {
                 assert!(argv.iter().any(|arg| arg == flag));
             }
+        } else if choice["label"] == "evidence" {
+            assert!(argv.iter().any(|arg| arg == assignment));
+            assert!(argv.iter().any(|arg| arg == "--artifact"));
         } else {
             assert!(argv.iter().any(|arg| arg == assignment));
             assert!(argv

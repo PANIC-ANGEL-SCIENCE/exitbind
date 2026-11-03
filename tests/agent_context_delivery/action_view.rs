@@ -419,3 +419,85 @@ fn preserved_worker(fixture: &Fixture) -> String {
     assert!(returned.status.success(), "{}", text(&returned));
     work
 }
+
+#[test]
+fn default_roles_reach_recipient_views_and_the_optional_reference_is_readable() {
+    let fixture = Fixture::new("starter-competence-delivery");
+    let started = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "Trace a maintained contract",
+            "--check-command",
+            "true",
+            "--proof-origin",
+            "synthetic",
+            "--review-policy",
+            "required",
+        ],
+        b"",
+    );
+    let work = started["work"].as_str().unwrap();
+    let lead = fixture.value(&["work", "detail", work, "--json"], b"");
+    let lead_profile = lead["recipientContext"]["profile"]["content"]
+        .as_str()
+        .unwrap();
+    assert!(lead_profile.contains("Reuse relevant current work"));
+    assert!(lead_profile.contains("references/competence.md"));
+    fixture.value(
+        &[
+            "work",
+            "return",
+            work,
+            started["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "scoped",
+        ],
+        b"scope",
+    );
+
+    let detail = fixture.value(&["work", "detail", work, "--json"], b"");
+    let profile = detail["recipientContext"]["profile"]["content"]
+        .as_str()
+        .unwrap();
+    assert!(profile.contains("trace the contract to its consumers"));
+    assert!(profile.contains("references/competence.md"));
+    assert!(detail["recipientContext"]["guidance"]
+        .get("phaseGuidance")
+        .is_none());
+    let next = fixture.value(&["work", "next", work, "--json"], b"");
+    let routed = run_route(&fixture, &next["current"]["details"]["grouped"]);
+    assert!(routed.contains("trace the contract to its consumers"));
+    let context = subagent_start(&fixture, "worker");
+    assert!(
+        context.contains("trace the contract to its consumers"),
+        "{context}"
+    );
+    assert!(context.contains("references/competence.md"));
+    assert!(context.encode_utf16().count() <= 10_000);
+
+    let skill_dir = fixture.root.join(".agents/skills/exitbind");
+    let skill = fs::read_to_string(skill_dir.join("SKILL.md")).unwrap();
+    assert!(skill.contains("references/competence.md"));
+    let reference = fs::read_to_string(skill_dir.join("references/competence.md")).unwrap();
+    assert!(reference.contains("small permitted observation"));
+    assert!(reference.contains("shortest path to a"));
+    assert!(!context.contains("Repeating the same failure with unchanged inputs"));
+
+    let capture = fixture.capture("starter-competence-prompt");
+    let codex = fixture.fake_codex(&capture);
+    fixture.act_worker(work, &codex);
+    let prompt = fs::read_to_string(capture).unwrap();
+    assert!(prompt.contains("trace the contract to its consumers"));
+    assert!(prompt.contains("references/competence.md"));
+    let checked = fixture.value(&["work", "check", work], b"");
+    assert_eq!(checked["next"]["role"], "reviewer");
+    let reviewer = fixture.value(&["work", "detail", work, "--json"], b"");
+    let reviewer_profile = reviewer["recipientContext"]["profile"]["content"]
+        .as_str()
+        .unwrap();
+    assert!(reviewer_profile.contains("decisive negative cases"));
+    assert!(reviewer_profile.contains("references/competence.md"));
+}

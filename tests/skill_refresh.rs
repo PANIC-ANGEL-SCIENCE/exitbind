@@ -9,6 +9,7 @@ use std::{
 
 const EXITBIND_SKILL: &[u8] = include_bytes!("../skills/exitbind/SKILL.md");
 const EXITBIND_REFERENCE: &[u8] = include_bytes!("../skills/exitbind/references/operators.md");
+const COMPETENCE: &[u8] = include_bytes!("../skills/exitbind/references/competence.md");
 const AWAY_GUIDE: &str = include_str!("../docs/codex-tmux-away.md");
 const REFERENCE: &str = include_str!("../REFERENCE.md");
 const RUN_RECOVERY_REFERENCE: &str = include_str!("../docs/reference-run-and-recovery.md");
@@ -93,6 +94,17 @@ fn attended_work_uses_native_spawn_without_away_fallback() {
     assert_eq!(claude_projection.as_bytes(), EXITBIND_SKILL);
     assert_eq!(agents_reference, EXITBIND_REFERENCE);
     assert_eq!(claude_reference, EXITBIND_REFERENCE);
+    for base in [".agents/skills", ".claude/skills"] {
+        let reference = control.join(base).join("exitbind/references/competence.md");
+        assert_eq!(fs::read(reference).unwrap(), COMPETENCE);
+        for role in ["lead", "worker", "reviewer"] {
+            let installed = control
+                .join(base)
+                .join(format!("exitbind/references/roles/{role}.md"));
+            let initialized = control.join(format!("exitbind/agents/{role}.md"));
+            assert_eq!(fs::read(installed).unwrap(), fs::read(initialized).unwrap());
+        }
+    }
     let normalize = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(source.contains("work begin WORKFLOW"));
     assert!(source.contains("selected executable's"));
@@ -112,6 +124,69 @@ fn attended_work_uses_native_spawn_without_away_fallback() {
         assert!(document.contains("exitbind away start implementation_worker"));
     }
 
+    fs::remove_dir_all(base).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn optional_publication_resources_keep_executable_mode_and_foreign_ownership() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (base, product, control, bindings) = local_project("publication-resources");
+    for skill in [".agents/skills", ".claude/skills"] {
+        for name in ["pre-push", "check-public-text", "check-tracked-snapshot"] {
+            let path = control
+                .join(skill)
+                .join("exitbind/resources/publication")
+                .join(name);
+            assert!(fs::metadata(path).unwrap().permissions().mode() & 0o100 != 0);
+        }
+    }
+    assert!(!product.join(".git/hooks/pre-push").exists());
+    let path = control.join(".agents/skills/exitbind/resources/publication/pre-push");
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    let checked = invoke(
+        &[
+            "check",
+            "--json",
+            "--config",
+            control.join("exitbind.json").to_str().unwrap(),
+        ],
+        &bindings,
+    );
+    assert!(checked.status.success(), "{}", output_text(&checked));
+    assert!(output_text(&checked).contains("not owner-executable"));
+    let refresh = invoke(
+        &[
+            "init",
+            "--refresh-skills",
+            "--root",
+            control.to_str().unwrap(),
+        ],
+        &bindings,
+    );
+    assert!(refresh.status.success(), "{}", output_text(&refresh));
+    assert!(fs::metadata(&path).unwrap().permissions().mode() & 0o100 != 0);
+    fs::write(&path, "user-owned executable\n").unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    let refused = invoke(
+        &[
+            "init",
+            "--refresh-skills",
+            "--root",
+            control.to_str().unwrap(),
+        ],
+        &bindings,
+    );
+    assert!(!refused.status.success());
+    assert_eq!(
+        fs::read_to_string(&path).unwrap(),
+        "user-owned executable\n"
+    );
+    assert_eq!(
+        fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
     fs::remove_dir_all(base).unwrap();
 }
 
@@ -285,6 +360,11 @@ fn portable_init_stale_managed_skill_refuses_without_partial_tree() {
             "reference",
             ".agents/skills/exitbind/references/operators.md",
         ),
+        (
+            "competence",
+            ".agents/skills/exitbind/references/competence.md",
+        ),
+        ("role", ".agents/skills/exitbind/references/roles/worker.md"),
     ] {
         let base = temp(&format!("stale-{label}"));
         let product = base.join("product");

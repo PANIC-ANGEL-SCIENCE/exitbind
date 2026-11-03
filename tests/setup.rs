@@ -295,6 +295,25 @@ fn setup_preserves_custom_profile_and_reports_it_on_repeat() {
 }
 
 #[test]
+fn repeat_setup_keeps_optional_judgment_assets_optional() {
+    let root = fixture("setup-optional-guidance");
+    let first = setup_without_host(&root, true, false);
+    assert!(first.status.success(), "{}", text(&first));
+    let reference = root.join(".agents/skills/exitbind/references/competence.md");
+    let profile = root.join("exitbind/agents/worker.md");
+    let before = fs::read(&profile).unwrap();
+    fs::remove_file(&reference).unwrap();
+    let repeated = setup_without_host(&root, true, false);
+    assert!(repeated.status.success(), "{}", text(&repeated));
+    assert!(
+        !reference.exists(),
+        "repeat setup reinstalled an optional reference"
+    );
+    assert_eq!(fs::read(profile).unwrap(), before);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn fresh_skip_skills_setup_reports_initializer_materialization_then_repeat_noop() {
     let root = fixture("setup-fresh-no-host");
     let bin = support::git_topology::git_only_path(&root);

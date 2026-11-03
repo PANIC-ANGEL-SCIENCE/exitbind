@@ -268,7 +268,7 @@ fn git_sentence(git: &Value) -> String {
                 shown("worktree")
             ),
         },
-        Some("not-git") => "not a Git worktree (no baseline commit); the Codex CLI refuses a product-managed Worker launch in a directory that is not a trusted Git worktree, and a non-Git root is walked on every tested-input fingerprint".into(),
+        Some("not-git") => "not a Git worktree (no baseline commit); Codex launch checks for a marker-free directory before selecting no-Git mode, and a non-Git root is walked on every tested-input fingerprint".into(),
         Some(_) => format!("unresolved: {}", shown("detail")),
         None => "not stated".into(),
     }

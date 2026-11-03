@@ -2,6 +2,22 @@
 
 ## Native conversation Goal and Work context
 
+For selected material work spanning a whole-session outcome, incorporate the
+accepted Goal before dependent actions and retain later refinements in it.
+Answer side requests in commentary while continuing the unfinished Goal. Close
+through its emitted route only after every selected outcome and check is
+satisfied, including publication or installation when requested. The completion
+event's terminal is only the room card; it has no `EXIT READY` suffix.
+
+Native Stop hooks can ask the owning session to continue an open Goal. A genuine
+owner-only question is explicitly recorded as an open decision with
+`goal incorporate --goal-id ID --goal TEXT --decision QUESTION`; emit that exact
+question when waiting. A question mark alone does not declare a wait. The host's
+repeat flag bounds re-entry, and missing or unverifiable native ownership is
+silent. Registration, native hook trust and observed execution are distinct;
+Codex users review exact definitions with `/hooks`. Continuation grants no new
+permission and does not prove the model understood or completed the task.
+
 When Exitbind runs with one unambiguous host-reported native session identity,
 Goal operations use that conversation's canonical Goal journal. Codex
 `CODEX_THREAD_ID` or `CODEX_SESSION_ID` and Claude Code
@@ -114,8 +130,8 @@ source and each accepted meaning, then assigns useful work. One Work can cover
 several requirements, and several Works can contribute to the same requirement.
 A mapping records an assignment; it becomes current support only after actual
 checks, the selected review and Lead acceptance. The pre-existing project-local
-named-requirement path is included in the stable v0.31.25 installation; the
-native conversation linkage described above is also included in the stable v0.31.25 installation.
+named-requirement path is included in the stable v0.31.26 installation; the
+native conversation linkage described above is also included in the stable v0.31.26 installation.
 
 ## Inspect and continue
 

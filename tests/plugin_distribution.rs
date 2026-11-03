@@ -81,6 +81,18 @@ fn validator_uses_the_selected_cargo_version_and_refuses_invalid_metadata() {
         assert!(accepted.status.success(), "{version}: {accepted:?}");
     }
 
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let resource = root.join("plugins/exitbind/skills/exitbind/resources/publication/pre-push");
+        fs::set_permissions(&resource, fs::Permissions::from_mode(0o644)).unwrap();
+        let refused = check_at(&root);
+        assert!(!refused.status.success(), "{refused:?}");
+        assert!(String::from_utf8_lossy(&refused.stdout)
+            .contains("executable mode differs or is missing"));
+        fs::set_permissions(&resource, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
     fs::write(&cargo, "[package]\nversion = \"9.8.8\"\n").unwrap();
     let mismatch = check_at(&root);
     assert!(!mismatch.status.success(), "{mismatch:?}");

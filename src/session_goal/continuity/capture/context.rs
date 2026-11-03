@@ -40,6 +40,28 @@ fn context_inner(
         .into_iter()
         .find(|item| item["id"] == intent_id && item["work"] == work)
         .ok_or("prepared child intent is unknown")?;
+    context_for_intent(loaded, work, &intent, host_delivery, selected_actor)
+}
+
+/// Assemble the same selected host context before persisting a candidate.
+pub(super) fn candidate_host_context(
+    loaded: &Loaded,
+    work: &str,
+    intent: &Value,
+) -> Result<Value, String> {
+    context_for_intent(loaded, work, intent, true, true)
+}
+
+fn context_for_intent(
+    loaded: &Loaded,
+    work: &str,
+    intent: &Value,
+    host_delivery: bool,
+    selected_actor: bool,
+) -> Result<Value, String> {
+    let intent_id = intent["id"]
+        .as_str()
+        .ok_or("child intent identity unavailable")?;
     let pending_host_return = host_delivery
         && intent["state"] == "recorded"
         && intent["directAssignment"] == true
@@ -47,7 +69,7 @@ fn context_inner(
     if !matches!(intent["state"].as_str(), Some("prepared" | "claimed")) && !pending_host_return {
         return Err("child context expired with its prepared assignment".into());
     }
-    let (_, binding) = binding_of(loaded, work, &intent)?;
+    let (_, binding) = binding_of(loaded, work, intent)?;
     if binding["session"] != intent["session"] || binding["revision"] != intent["bindingRevision"] {
         return Err("child context expired after binding change".into());
     }
@@ -164,7 +186,7 @@ fn context_inner(
         super::reviewer_retry::ensure_fence(
             loaded,
             work,
-            &intent,
+            intent,
             &delivery["binding"],
             &delivery["sections"],
         )?;
@@ -240,7 +262,7 @@ fn context_inner(
     }
     let fresh = crate::work::next(loaded, work)?;
     crate::memory::contextual::assert_assignment(loaded, &fresh["next"]["packet"])?;
-    let (_, fresh_binding) = binding_of(loaded, work, &intent)?;
+    let (_, fresh_binding) = binding_of(loaded, work, intent)?;
     if fresh["next"]["assignment"] != selected["assignment"]
         || assignment_binding
             .as_ref()

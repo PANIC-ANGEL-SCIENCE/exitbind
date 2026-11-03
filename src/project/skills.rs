@@ -18,6 +18,7 @@ pub(crate) enum SkillObservationState {
     Absent,
     EmbeddedMatch,
     ManagedDifferent,
+    ModeMismatch,
     Unmanaged,
     Unsafe,
     Unreadable,
@@ -28,7 +29,7 @@ pub(crate) enum SkillObservationState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SkillObservation {
     pub(crate) skill: &'static str,
-    pub(crate) path: &'static str,
+    pub(crate) path: String,
     pub(crate) optional: bool,
     pub(crate) state: SkillObservationState,
     pub(crate) embedded_sha256: String,
@@ -60,6 +61,7 @@ struct SkillDestination {
     label: String,
     skill: &'static str,
     state: SkillRefreshState,
+    executable: bool,
 }
 
 pub(crate) fn activate(control: &Path, coffee: bool) -> Result<(), String> {
@@ -84,9 +86,10 @@ pub(crate) fn activate(control: &Path, coffee: bool) -> Result<(), String> {
             .ok_or("project skill asset has no parent")?;
         crate::project::managed_files::ensure_managed_directory(control, directory)?;
         if destination.state == SkillRefreshState::Created {
-            crate::project::managed_files::write_exclusive(
+            create_asset(
                 &destination.path,
-                destination.content.as_bytes(),
+                &destination.content,
+                destination.executable,
             )?;
         }
     }
@@ -104,11 +107,16 @@ pub(crate) fn refresh(control: &Path, coffee: bool) -> Result<Vec<SkillRefreshSt
     }
     for destination in &destinations {
         match destination.state {
-            SkillRefreshState::Created => crate::project::managed_files::write_exclusive(
+            SkillRefreshState::Created => create_asset(
                 &destination.path,
-                destination.content.as_bytes(),
+                &destination.content,
+                destination.executable,
             )?,
-            SkillRefreshState::Refreshed => refresh_owned(&destination.path, &destination.content)?,
+            SkillRefreshState::Refreshed => refresh_owned(
+                &destination.path,
+                &destination.content,
+                destination.executable,
+            )?,
             SkillRefreshState::Unchanged => {}
         }
     }
@@ -182,25 +190,40 @@ pub(crate) fn diagnose(control: &Path) -> Vec<SkillObservation> {
             ("Coffee", ".claude/skills/coffee/SKILL.md", COFFEE, true),
         ]
     };
-    observations
+    let mut results: Vec<_> = observations
         .into_iter()
         .map(|(skill, path, content, optional)| {
             inspect_observation(control, skill, path, content, optional)
         })
-        .collect()
+        .collect();
+    if exitbind {
+        for base in [".agents/skills", ".claude/skills"] {
+            for asset in super::skill_assets::ASSETS.iter() {
+                let path = format!("{base}/exitbind/{}", asset.relative);
+                results.push(inspect_observation(
+                    control,
+                    "Exitbind",
+                    &path,
+                    asset.content,
+                    true,
+                ));
+            }
+        }
+    }
+    results
 }
 
 fn inspect_observation(
     control: &Path,
     skill: &'static str,
-    relative: &'static str,
+    relative: &str,
     content: &str,
     optional: bool,
 ) -> SkillObservation {
     let (state, observed_sha256) = inspect_observed_bytes(control, relative, content);
     SkillObservation {
         skill,
-        path: relative,
+        path: relative.to_owned(),
         optional,
         state,
         embedded_sha256: crate::evidence::hash::text(content),
@@ -218,8 +241,21 @@ fn inspect_observed_bytes(
         crate::project::path::SecureBytesResult::Bytes(bytes) => {
             let observed_sha256 = crate::evidence::hash::bytes(&bytes);
             let state = if bytes == content.as_bytes() {
-                SkillObservationState::EmbeddedMatch
-            } else if has_managed_marker(&bytes) {
+                if super::skill_assets::executable(relative) {
+                    match fs::symlink_metadata(control.join(relative)) {
+                        Ok(info) if info.file_type().is_symlink() || !info.is_file() => {
+                            SkillObservationState::Unsafe
+                        }
+                        Ok(info) if !super::skill_assets::owner_can_execute(&info) => {
+                            SkillObservationState::ModeMismatch
+                        }
+                        Ok(_) => SkillObservationState::EmbeddedMatch,
+                        Err(_) => SkillObservationState::Unreadable,
+                    }
+                } else {
+                    SkillObservationState::EmbeddedMatch
+                }
+            } else if has_managed_marker(&bytes, super::skill_assets::executable(relative)) {
                 SkillObservationState::ManagedDifferent
             } else {
                 SkillObservationState::Unmanaged
@@ -238,7 +274,10 @@ fn inspect_observed_bytes(
     }
 }
 
-fn has_managed_marker(bytes: &[u8]) -> bool {
+fn has_managed_marker(bytes: &[u8], executable: bool) -> bool {
+    if executable {
+        return super::skill_assets::publication_marker(bytes);
+    }
     let markers = [SKILL_MARKER.as_bytes(), EXITBIND_SKILL_MARKER.as_bytes()];
     bytes.split(|byte| *byte == b'\n').any(|line| {
         markers.iter().any(|marker| {
@@ -257,19 +296,27 @@ fn selected_destinations(control: &Path, coffee: bool) -> Result<Vec<SkillDestin
                 ("SKILL.md", EXITBIND),
                 ("references/preservation.md", EXITBIND_PRESERVATION),
                 ("references/operators.md", EXITBIND_OPERATORS),
-            ] {
+            ]
+            .into_iter()
+            .chain(
+                super::skill_assets::ASSETS
+                    .iter()
+                    .map(|asset| (asset.relative, asset.content)),
+            ) {
                 let path = control.join(base).join("exitbind").join(relative);
                 validate_managed_directory(
                     control,
                     path.parent().ok_or("project skill asset has no parent")?,
                 )?;
-                let state = inspect_skill(&path, content)?;
+                let executable = super::skill_assets::executable(relative);
+                let state = inspect_skill(&path, content, executable)?;
                 destinations.push(SkillDestination {
                     path,
                     content: content.to_owned(),
                     label: format!("{base}/exitbind/{relative}"),
                     skill: "Exitbind",
                     state,
+                    executable,
                 });
             }
         }
@@ -290,13 +337,14 @@ fn selected_destinations(control: &Path, coffee: bool) -> Result<Vec<SkillDestin
                 control,
                 path.parent().ok_or("project skill asset has no parent")?,
             )?;
-            let state = inspect_skill(&path, content)?;
+            let state = inspect_skill(&path, content, false)?;
             destinations.push(SkillDestination {
                 path,
                 content: content.to_string(),
                 label: format!("{base}/{name}/{relative}"),
                 skill: name,
                 state,
+                executable: false,
             });
         }
     }
@@ -339,7 +387,11 @@ fn validate_managed_directory(root: &Path, path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn inspect_skill(path: &Path, content: &str) -> Result<SkillRefreshState, String> {
+fn inspect_skill(
+    path: &Path,
+    content: &str,
+    executable: bool,
+) -> Result<SkillRefreshState, String> {
     match fs::symlink_metadata(path) {
         Ok(info) => {
             if info.file_type().is_symlink() {
@@ -355,12 +407,13 @@ fn inspect_skill(path: &Path, content: &str) -> Result<SkillRefreshState, String
                 ));
             }
             let existing = fs::read_to_string(path).map_err(|e| e.to_string())?;
-            if existing == content {
+            if existing == content && (!executable || super::skill_assets::owner_can_execute(&info))
+            {
                 return Ok(SkillRefreshState::Unchanged);
             }
             // Either managed marker makes this file ours to refresh; anything
             // else is the operator's and is never overwritten.
-            if !has_managed_marker(existing.as_bytes()) {
+            if !has_managed_marker(existing.as_bytes(), executable) {
                 return Err(format!(
                     "refusing to overwrite existing project skill: {}",
                     path.display()
@@ -375,9 +428,29 @@ fn inspect_skill(path: &Path, content: &str) -> Result<SkillRefreshState, String
     }
 }
 
-fn refresh_owned(path: &Path, content: &str) -> Result<(), String> {
+fn create_asset(path: &Path, content: &str, executable: bool) -> Result<(), String> {
+    if !executable {
+        return crate::project::managed_files::write_exclusive(path, content.as_bytes());
+    }
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|error| error.to_string())?;
+    file.write_all(content.as_bytes())
+        .map_err(|error| error.to_string())?;
+    super::skill_assets::set_executable(&file)
+}
+
+fn refresh_owned(path: &Path, content: &str, executable: bool) -> Result<(), String> {
     let info = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
     let old = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    if !has_managed_marker(old.as_bytes(), executable) {
+        return Err(format!(
+            "project skill ownership changed during refresh: {}",
+            path.display()
+        ));
+    }
     let name = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -394,6 +467,9 @@ fn refresh_owned(path: &Path, content: &str) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     file.write_all(content.as_bytes())
         .map_err(|e| e.to_string())?;
+    if executable {
+        super::skill_assets::set_executable(&file)?;
+    }
     file.sync_all().ok();
     drop(file);
     let result = (|| {

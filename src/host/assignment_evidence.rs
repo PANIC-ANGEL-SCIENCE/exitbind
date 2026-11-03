@@ -279,17 +279,23 @@ fn fits(base: &str, event: &str, suffix: &[String]) -> bool {
 
 fn fits_bounded(base: &str, event: &str, suffix: &[String], context_limit: Option<usize>) -> bool {
     let candidate = append(base, suffix);
-    context_limit.map_or(true, |limit| candidate.encode_utf16().count() <= limit)
-        && serde_json::to_vec(&json!({"hookSpecificOutput":{
-            "hookEventName":event,"additionalContext":candidate
-        }}))
-        // The selected Claude hook is written with println!, so its final
-        // transport includes one trailing newline. Preserve the legacy
-        // serialized-envelope convention for other callers.
-        .is_ok_and(|bytes| {
-            bytes.len() <= MAX_CONTEXT_OUTPUT
-                && (context_limit.is_none() || bytes.len() < MAX_CONTEXT_OUTPUT)
-        })
+    let Ok((output_bytes, units)) = claude_size(event, &candidate) else {
+        return false;
+    };
+    // Other callers retain their previous serialized-envelope convention;
+    // Claude's limit includes the newline printed by the hook.
+    context_limit.map_or(output_bytes - 1 <= MAX_CONTEXT_OUTPUT, |limit| {
+        units <= limit && output_bytes <= MAX_CONTEXT_OUTPUT
+    })
+}
+
+/// Count exactly the JSON envelope and newline emitted by the Claude hook.
+pub(crate) fn claude_size(event: &str, context: &str) -> Result<(usize, usize), String> {
+    let bytes = serde_json::to_vec(&json!({"hookSpecificOutput":{
+        "hookEventName":event,"additionalContext":context
+    }}))
+    .map_err(|error| error.to_string())?;
+    Ok((bytes.len() + 1, context.encode_utf16().count()))
 }
 
 fn append(base: &str, suffix: &[String]) -> String {

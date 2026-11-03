@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.31.26
+
+Release: https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/tag/v0.31.26 — the tag sits on this entry's release commit, and the page lists its assets once they are published.
+
+- Provide neutral starter roles and optional judgment references through the
+  existing project, plugin and host installations. Personal overlays can reuse
+  the same installed role bytes; existing custom project profiles stay custom.
+- Measure supported Claude child delivery before preparing a new intent.
+  Missing originals and oversized envelopes refuse before launch. Delivery
+  still rechecks current bytes; a fit prediction is not delivery or acceptance.
+- Present the existing evidence and replan recovery routes together without
+  resetting governor accounting or treating different text as semantic progress.
+- Add bounded native Stop hooks for the session that owns an open Goal.
+  An exact current recorded owner question can wait; the host's repeat flag
+  prevents an endless hook loop. Hook registration, native trust and actual
+  execution remain separate. No Goal or unverifiable ownership grants no
+  continuation decision.
+- Whole-Goal completion now emits only the existing room card, without the
+  former `EXIT READY` suffix. Structured completion events and their once-only
+  identity remain unchanged; a Work acceptance alone does not close the Goal.
+- Ship optional publication helper resources with external policy values and
+  executable metadata. Installation does not activate Git hooks. Current-version
+  bridge refresh preserves missing and foreign assets; version-changing updates
+  retain the existing installer behavior.
+
 ## 0.31.25
 
 Release: https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/tag/v0.31.25 — the tag sits on this entry's release commit, and the page lists its assets once they are published.

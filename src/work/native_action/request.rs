@@ -40,6 +40,7 @@ pub(super) fn build(
     if timeout == 0 {
         return Err("timeout must be positive".into());
     }
+    codex_exec::preflight_git(&loaded.product_root).map_err(|error| error.to_string())?;
     let executable = codex_exec::resolve_codex(options.codex_bin.map(Path::new))
         .map_err(|error| error.to_string())?;
     if thread_id.is_some() && options.sandbox_mode.is_some() {

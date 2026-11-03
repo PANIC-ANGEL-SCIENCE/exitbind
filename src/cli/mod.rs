@@ -17,6 +17,7 @@ mod goal;
 mod goal_action;
 mod goal_completion;
 mod help;
+mod host;
 mod memory_cli;
 mod native_display;
 mod project;
@@ -177,9 +178,9 @@ pub fn run(argv: Vec<String>) -> Result<(), String> {
             Ok(())
         }
         "hook-run" => {
-            args::assert_options(command, &parsed, &[])?;
+            args::assert_options(command, &parsed, &["host"])?;
             args::assert_positionals(command, &parsed, 0)?;
-            hook_runtime::run()
+            hook_runtime::run(parsed.options.get("host").map(String::as_str))
         }
         "statusline" => crate::host::statusline::run(),
         "init" => crate::project::commands::init(&parsed),
@@ -187,7 +188,7 @@ pub fn run(argv: Vec<String>) -> Result<(), String> {
         "bind" => crate::project::commands::bind(&parsed),
         "doctor" => crate::project::commands::doctor(&parsed),
         "hooks" => hooks_command(&parsed),
-        "host" => host_command(&parsed),
+        "host" => host::command(&parsed),
         "session" => session_recovery::command(&parsed),
         "project" if parsed.positional.first().map(String::as_str) == Some("graph") => {
             project_graph::command(&parsed)
@@ -240,79 +241,6 @@ fn hooks_command(a: &Arguments) -> Result<(), String> {
 
 /// Every `host` action this dispatcher accepts.
 pub(crate) const HOST_ACTIONS: &[&str] = &["status", "install"];
-
-fn host_command(a: &Arguments) -> Result<(), String> {
-    args::assert_options("host", a, &["hosts", "all", "json"])?;
-    args::assert_positionals("host", a, 1)?;
-    let action = positional(a, 0, "host requires one action: status or install")?;
-    if !HOST_ACTIONS.contains(&action) {
-        return Err(format!(
-            "host requires one action: {}",
-            HOST_ACTIONS.join(" or ")
-        ));
-    }
-    let hosts = a.options.get("hosts").map(String::as_str);
-    match action {
-        "status" => {
-            let items = crate::host::bridge::status(hosts)?;
-            if a.flags.contains_key("json") {
-                print_json(&json!({
-                    "binaryVersion": crate::project::skills::package_version(),
-                    "hosts": items,
-                }))
-            } else {
-                println!("Exitbind {}", crate::project::skills::package_version());
-                for item in items {
-                    println!(
-                        "\n{}\n  host present: {}\n  bootstrap skill: {}{}\n  activation hook: {}\n  path: {}",
-                        item["host"].as_str().unwrap_or_default(),
-                        item["hostPresent"],
-                        item["bootstrapSkill"].as_str().unwrap_or_default(),
-                        item["installedVersion"]
-                            .as_str()
-                            .map(|version| format!(" (installed {version})"))
-                            .unwrap_or_default(),
-                        crate::host::bridge::activation_hook_text(&item),
-                        item["path"].as_str().unwrap_or_default()
-                    );
-                }
-                println!(
-                    "\nDiscovery is not activation: a session is governed only once an Exitbind work lifecycle action exists."
-                );
-                Ok(())
-            }
-        }
-        "install" => {
-            let items = crate::host::bridge::install(hosts, a.flags.contains_key("all"))?;
-            if a.flags.contains_key("json") {
-                print_json(&json!({ "action": "install", "hosts": items }))
-            } else {
-                for item in items {
-                    println!(
-                        "{}: bootstrap {} ({})",
-                        item["host"].as_str().unwrap_or_default(),
-                        item["action"].as_str().unwrap_or_default(),
-                        item["path"].as_str().unwrap_or_default()
-                    );
-                    let hook = &item["activationHook"];
-                    let state = hook["state"].as_str().unwrap_or("unknown");
-                    match hook["reason"].as_str() {
-                        Some(reason) => println!(
-                            "{}: activation hook {state}: {reason}",
-                            item["host"].as_str().unwrap_or_default()
-                        ),
-                        None => println!(
-                            "{}: activation hook {state}",
-                            item["host"].as_str().unwrap_or_default()
-                        ),
-                    }
-                }
-                Ok(())
-            }
-        }
-        _ => Err("host requires one action: status or install".into()),
-    }
-}
 
 fn configured_command(command: &str, a: &Arguments) -> Result<(), String> {
     if command == "benchmark" {

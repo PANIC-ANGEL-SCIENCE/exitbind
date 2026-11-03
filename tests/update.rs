@@ -1,3 +1,5 @@
+#[path = "update/bridge_competence.rs"]
+mod bridge_competence;
 mod support;
 
 mod matrix {

@@ -7,7 +7,7 @@ use std::path::Path;
 pub(crate) const SESSION_GOAL_CARD: &str =
     "+----------------------------+\n| This room remains nothing. |\n+----------------------------+";
 
-pub(super) const WHOLE_GOAL_TERMINAL: &str = "+----------------------------+\n| This room remains nothing. |\n+----------------------------+\nEXIT READY";
+pub(super) const WHOLE_GOAL_TERMINAL: &str = SESSION_GOAL_CARD;
 
 /// Automatic protocol presentation from current whole-goal closure facts.
 /// This is display only: no model, percentage, memo, or new acceptance event.
@@ -191,6 +191,8 @@ mod terminal_tests {
             "currentReadiness":{"state":"current"}, "subgoals":[], "findings":[],
             "blockers":[], "decisions":[], "externalActions":[]});
         assert_eq!(whole_goal_terminal(&ready), Some(WHOLE_GOAL_TERMINAL));
+        assert_eq!(whole_goal_terminal(&ready), Some(SESSION_GOAL_CARD));
+        assert!(!WHOLE_GOAL_TERMINAL.contains("EXIT READY"));
         for state in ["stale", "unknown"] {
             let mut goal = ready.clone();
             goal["currentReadiness"]["state"] = json!(state);

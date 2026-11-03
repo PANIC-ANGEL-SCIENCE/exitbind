@@ -1,2 +1,3 @@
 # Plain changed-after-binding literals under src/distribution: REASON<TAB>path<TAB>literal.
-NotARefusal	src/distribution/update.rs	Host bridge {name}: stale bootstrap {refreshed}
+NotARefusal	src/distribution/update.rs	Host bridge {name}: stale bootstrap {action}
+NotARefusal	src/distribution/update.rs	Host bridge {name}: stale {label} {action}

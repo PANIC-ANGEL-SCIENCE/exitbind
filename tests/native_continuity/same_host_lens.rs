@@ -343,6 +343,107 @@ fn a_same_host_child_receives_its_lenses_through_the_printed_route_alone() {
 }
 
 #[test]
+fn oversized_current_material_is_refused_before_an_intent_is_saved() {
+    for (name, rules) in [
+        ("characters", "x".repeat(12_000)),
+        ("escaped", "\"".repeat(8_000)),
+        ("supplementary", "😀".repeat(6_000)),
+    ] {
+        let fixture = Fixture::new(&format!("r62-preflight-{name}"));
+        fs::write(fixture.product.join("AGENTS.md"), rules).unwrap();
+        let route = argv(&fixture.next(Some(SESSION))["prepareChild"]);
+        let output = run(&route, &fixture.product, &fixture.store, Some(SESSION), b"");
+        assert!(!output.status.success(), "{name}: {}", text(&output));
+        assert!(
+            text(&output).contains("no child was prepared"),
+            "{}",
+            text(&output)
+        );
+        assert!(fixture.intents().map_or(true, |intents| intents.is_empty()));
+    }
+}
+
+#[test]
+fn failed_replacement_keeps_the_previous_prepared_intent() {
+    let fixture = Fixture::new("r62-preflight-preserve-intent");
+    for (id, _) in LENSES {
+        fs::write(
+            fixture
+                .product
+                .join(format!("your.soulmate/lenses/{id}.md")),
+            "p".repeat(3_800),
+        )
+        .unwrap();
+    }
+    let full = argv(&fixture.next(Some(SESSION))["prepareChild"]);
+    let mut small = full.clone();
+    let position = small
+        .iter()
+        .position(|word| word == "--perspectives")
+        .unwrap();
+    small.drain(position..=position + 1);
+    let prepared = run(&small, &fixture.product, &fixture.store, Some(SESSION), b"");
+    assert!(prepared.status.success(), "{}", text(&prepared));
+    let before = fixture.intents().unwrap();
+    let mut replacement = full;
+    replacement.push("--replace".into());
+    let refused = run(
+        &replacement,
+        &fixture.product,
+        &fixture.store,
+        Some(SESSION),
+        b"",
+    );
+    assert!(!refused.status.success(), "{}", text(&refused));
+    assert!(
+        text(&refused).contains("context capacity"),
+        "{}",
+        text(&refused)
+    );
+    assert_eq!(fixture.intents().unwrap(), before);
+}
+
+#[cfg(unix)]
+#[test]
+fn missing_denied_or_changed_required_original_refuses_before_prepare() {
+    use std::os::unix::fs::symlink;
+
+    for mode in ["missing", "denied", "changed"] {
+        let fixture = Fixture::new(&format!("r62-preflight-original-{mode}"));
+        let route = argv(&fixture.next(Some(SESSION))["prepareChild"]);
+        let ledger = fixture.product.join(format!(
+            ".exitbind/runs/work-{}.jsonl",
+            fixture.work.strip_prefix("smw_").unwrap()
+        ));
+        let before = fs::read(&ledger).unwrap();
+        let scoped = std::str::from_utf8(&before)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).unwrap())
+            .find(|event| event["action"] == "submit" && event["role"] == "lead")
+            .unwrap();
+        assert_eq!(scoped["artifact"]["root"], "state");
+        let original = fixture
+            .product
+            .join(scoped["artifact"]["path"].as_str().unwrap());
+        match mode {
+            "missing" => fs::remove_file(&original).unwrap(),
+            "denied" => {
+                fs::remove_file(&original).unwrap();
+                let outside = fixture.base.join("outside-original");
+                fs::write(&outside, b"not a permitted original").unwrap();
+                symlink(outside, &original).unwrap();
+            }
+            _ => fs::write(&original, b"changed original").unwrap(),
+        }
+        let refused = run(&route, &fixture.product, &fixture.store, Some(SESSION), b"");
+        assert!(!refused.status.success(), "{mode}: {}", text(&refused));
+        assert!(fixture.intents().map_or(true, |intents| intents.is_empty()));
+        assert_eq!(fs::read(&ledger).unwrap(), before);
+    }
+}
+
+#[test]
 fn a_session_that_does_not_hold_the_work_gets_no_route_and_prepares_nothing() {
     let fixture = Fixture::new("f5b-other-session");
     let next = fixture.next(Some(SESSION));

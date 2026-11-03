@@ -15,7 +15,7 @@ const REQUIREMENTS: [(&str, &str); 3] = [
     ("R2", "Persist each valid name only once."),
     ("R3", "Show the number of distinct imported names."),
 ];
-const TERMINAL: &str = "+----------------------------+\n| This room remains nothing. |\n+----------------------------+\nEXIT READY";
+const TERMINAL: &str = "+----------------------------+\n| This room remains nothing. |\n+----------------------------+";
 
 struct Project {
     root: PathBuf,

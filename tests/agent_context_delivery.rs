@@ -1,6 +1,8 @@
 //! Native work receives complete current project rules and role-scoped memory.
 #![cfg(unix)]
 
+#[path = "agent_context_delivery/git_topology.rs"]
+mod git_topology;
 #[path = "agent_context_delivery/guidance.rs"]
 mod guidance;
 #[path = "agent_context_delivery/phase_guidance.rs"]

@@ -182,16 +182,19 @@ fn selector(name: &str) -> Result<Option<String>, String> {
     let value = value
         .into_string()
         .map_err(|_| format!("{name} is not valid UTF-8; native Goal lookup was declined"))?;
-    if value.trim().is_empty()
-        || value.len() > 512
-        || value.trim() != value
-        || value.chars().any(char::is_control)
-    {
+    if !valid_identity(&value) {
         return Err(format!(
             "{name} is invalid; native Goal lookup was declined"
         ));
     }
     Ok(Some(value))
+}
+
+fn valid_identity(value: &str) -> bool {
+    !value.trim().is_empty()
+        && value.len() <= 512
+        && value.trim() == value
+        && !value.chars().any(char::is_control)
 }
 
 fn session(host: &'static str, identity: Option<String>) -> Result<Option<Session>, String> {
@@ -441,6 +444,19 @@ pub(crate) fn host_session(host: &str, identity: &str) -> Result<Option<Session>
     match host {
         "claude" => session("claude", Some(identity.to_owned())),
         "codex" => session("codex", Some(identity.to_owned())),
+        _ => Err("native session host is unsupported".into()),
+    }
+}
+
+/// Resolve a native hook's explicit host and payload identity read-only. The
+/// locator is never authority: callers must verify the existing owner too.
+pub(crate) fn host_session_readonly(host: &str, identity: &str) -> Result<Option<Session>, String> {
+    if !valid_identity(identity) {
+        return Err("native session identity is invalid".into());
+    }
+    match host {
+        "claude" => session_with_access("claude", Some(identity.to_owned()), Access::ReadExisting),
+        "codex" => session_with_access("codex", Some(identity.to_owned()), Access::ReadExisting),
         _ => Err("native session host is unsupported".into()),
     }
 }

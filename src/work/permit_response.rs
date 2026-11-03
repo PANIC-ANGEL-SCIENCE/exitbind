@@ -148,7 +148,7 @@ pub(super) fn compact(
         if next["packet"]["context"]["loop"]["state"] == "replan_required" {
             response["nextRequest"] = json!({
                 "requiredAction": "work replan",
-                "meaning": "the current grant remains usable for its present mutation; re-plan is required before another mutation request",
+                "meaning": "the current grant remains usable for its present mutation; before another request, use a material re-plan or meaningful new exact evidence through current detail",
             });
         } else if next["packet"]["context"]["loop"]["state"] == "evidence_required" {
             response["nextRequest"] = json!({

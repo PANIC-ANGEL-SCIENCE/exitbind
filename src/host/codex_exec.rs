@@ -5,6 +5,8 @@
 //! command text, or stderr. Assignment and ledger mutation remain the caller's
 //! responsibility.
 
+mod command;
+pub(crate) use command::preflight as preflight_git;
 mod controlled;
 pub(crate) use controlled::Tool as ControlledTool;
 mod control;
@@ -19,7 +21,7 @@ use std::fmt;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitStatus, Stdio};
+use std::process::ExitStatus;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -358,8 +360,13 @@ fn run_inner(
     validate_request(request)?;
     let executable = checked_executable(&request.executable)?;
     let cwd = checked_directory(&request.cwd)?;
-    let mut command = command_line(request, &executable, &cwd)?;
+    let (mut command, skip_git) = command::line(request, &executable, &cwd)?;
     control::poll(&mut eligibility)?;
+    if skip_git && crate::project::git_preflight::has_git_marker(&cwd) {
+        return Err(RunError::InvalidRequest(
+            "Git marker appeared before Codex launch",
+        ));
+    }
     let mut child = command.spawn().map_err(RunError::Launch)?;
     let identity = process::identity(child.id());
     if let Some(observer) = observer.as_mut() {
@@ -588,49 +595,6 @@ fn checked_directory(path: &Path) -> Result<PathBuf, RunError> {
         return Err(RunError::InvalidRequest("cwd is not a directory"));
     }
     Ok(canonical)
-}
-
-fn command_line(request: &Request, executable: &Path, cwd: &Path) -> Result<Command, RunError> {
-    let mut command = Command::new(executable);
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        command.process_group(0);
-    }
-    command.current_dir(cwd).arg("exec");
-    if let Some(thread_id) = request.resume_thread_id.as_deref() {
-        command.args(["resume", thread_id]);
-    }
-    command.arg("--json");
-    if let Some(tool) = &request.controlled_tool {
-        controlled::configure(&mut command, tool);
-    }
-    if !request.persist_session {
-        command.arg("--ephemeral");
-    }
-    if let Some(model) = request.model.as_deref() {
-        command.args(["--model", model]);
-    }
-    if let Some(effort) = request.effort.as_deref() {
-        command.args(["-c", &format!("model_reasoning_effort=\"{effort}\"")]);
-    }
-    if let Some(sandbox) = request.sandbox.as_deref() {
-        command.args(["--sandbox", sandbox]);
-    }
-    if let Some(schema) = request.output_schema.as_deref() {
-        command.args([
-            "--output-schema",
-            schema.to_str().ok_or(RunError::InvalidRequest(
-                "output schema path is not valid UTF-8",
-            ))?,
-        ]);
-    }
-    command
-        .arg("-")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    Ok(command)
 }
 
 struct Captured {

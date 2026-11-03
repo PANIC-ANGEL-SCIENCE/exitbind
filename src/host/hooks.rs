@@ -13,21 +13,23 @@ use std::path::{Path, PathBuf};
 pub const PROTOCOL: &str = "soulmate-hook-v1";
 pub const HOOK_COMMAND: &str = "command -v soulmate >/dev/null 2>&1 && soulmate hook-run || true";
 const MARKER: &str = "soulmate hook-run";
-const EVENTS: [&str; 5] = [
+const EVENTS: [&str; 6] = [
     "SessionStart",
     "SubagentStart",
     "SubagentStop",
     "PreCompact",
     "PostCompact",
+    "Stop",
 ];
 
 /// Claude Code's plan approval: `PostToolUse` limited by a matcher, so the
 /// hook runs only after the human approves a plan.
-const CLAUDE_EVENTS: [&str; 4] = [
+const CLAUDE_EVENTS: [&str; 5] = [
     "SessionStart",
     "SubagentStart",
     "SubagentStop",
     "PostToolUse",
+    "Stop",
 ];
 pub(crate) const PLAN_APPROVAL: (&str, &str) = ("PostToolUse", "ExitPlanMode");
 
@@ -53,8 +55,12 @@ fn host_events(host: &str) -> &'static [&'static str] {
 const CODEX_CONTEXT_LIMIT: i64 = 4096;
 const HOOK_TIMEOUT_SECONDS: i64 = 5;
 
-fn hook_command() -> &'static str {
-    if crate::producer::exitbind_surface() {
+fn hook_command(host: &str, event: &str) -> &'static str {
+    if crate::producer::exitbind_surface() && event == "Stop" && host == "codex" {
+        "command -v exitbind >/dev/null 2>&1 && exitbind hook-run --host codex || true"
+    } else if crate::producer::exitbind_surface() && event == "Stop" && host == "claude" {
+        "command -v exitbind >/dev/null 2>&1 && exitbind hook-run --host claude || true"
+    } else if crate::producer::exitbind_surface() {
         "command -v exitbind >/dev/null 2>&1 && exitbind hook-run || true"
     } else {
         HOOK_COMMAND
@@ -155,7 +161,7 @@ struct State {
     source: Option<String>,
     mode: Option<u32>,
     document: Value,
-    exact: [usize; 5],
+    exact: [usize; 6],
     conflicts: Vec<String>,
 }
 
@@ -200,9 +206,9 @@ fn inspect(
     document: &Value,
     host: &str,
     target: &Path,
-) -> Result<([usize; 5], Vec<String>), String> {
+) -> Result<([usize; 6], Vec<String>), String> {
     let hooks = match document.get("hooks") {
-        None => return Ok(([0; 5], Vec::new())),
+        None => return Ok(([0; 6], Vec::new())),
         Some(value) => value.as_object().ok_or_else(|| {
             format!(
                 "unexpected hooks shape in {}: hooks must be an object",
@@ -210,13 +216,13 @@ fn inspect(
             )
         })?,
     };
-    let expected = expected(host);
-    let expected_object = expected
-        .as_object()
-        .ok_or("expected hook handler must be an object")?;
-    let mut exact = [0usize; 5];
+    let mut exact = [0usize; 6];
     let mut conflicts = Vec::new();
     for (event_index, event) in host_events(host).iter().enumerate() {
+        let expected = expected(host, event);
+        let expected_object = expected
+            .as_object()
+            .ok_or("expected hook handler must be an object")?;
         let Some(groups) = hooks.get(*event) else {
             continue;
         };
@@ -297,13 +303,17 @@ fn retire_superseded(document: &mut Value, host: &str) -> usize {
 
 fn stage(action: &str, state: &State) -> Result<Staged, String> {
     let events = host_events(&state.host);
+    let expected = events
+        .iter()
+        .map(|event| expected(&state.host, event))
+        .collect::<Vec<_>>();
     let staged = settings::stage(
         action,
         &state.document,
         state.source.is_some(),
         &state.exact[..events.len()],
         events,
-        &expected(&state.host),
+        &expected,
     )?;
     let result_state = if staged.changed {
         let (exact, conflicts) = inspect(&staged.document, &state.host, &state.target)?;
@@ -405,11 +415,11 @@ fn is_superseded_record(handler: &Value, host: &str) -> bool {
     known.iter().any(|record| record == handler)
 }
 
-fn expected(host: &str) -> Value {
+fn expected(host: &str, event: &str) -> Value {
     if host == "codex" {
-        json!({"type":"command","command":hook_command(),"timeout":HOOK_TIMEOUT_SECONDS,"additionalContextLimit":CODEX_CONTEXT_LIMIT})
+        json!({"type":"command","command":hook_command(host, event),"timeout":HOOK_TIMEOUT_SECONDS,"additionalContextLimit":CODEX_CONTEXT_LIMIT})
     } else {
-        json!({"type":"command","command":hook_command(),"timeout":HOOK_TIMEOUT_SECONDS})
+        json!({"type":"command","command":hook_command(host, event),"timeout":HOOK_TIMEOUT_SECONDS})
     }
 }
 fn same_record(left: &Map<String, Value>, right: &Map<String, Value>) -> bool {
@@ -431,7 +441,8 @@ mod recovery_event_tests {
                     "SubagentStart",
                     "SubagentStop",
                     "PreCompact",
-                    "PostCompact"
+                    "PostCompact",
+                    "Stop"
                 ]
             );
         } else {
@@ -443,6 +454,7 @@ mod recovery_event_tests {
                 "SubagentStart",
                 "SubagentStop",
                 "PostToolUse",
+                "Stop",
             ]
         } else {
             &["SessionStart", "SubagentStart", "SubagentStop"]

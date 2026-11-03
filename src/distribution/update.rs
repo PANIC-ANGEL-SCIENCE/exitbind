@@ -587,15 +587,48 @@ fn bridge_health() -> Vec<String> {
     let mut lines = Vec::new();
     for host in hosts {
         let name = host["host"].as_str().unwrap_or("unknown").to_owned();
-        match host["bootstrapSkill"].as_str().unwrap_or_default() {
-            "current" => {}
-            "stale" => {
-                let refreshed = crate::host::bridge::install(Some(&name), false)
-                    .ok()
-                    .and_then(|mut items| items.pop())
-                    .map(|item| item["action"].as_str().unwrap_or("unknown").to_owned())
-                    .unwrap_or_else(|| "unavailable".to_owned());
-                lines.push(format!("Host bridge {name}: stale bootstrap {refreshed}"));
+        let bootstrap = host["bootstrapSkill"].as_str().unwrap_or_default();
+        let references = host["referenceAssets"]
+            .as_array()
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        match bootstrap {
+            "current" | "stale" => {
+                let has_stale = references.iter().any(|item| item["state"] == "stale");
+                let refreshed = if bootstrap == "stale" || has_stale {
+                    crate::host::bridge::refresh_managed(Some(&name))
+                        .ok()
+                        .and_then(|mut items| items.pop())
+                        .unwrap_or_default()
+                } else {
+                    Value::Null
+                };
+                if bootstrap == "stale" {
+                    let action = refreshed["action"].as_str().unwrap_or("unavailable");
+                    lines.push(format!("Host bridge {name}: stale bootstrap {action}"));
+                }
+                for reference in references {
+                    let relative = reference["name"].as_str().unwrap_or("unknown");
+                    let state = reference["state"].as_str().unwrap_or("unknown");
+                    let label = if relative == "references/competence.md" {
+                        "competence reference".to_owned()
+                    } else if relative.starts_with("resources/") {
+                        format!("resource {relative}")
+                    } else {
+                        format!("role reference {relative}")
+                    };
+                    if state == "stale" {
+                        let action = refreshed["referenceAssets"]
+                            .as_array()
+                            .and_then(|items| items.iter().find(|item| item["name"] == relative))
+                            .and_then(|item| item["action"].as_str())
+                            .unwrap_or("unavailable");
+                        lines.push(format!("Host bridge {name}: stale {label} {action}"));
+                    } else if state != "current" {
+                        let install = crate::emitted::Route::new(["host", "install"]).shell_text();
+                        lines.push(format!("Host bridge {name}: {label} {state}; inspect it or run '{install}' when absent"));
+                    }
+                }
             }
             other => {
                 if host["hostPresent"] == Value::Bool(true) {

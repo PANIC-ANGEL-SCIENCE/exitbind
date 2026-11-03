@@ -30,4 +30,5 @@ Identity	src/host/session_recovery/references.rs	saved configuration no longer m
 ReadAsFact	src/host/session_recovery/references.rs	session recovery source changed or is unavailable: {}/{}
 Identity	src/host/session_recovery/show.rs	saved owner configuration no longer matches the fixed Goal owner
 Identity	src/host/runtime/actor/evidence.rs	native source reference is not current for this Work
+Identity	src/host/runtime/child.rs	child callback configuration differs from the current Work; no child was prepared
 Integrity	src/host/runtime/context.rs	selected native actor presentation differs from its proof

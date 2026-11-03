@@ -9,6 +9,14 @@ import sys
 import tarfile
 from pathlib import Path
 
+EXECUTABLES = {
+    "skills/exitbind/resources/publication/pre-push",
+    "skills/exitbind/resources/publication/check-public-text",
+    "skills/exitbind/resources/publication/check-tracked-snapshot",
+    "skills/exitbind/resources/analysis/rollout-metrics.py",
+    "skills/exitbind/resources/verification/bind-target.py",
+}
+
 
 def archive(package: Path, output: Path) -> None:
     root = package.name
@@ -31,7 +39,7 @@ def archive(package: Path, output: Path) -> None:
                         tar.addfile(info)
                     elif path.is_file():
                         data = path.read_bytes()
-                        info.mode = 0o644
+                        info.mode = 0o755 if relative in EXECUTABLES else 0o644
                         info.size = len(data)
                         tar.addfile(info, io.BytesIO(data))
                     else:

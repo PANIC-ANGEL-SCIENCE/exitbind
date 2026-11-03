@@ -239,10 +239,18 @@ fn oversized_or_rebound_results_stay_inspectable_without_a_record() {
 }
 
 #[test]
-fn managed_claude_and_codex_hooks_include_subagent_stop() {
+fn managed_claude_and_codex_hooks_preserve_existing_stop_handlers() {
     let home = support::temp("capture-host-install");
     fs::create_dir_all(home.join(".claude")).unwrap();
     fs::create_dir_all(home.join(".codex")).unwrap();
+    let existing = json!({"type":"command","command":"third-party-stop","timeout":3});
+    for path in [".claude/settings.json", ".codex/hooks.json"] {
+        fs::write(
+            home.join(path),
+            json!({"hooks":{"Stop":[{"hooks":[existing]}]}}).to_string(),
+        )
+        .unwrap();
+    }
     let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["host", "install", "--json"])
         .env("HOME", &home)
@@ -262,26 +270,42 @@ fn managed_claude_and_codex_hooks_include_subagent_stop() {
     assert!(output.status.success(), "{output:?}");
     let settings: Value =
         serde_json::from_slice(&fs::read(home.join(".claude/settings.json")).unwrap()).unwrap();
-    for event in ["SessionStart", "SubagentStart", "SubagentStop"] {
+    for event in ["SessionStart", "SubagentStart", "SubagentStop", "Stop"] {
         assert!(
-            settings["hooks"][event][0]["hooks"][0]["command"]
-                .as_str()
+            settings["hooks"][event]
+                .as_array()
                 .unwrap()
-                .contains("exitbind hook-run"),
+                .iter()
+                .any(|group| {
+                    group["hooks"].as_array().unwrap().iter().any(|handler| {
+                        handler["command"]
+                            .as_str()
+                            .is_some_and(|command| command.contains("exitbind hook-run"))
+                    })
+                }),
             "{event}"
         );
     }
+    assert_eq!(settings["hooks"]["Stop"][0]["hooks"][0], existing);
     let codex: Value =
         serde_json::from_slice(&fs::read(home.join(".codex/hooks.json")).unwrap()).unwrap();
-    for event in ["SessionStart", "SubagentStart", "SubagentStop"] {
+    for event in ["SessionStart", "SubagentStart", "SubagentStop", "Stop"] {
         assert!(
-            codex["hooks"][event][0]["hooks"][0]["command"]
-                .as_str()
+            codex["hooks"][event]
+                .as_array()
                 .unwrap()
-                .contains("exitbind hook-run"),
+                .iter()
+                .any(|group| {
+                    group["hooks"].as_array().unwrap().iter().any(|handler| {
+                        handler["command"]
+                            .as_str()
+                            .is_some_and(|command| command.contains("exitbind hook-run"))
+                    })
+                }),
             "{event}"
         );
     }
+    assert_eq!(codex["hooks"]["Stop"][0]["hooks"][0], existing);
     let _ = fs::remove_dir_all(&home);
 }
 

@@ -1,5 +1,5 @@
 //! Verified same-host Goal projection for host callbacks.
-use super::{run, text, Fixture, CHILD, OTHER, PROFILE_BODY, SESSION};
+use super::{argv, run, text, Fixture, CHILD, OTHER, PROFILE_BODY, SESSION};
 use serde_json::{json, Value};
 use std::{fs, process::Output};
 
@@ -15,7 +15,18 @@ fn selector_free_same_host_delivery_matches_owner_goal_and_returns_after_permit(
         "Preserve the fixture flag.\n",
     )
     .unwrap();
-    fixture.prepare_sonic();
+    let prepare = argv(&fixture.next(Some(SESSION))["prepareChild"]);
+    let prepared = run(
+        &prepare,
+        &fixture.product,
+        &fixture.store,
+        Some(SESSION),
+        b"",
+    );
+    assert!(prepared.status.success(), "{}", text(&prepared));
+    let prepared: Value = serde_json::from_slice(&prepared.stdout).unwrap();
+    let capacity = &prepared["transportPreflight"];
+    assert_eq!(capacity["state"], "fits", "{capacity}");
     let owner = fixture.value(Some(SESSION), &["work", "detail", &fixture.work, "--json"]);
     let payload = json!({"hook_event_name":"SubagentStart","cwd":fixture.product,
         "session_id":SESSION,"agent_id":CHILD,"agent_type":"sonic"});
@@ -32,6 +43,8 @@ fn selector_free_same_host_delivery_matches_owner_goal_and_returns_after_permit(
     let start = hook["hookSpecificOutput"]["additionalContext"]
         .as_str()
         .unwrap();
+    assert_eq!(capacity["outputBytes"], output.stdout.len());
+    assert_eq!(capacity["contextUtf16Units"], start.encode_utf16().count());
     assert!(
         output.stdout.len() <= 16 * 1024,
         "host bytes: {}",
@@ -546,7 +559,21 @@ fn selected_delivery_refuses_transformed_or_incomplete_required_instructions() {
     for (name, profile, path, body, expected) in scenarios {
         let phase = path.map(|path| (path, body));
         let fixture = Fixture::new_with_material(name, "true", None, profile, phase);
-        fixture.prepare_sonic();
+        let prepare = argv(&fixture.next(Some(SESSION))["prepareChild"]);
+        let prepared = run(
+            &prepare,
+            &fixture.product,
+            &fixture.store,
+            Some(SESSION),
+            b"",
+        );
+        if !expected {
+            assert!(!prepared.status.success(), "{name}: {}", text(&prepared));
+            assert!(text(&prepared).contains("no child was prepared"));
+            assert!(fixture.intents().map_or(true, |intents| intents.is_empty()));
+            continue;
+        }
+        assert!(prepared.status.success(), "{name}: {}", text(&prepared));
         let start = fixture
             .hook(
                 json!({"hook_event_name":"SubagentStart","session_id":SESSION,
@@ -559,61 +586,7 @@ fn selected_delivery_refuses_transformed_or_incomplete_required_instructions() {
             expected,
             "{name}: {start}"
         );
-        if expected {
-            assert!(start.contains("retain this phase instruction"), "{start}");
-            continue;
-        }
-        assert!(
-            start.contains("no automatic return") || start.contains("cannot receive credit"),
-            "{start}"
-        );
-        assert_eq!(intent["state"], "claimed", "{name}: {intent}");
-        assert_eq!(intent["assignmentDelivery"]["state"], "unavailable");
-        let unavailable = intent["assignmentDelivery"].clone();
-        let duplicate = fixture
-            .hook(
-                json!({"hook_event_name":"SubagentStart","session_id":SESSION,
-            "agent_id":CHILD,"agent_type":"sonic"}),
-            )
-            .unwrap();
-        assert!(
-            !duplicate.contains("Automatic Work return. ENTIRE final message"),
-            "{duplicate}"
-        );
-        assert_eq!(
-            fixture.intents().unwrap()[0]["assignmentDelivery"],
-            unavailable
-        );
-        let message = r#"{"outcome":"completed","summary":"uncredited","reason":""}"#;
-        fixture.hook(
-            json!({"hook_event_name":"SubagentStop","session_id":SESSION,
-            "agent_id":CHILD,"agent_type":"sonic",
-            "last_assistant_message":message}),
-        );
-        let retained = &fixture.intents().unwrap()[0];
-        assert!(
-            retained["returnEventSha256"].is_null(),
-            "{name}: {retained}"
-        );
-        assert!(
-            retained.get("pendingReturn").is_none(),
-            "{name}: {retained}"
-        );
-        assert!(retained["rawObservation"].is_object(), "{name}: {retained}");
-        let raw = fixture.value(
-            Some(SESSION),
-            &[
-                "work",
-                "child",
-                "context",
-                &fixture.work,
-                retained["id"].as_str().unwrap(),
-                "--view",
-                "result",
-            ],
-        );
-        assert_eq!(raw["resultText"], message);
-        assert_eq!(raw["credit"], "none");
+        assert!(start.contains("retain this phase instruction"), "{start}");
     }
 }
 

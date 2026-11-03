@@ -95,6 +95,14 @@ fn a_non_git_root_with_many_entries_states_every_fact_before_any_record() {
         stdout.contains("Git: not a Git worktree (no baseline commit)"),
         "{stdout}"
     );
+    assert!(
+        stdout.contains("Codex launch checks for a marker-free directory"),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("Codex CLI refuses a product-managed Worker launch"),
+        "{stdout}"
+    );
     assert!(stdout.contains("checker: not stated"), "{stdout}");
     assert!(stdout.contains("host write:"), "{stdout}");
     assert!(work_ledgers(&root).is_empty(), "check wrote a Work record");

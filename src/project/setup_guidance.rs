@@ -8,22 +8,30 @@ pub(super) fn diagnostics(control: &Path) -> Vec<Value> {
     project_skills::diagnose(control).into_iter().map(|item| json!({
         "skill":item.skill,"path":item.path,"state":state_label(item.state),
         "embeddedSha256":item.embedded_sha256,"observedSha256":item.observed_sha256,
+        "optional":item.optional,
         "customPreserved":matches!(item.state, project_skills::SkillObservationState::Unmanaged),
     })).collect()
 }
 
 pub(super) fn ensure_compatible(items: &[Value], control: &Path) -> Result<(), String> {
     for item in items {
+        if item["skill"] == "Exitbind" && item["optional"] == true {
+            continue;
+        }
         let state = item["state"].as_str().unwrap_or("unknown");
         if matches!(
             state,
             "absent"
                 | "managed different"
+                | "not owner-executable"
                 | "unsafe path or nonregular"
                 | "unreadable"
                 | "unsupported inspection"
         ) {
-            let recovery = if matches!(state, "absent" | "managed different") {
+            let recovery = if matches!(
+                state,
+                "absent" | "managed different" | "not owner-executable"
+            ) {
                 let root = control.to_str().ok_or("ControlRoot is not valid UTF-8")?;
                 format!(
                     "inspect the destination, then run {}",
@@ -47,6 +55,7 @@ fn state_label(state: project_skills::SkillObservationState) -> &'static str {
         project_skills::SkillObservationState::Absent => "absent",
         project_skills::SkillObservationState::EmbeddedMatch => "embedded match",
         project_skills::SkillObservationState::ManagedDifferent => "managed different",
+        project_skills::SkillObservationState::ModeMismatch => "not owner-executable",
         project_skills::SkillObservationState::Unmanaged => "custom",
         project_skills::SkillObservationState::Unsafe => "unsafe path or nonregular",
         project_skills::SkillObservationState::Unreadable => "unreadable",
@@ -66,5 +75,10 @@ mod tests {
         let unsafe_error =
             ensure_compatible(&[json!({"state":"unsafe path or nonregular"})], root).unwrap_err();
         assert!(!unsafe_error.contains("--refresh-skills"), "{unsafe_error}");
+        assert!(ensure_compatible(
+            &[json!({"skill":"Exitbind","optional":true,"state":"absent"})],
+            root
+        )
+        .is_ok());
     }
 }

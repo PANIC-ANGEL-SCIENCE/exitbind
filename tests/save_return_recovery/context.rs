@@ -13,6 +13,14 @@ impl Fixture {
     fn new(label: &str) -> Self {
         let root = support::temp(label);
         support::git_topology::repository(&root);
+        Self::from_root(root)
+    }
+
+    fn marker_free(label: &str) -> Option<Self> {
+        support::marker_free_temp(label).map(Self::from_root)
+    }
+
+    fn from_root(root: support::TempRoot) -> Self {
         let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .args(["init", "--mode", "portable", "--root"])
             .arg(&root)

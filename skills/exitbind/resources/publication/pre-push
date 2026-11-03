@@ -1,0 +1,259 @@
+#!/usr/bin/env python3
+# exitbind-managed-publication:v1
+"""Optional Git publication checks. All policy values come from the caller."""
+
+import os
+from pathlib import Path
+import re
+import stat
+import subprocess
+import sys
+import tempfile
+from urllib.parse import urlsplit
+
+
+class Refusal(Exception):
+    def __init__(self, message, status=2):
+        super().__init__(message)
+        self.status = status
+
+
+def git(repo, *arguments, accepted=(0,)):
+    try:
+        result = subprocess.run(
+            ["git", *arguments], cwd=repo, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, check=False,
+        )
+    except OSError as error:
+        raise Refusal("Git is unavailable") from error
+    if result.returncode not in accepted:
+        raise Refusal("Git could not verify the proposed publication")
+    return result
+
+
+def policy_file(variable, *, require_entries):
+    name = os.environ.get(variable)
+    if not name:
+        raise Refusal("required publication policy is not configured")
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise Refusal("safe policy file opening is unavailable")
+    flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)
+    try:
+        fd = os.open(name, flags)
+        with os.fdopen(fd, "rb") as source:
+            info = os.fstat(source.fileno())
+            if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) not in (0o400, 0o600):
+                raise Refusal("publication policy has unsafe type or permissions")
+            data = source.read()
+    except OSError as error:
+        raise Refusal("required publication policy is unavailable or unsafe") from error
+    try:
+        lines = data.decode("utf-8").splitlines()
+    except UnicodeError as error:
+        raise Refusal("publication policy is not UTF-8") from error
+    entries = [line for line in lines if line.strip() and not line.lstrip().startswith("#")]
+    if any("\x00" in line for line in entries) or (require_entries and not entries):
+        raise Refusal("publication policy has no usable entries")
+    return entries
+
+
+def identity_set(repo):
+    result = git(repo, "config", "--get-all", "publication.allowedIdentity", accepted=(0, 1))
+    identities = {line for line in result.stdout.decode("utf-8", "surrogateescape").splitlines() if line}
+    if result.returncode or not identities:
+        raise Refusal("publication identity policy is missing")
+    return identities
+
+
+def identifier(raw):
+    match = re.match(r"^(.*<[^<>\n]+>)", raw)
+    if not match:
+        raise Refusal("could not verify a publication identity")
+    return match.group(1)
+
+
+HOME_ROOTS = ("home", "Users", "root", "var/root")
+HOME_ALTERNATIVES = "|".join("/" + name + "/" for name in HOME_ROOTS)
+HOME_PATH = re.compile(r"(?:" + HOME_ALTERNATIVES + r")[^\s/]+(?:/|$)|[A-Za-z]:[\\/]+Users[\\/]+[^\s\\/]+(?:[\\/]|$)")
+CREDENTIAL = re.compile(
+    r"-----BEGIN [A-Z0-9 -]*PRIVATE KEY-----|ghp_[A-Za-z0-9_]{12,}|"
+    r"github_pat_[A-Za-z0-9_]{12,}|\b(?:AKIA|ASIA)[A-Z0-9]{16}\b|"
+    r"AIza[A-Za-z0-9_-]{20,}|"
+    r"(?:api[_-]?key|access[_-]?token|auth[_-]?token|password|secret|token)"
+    r"\s*[:=]\s*[\"']?[A-Za-z0-9_./+=-]{12,}", re.IGNORECASE,
+)
+HOME_GIT_PATTERN = "(" + HOME_ALTERNATIVES + r")[^[:space:]/]+(/|$)|[A-Za-z]:[\\/]+Users[\\/]+[^[:space:]\\/]+([\\/]|$)"
+
+
+def text_check(data, terms):
+    text = data.decode("utf-8", "surrogateescape")
+    folded = text.casefold()
+    if any(term.casefold() in folded for term in terms) or HOME_PATH.search(text) or CREDENTIAL.search(text):
+        raise Refusal("proposed text violates publication policy", 1)
+
+
+def has_match(repo, args):
+    result = git(repo, "grep", *args, accepted=(0, 1))
+    return result.returncode == 0
+
+
+def commit_metadata(repo, oid):
+    data = git(repo, "show", "-s", "--format=%an <%ae>%n%cn <%ce>%n%B", oid).stdout
+    lines = data.decode("utf-8", "surrogateescape").splitlines()
+    if len(lines) < 2:
+        raise Refusal("commit metadata is unavailable")
+    return lines[0], lines[1], "\n".join(lines)
+
+
+def coauthor_name(line):
+    match = re.match(r"^\s*co-authored-by\s*:\s*(.*?)\s*$", line, re.IGNORECASE)
+    if not match:
+        return None
+    return " ".join(match.group(1).split("<", 1)[0].split()).casefold()
+
+
+def snapshot(repo, target, commit_file=None):
+    git(repo, "rev-parse", "--is-inside-work-tree")
+    terms = policy_file("PUBLICATION_PRIVATE_TERMS_FILE", require_entries=True)
+    blocked_names = {
+        " ".join(entry.split()).casefold()
+        for entry in policy_file("PUBLICATION_BLOCKED_COAUTHORS_FILE", require_entries=False)
+    }
+    allowed = identity_set(repo)
+    if target == "--cached":
+        identities = [
+            identifier(git(repo, "var", key).stdout.decode("utf-8", "surrogateescape").strip())
+            for key in ("GIT_AUTHOR_IDENT", "GIT_COMMITTER_IDENT")
+        ]
+        metadata = "\n".join(identities)
+        revisions = ["--cached"]
+    else:
+        if target == "--commits-from":
+            if not commit_file:
+                raise Refusal("commit set is missing")
+            try:
+                path = Path(commit_file)
+                if path.is_symlink() or not path.is_file():
+                    raise Refusal("commit set is unavailable or unsafe")
+                values = path.read_text(encoding="ascii").splitlines()
+            except (OSError, UnicodeError) as error:
+                raise Refusal("commit set is unavailable or invalid") from error
+            if not values or any(not re.fullmatch(r"[0-9a-fA-F]+", value) for value in values):
+                raise Refusal("commit set is invalid")
+            revisions = sorted({git(repo, "rev-parse", "--verify", value + "^{commit}").stdout.decode().strip() for value in values})
+        else:
+            root = git(repo, "rev-parse", "--verify", "--end-of-options", target + "^{commit}").stdout.decode().strip()
+            revisions = git(repo, "rev-list", root).stdout.decode().splitlines()
+        identities, metadata_parts = [], []
+        for oid in revisions:
+            author, committer, part = commit_metadata(repo, oid)
+            identities.extend((author, committer))
+            metadata_parts.append(part)
+        metadata = "\n".join(metadata_parts)
+        if any(coauthor_name(line) in blocked_names for line in metadata.splitlines()):
+            raise Refusal("commit metadata violates publication policy", 1)
+
+    if any(identity not in allowed for identity in identities):
+        raise Refusal("commit identity violates publication policy", 1)
+    if any(term.casefold() in metadata.casefold() for term in terms):
+        raise Refusal("commit metadata violates publication policy", 1)
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8") as patterns:
+        patterns.write("\n".join(terms) + "\n")
+        patterns.flush()
+        for rev in revisions:
+            if has_match(repo, ("--text", "-i", "-F", "-q", "-f", patterns.name, rev, "--")):
+                raise Refusal("tracked content violates publication policy", 1)
+            if has_match(repo, ("--text", "-E", "-q", "-e", HOME_GIT_PATTERN, rev, "--")):
+                raise Refusal("tracked content contains a machine-local path", 1)
+    if target == "--commits-from":
+        print("publication guard: verified (commit-set: %d commits)" % len(revisions))
+    else:
+        print("publication guard: verified")
+
+
+def github_host(remote):
+    if "://" in remote:
+        parsed = urlsplit(remote)
+        host = (parsed.hostname or "").rstrip(".").casefold()
+        if host == "github.com" and parsed.scheme.casefold() in ("http", "https") and parsed.username is not None:
+            raise Refusal("HTTP user information is not permitted")
+        return host == "github.com"
+    authority = remote.split(":", 1)[0].rsplit("@", 1)[-1].rstrip(".")
+    return authority.casefold() == "github.com"
+
+
+def push(remote_name, remote_url):
+    if not github_host(remote_url):
+        return
+    repo = Path.cwd()
+    git(repo, "rev-parse", "--show-toplevel")
+    fmt = git(repo, "rev-parse", "--show-object-format").stdout.strip()
+    width = {b"sha1": 40, b"sha256": 64}.get(fmt)
+    if not width:
+        raise Refusal("unsupported Git object format")
+    zero = "0" * width
+    updates = sys.stdin.buffer.read()
+    if updates and (not updates.endswith(b"\n") or any(c < 32 and c != 10 or c == 127 for c in updates)):
+        raise Refusal("invalid push update stream")
+    commits = set()
+    for raw in updates.splitlines():
+        try:
+            source, local, destination, old = raw.decode("utf-8", "surrogateescape").rsplit(" ", 3)
+        except ValueError as error:
+            raise Refusal("malformed push update") from error
+        if not source or not re.fullmatch(r"[0-9a-f]{%d}" % width, local) or not re.fullmatch(r"[0-9a-f]{%d}" % width, old):
+            raise Refusal("malformed push object")
+        if not destination.startswith("refs/"):
+            raise Refusal("malformed destination ref")
+        git(repo, "check-ref-format", destination)
+        if local == zero:
+            if source != "(delete)" or old == zero:
+                raise Refusal("inconsistent deletion update")
+            continue
+        if source == "(delete)":
+            raise Refusal("inconsistent deletion update")
+        actual = git(repo, "rev-parse", "--verify", "--end-of-options", source).stdout.decode().strip()
+        if actual != local:
+            raise Refusal("push source does not match its object")
+        commit = git(repo, "rev-parse", "--verify", local + "^{commit}").stdout.decode().strip()
+        if destination.startswith("refs/tags/") and git(repo, "cat-file", "-t", local).stdout.strip() == b"tag":
+            tag = git(repo, "cat-file", "tag", local).stdout
+            match = re.search(rb"(?m)^tagger (.*<[^<>\n]+>) [0-9]+ [+-][0-9]{4}$", tag)
+            if not match or match.group(1).decode("utf-8", "surrogateescape") not in identity_set(repo):
+                raise Refusal("tag identity violates publication policy", 1)
+            text_check(tag, policy_file("PUBLICATION_PRIVATE_TERMS_FILE", require_entries=True))
+        if old == zero:
+            listed = git(repo, "rev-list", commit, "--not", "--remotes=" + remote_name).stdout
+        else:
+            base = git(repo, "rev-parse", "--verify", old + "^{commit}").stdout.decode().strip()
+            listed = git(repo, "rev-list", commit, "^" + base).stdout
+        commits.update(listed.decode().splitlines())
+    if commits:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="ascii") as selected:
+            selected.write("\n".join(sorted(commits)) + "\n")
+            selected.flush()
+            snapshot(repo, "--commits-from", selected.name)
+
+
+def main(args):
+    if args and args[0] == "--check-public-text":
+        if len(args) != 2 or not re.fullmatch(r"[A-Za-z0-9._-]+", args[1]):
+            raise Refusal("invalid text surface")
+        text_check(sys.stdin.buffer.read(), policy_file("PUBLICATION_PRIVATE_TERMS_FILE", require_entries=True))
+        print("publication text guard: verified")
+    elif args and args[0] == "--check-tracked-snapshot":
+        if len(args) not in (3, 4) or (len(args) == 4) != (args[2] == "--commits-from"):
+            raise Refusal("invalid snapshot arguments")
+        snapshot(Path(args[1]), args[2], args[3] if len(args) == 4 else None)
+    elif len(args) == 2:
+        push(args[0], args[1])
+    else:
+        raise Refusal("invalid pre-push invocation")
+
+
+if __name__ == "__main__":
+    try:
+        main(sys.argv[1:])
+    except (Refusal, OSError, ValueError) as error:
+        print("publication guard: " + str(error) if isinstance(error, Refusal) else "publication guard: verification failed", file=sys.stderr)
+        sys.exit(error.status if isinstance(error, Refusal) else 2)

@@ -17,7 +17,9 @@ pub(crate) mod portability;
 pub(crate) mod private_write;
 pub(crate) mod readiness;
 pub(crate) mod setup;
+pub(crate) mod skill_assets;
 pub(crate) mod skills;
 pub(crate) mod specialists;
+pub(crate) mod starter_profiles;
 
 pub(crate) mod continuation;

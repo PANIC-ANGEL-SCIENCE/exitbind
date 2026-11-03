@@ -1,29 +1,32 @@
 use serde_json::{json, Value};
-use std::fs;
 use std::io::{self, Read};
 
 mod activation;
 mod actor;
+mod child;
 mod context;
 mod project;
+mod stop;
 pub(crate) use activation::{assess_activation, classify_activation, Activation, ActivationFacts};
 pub(crate) use actor::projection as selected_actor_projection;
+pub(crate) use child::preflight as preflight_child_transport;
 
 const MAX_INPUT: usize = 64 * 1024;
 const MAX_PROFILE: u64 = 12 * 1024;
 const MAX_OUTPUT: usize = super::assignment_evidence::MAX_CONTEXT_OUTPUT;
-const EVENTS: [&str; 6] = [
+const EVENTS: [&str; 7] = [
     "SessionStart",
     "SubagentStart",
     "SubagentStop",
     "PreCompact",
     "PostCompact",
     "PostToolUse",
+    "Stop",
 ];
 
 /// Hook execution is deliberately fail-open: malformed, ambiguous, or unsafe
 /// host input produces no output and never turns a host session into an error.
-pub fn run() -> Result<(), String> {
+pub fn run(host: Option<&str>) -> Result<(), String> {
     let mut bytes = Vec::new();
     let mut input = io::stdin().take((MAX_INPUT + 1) as u64);
     input.read_to_end(&mut bytes).map_err(|_| String::new())?;
@@ -47,6 +50,15 @@ pub fn run() -> Result<(), String> {
         return Ok(());
     }
     if !EVENTS.contains(&event) {
+        return Ok(());
+    }
+    if event == "Stop" {
+        if crate::producer::exitbind_surface() && stop::should_block(host, object) {
+            println!(
+                "{}",
+                json!({"decision":"block","reason":"The session Goal is open. Continue the authorized work."})
+            );
+        }
         return Ok(());
     }
     if event == "PostToolUse"
@@ -289,24 +301,9 @@ pub fn run() -> Result<(), String> {
         let Some(configured) = loaded.agent(&agent) else {
             return Ok(());
         };
-        let profile = match crate::config::file(&loaded.control_root, &configured.profile) {
-            Ok(path) => path,
-            Err(_) => return Ok(()),
-        };
-        let metadata = match fs::metadata(&profile) {
-            Ok(info) => info,
-            Err(_) => return Ok(()),
-        };
-        if metadata.len() > MAX_PROFILE {
+        let Some((profile, source)) = child::profile(&loaded, configured) else {
             return Ok(());
-        }
-        let source = match fs::read_to_string(&profile) {
-            Ok(value) => value,
-            Err(_) => return Ok(()),
         };
-        if !project::contained_existing(&loaded.control_root, &profile) {
-            return Ok(());
-        }
         let selected = super::assignment_context::selection(
             &loaded,
             &agent,
@@ -331,20 +328,17 @@ pub fn run() -> Result<(), String> {
                 ),
             );
         }
-        let Some(mut context) = context::format_agent_context(
-            &loaded.control_root,
+        let Some(mut context) = child::base(
+            &loaded,
             &agent,
             configured,
             &profile,
             &source,
             &selected,
+            &configuration,
         ) else {
             return Ok(());
         };
-        if crate::producer::exitbind_surface() {
-            context.push('\n');
-            context.push_str(&configuration);
-        }
         let mut finalized_context = false;
         let mut claude_delivery = false;
         if event == "SubagentStart" {
@@ -376,46 +370,9 @@ pub fn run() -> Result<(), String> {
                         };
                         context = context::codex_unverified_with_evidence(event, evidence);
                         finalized_context = true;
-                    } else {
-                        context.push_str("\nSelected task perspectives for this assignment:");
-                        if let Some(specialist) = child.get("specialistExperience") {
-                            context.push_str("\nCurrent qualified specialist experience (complete; observed use remains separate):\n");
-                            context.push_str(
-                                &serde_json::to_string(specialist).map_err(|e| e.to_string())?,
-                            );
-                        }
-                        if let Some(capabilities) = child.get("capabilities") {
-                            context.push_str("\nCurrent approved project capabilities (complete; native use remains separate):\n");
-                            context.push_str(
-                                &serde_json::to_string(capabilities).map_err(|e| e.to_string())?,
-                            );
-                        }
-                        for perspective in child["perspectives"].as_array().into_iter().flatten() {
-                            context.push_str(&format!(
-                            "\nPerspective {} (source SHA-256 {}, presented SHA-256 {}, complete):\n{}",
-                            perspective["id"].as_str().unwrap_or("?"),
-                            perspective["sourceSha256"].as_str().unwrap_or("?"),
-                            perspective["presentedSha256"].as_str().unwrap_or("?"),
-                            perspective["content"].as_str().unwrap_or("")
-                        ));
-                        }
-                        if let Some(contract) = child["actorResultContract"].as_str() {
-                            context.push('\n');
-                            context.push_str(contract);
-                        }
-                        if let Some(assignment) = child.get("requiredAssignment") {
-                            if let Some(complete) = context::complete_with_evidence(
-                                &loaded, &child, &selected, assignment, &context, event,
-                            )? {
-                                context = complete;
-                                presented_child = Some(child.clone());
-                                finalized_context = true;
-                            } else {
-                                context.push_str("\nComplete assignment exceeds the host context envelope; automatic return cannot receive credit. Use the current scoped Work detail route.");
-                            }
-                        } else if child["requiredAssignmentUnavailable"].is_string() {
-                            context.push_str("\nComplete assignment exceeds the host context envelope; use the current scoped Work detail route.");
-                        }
+                    } else if child::render(&loaded, &child, &selected, &mut context, event)? {
+                        presented_child = Some(child.clone());
+                        finalized_context = true;
                     }
                 }
                 Err(_) => {

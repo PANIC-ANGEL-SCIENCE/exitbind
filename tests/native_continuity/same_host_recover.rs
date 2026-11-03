@@ -429,8 +429,9 @@ fn permit_successor_rejects_changed_recipient_and_unrelated_transitions() {
 #[test]
 fn oversized_host_rules_remain_uncredited_and_preserve_the_observation() {
     let fixture = Fixture::new("r60-oversized-host-rules");
-    fs::write(fixture.product.join("AGENTS.md"), "r".repeat(20_000)).unwrap();
     fixture.prepare_sonic();
+    // The late check still refuses material enlarged after preflight.
+    fs::write(fixture.product.join("AGENTS.md"), "r".repeat(20_000)).unwrap();
     let start = fixture
         .hook(
             json!({"hook_event_name":"SubagentStart","session_id":SESSION,

@@ -357,6 +357,8 @@ fn payload(event: &str) -> Value {
         "SubagentStart" => json!({"hook_event_name":event,"agent_id":CHILD,"agent_type":"sonic"}),
         "SubagentStop" => json!({"hook_event_name":event,"agent_id":CHILD,"agent_type":"sonic",
             "last_assistant_message":RESULT}),
+        // Stop responses use their own host schema and are covered separately.
+        "Stop" => json!({"hook_event_name":event,"stop_hook_active":true}),
         "PostToolUse" => json!({"hook_event_name":event,"tool_name":"ExitPlanMode","tool_input":{},
             "tool_response":{"isAgent":false,"plan":PLAN,"filePath":"/plans/f5a-owner.md"}}),
         _ => json!({"hook_event_name":event}),
@@ -427,6 +429,7 @@ fn every_hook_event_resolves_the_project_that_owns_the_native_goal() {
             // Compaction stdout is not a context channel (Codex contract,
             // tests/session_goal_direct/native_context_recovery.rs).
             "PreCompact" | "PostCompact" => assert_eq!(printed, None),
+            "Stop" => assert_eq!(printed, None),
             "PostToolUse" => {
                 let line = printed.unwrap();
                 assert!(
@@ -447,6 +450,23 @@ fn every_hook_event_resolves_the_project_that_owns_the_native_goal() {
         decoy_before,
         "the cwd project is never used"
     );
+}
+
+#[test]
+fn stop_uses_the_verified_goal_owner_even_from_another_project_directory() {
+    let fixture = Fixture::new();
+    let payload = json!({"hook_event_name":"Stop", "cwd":fixture.decoy,
+        "session_id":SESSION, "stop_hook_active":false, "last_assistant_message":"A side answer."});
+    let output = exitbind(
+        &fixture.decoy,
+        &fixture.store,
+        Some(SESSION),
+        &["hook-run"],
+        payload.to_string().as_bytes(),
+    );
+    assert!(output.status.success(), "{}", text(&output));
+    let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(response["decision"], "block");
 }
 
 /// The same table with no native Goal: the cwd project is used and named.
@@ -482,6 +502,7 @@ fn without_a_native_goal_every_hook_event_uses_and_names_the_cwd_project() {
                 );
             }
             "PreCompact" | "PostCompact" => assert_eq!(printed, None),
+            "Stop" => assert_eq!(printed, None),
             "PostToolUse" => {
                 let line = printed.unwrap();
                 assert!(line.contains(&cwd), "{line}");

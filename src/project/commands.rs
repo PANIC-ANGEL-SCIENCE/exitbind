@@ -346,6 +346,10 @@ fn print_skill_warnings(observations: &[project_skills::SkillObservation], contr
                 observation.observed_sha256.as_deref().unwrap_or("unknown"),
                 refresh
             )),
+            project_skills::SkillObservationState::ModeMismatch => Some(format!(
+                "warning: {} managed resource {} is not owner-executable. Inspect it, then {}",
+                observation.skill, observation.path, refresh
+            )),
             project_skills::SkillObservationState::Unsafe
             | project_skills::SkillObservationState::Unreadable
             | project_skills::SkillObservationState::Unsupported => Some(format!(
@@ -413,6 +417,7 @@ fn skill_state_label(state: project_skills::SkillObservationState) -> &'static s
         project_skills::SkillObservationState::Absent => "absent",
         project_skills::SkillObservationState::EmbeddedMatch => "embedded match",
         project_skills::SkillObservationState::ManagedDifferent => "managed different",
+        project_skills::SkillObservationState::ModeMismatch => "not owner-executable",
         project_skills::SkillObservationState::Unmanaged => "unmanaged",
         project_skills::SkillObservationState::Unsafe => "unsafe path or nonregular",
         project_skills::SkillObservationState::Unreadable => "unreadable",

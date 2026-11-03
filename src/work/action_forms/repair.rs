@@ -1,6 +1,25 @@
 //! Current worker recovery forms over the existing governor and held owners.
 use super::*;
 
+fn evidence_choice(loaded: &Loaded, work: &str, assignment: &str) -> Value {
+    choice(
+        loaded,
+        crate::emitted::Route::new([
+            "work",
+            "evidence",
+            work,
+            assignment,
+            "--artifact-root",
+            crate::emitted::slot("ARTIFACT_ROOT").as_str(),
+            "--artifact",
+            crate::emitted::slot("ARTIFACT_PATH").as_str(),
+        ]),
+        "evidence",
+        &["ARTIFACT_ROOT", "ARTIFACT_PATH"],
+        no_input(),
+    )
+}
+
 pub(super) fn compact(result: &mut Value) {
     if let Some(recovery) = result.get_mut("recovery").and_then(Value::as_object_mut) {
         recovery.remove("command");
@@ -76,27 +95,13 @@ pub(super) fn attach(
             &["HYPOTHESIS", "SCOPE_DECISION", "EVIDENCE_REQUEST"],
             no_input(),
         )),
-        Some("evidence_required") => Some(choice(
-            loaded,
-            crate::emitted::Route::new([
-                "work",
-                "evidence",
-                work,
-                assignment,
-                "--artifact-root",
-                crate::emitted::slot("ARTIFACT_ROOT").as_str(),
-                "--artifact",
-                crate::emitted::slot("ARTIFACT_PATH").as_str(),
-            ]),
-            "evidence",
-            &["ARTIFACT_ROOT", "ARTIFACT_PATH"],
-            no_input(),
-        )),
+        Some("evidence_required") => Some(evidence_choice(loaded, work, assignment)),
         _ => None,
     };
     if let Some(form) = form {
         result["recovery"] = json!({"state":state,"command":form["command"],
-            "meaning":"supply meaningful current recovery evidence or a Lead re-plan, then refresh detail; spent authority and held bytes remain unchanged"});
+            "diagnosis": "Inspect the current detail's evidence section and relevant inputs. A retry or rewording alone is not a new observation; choose the smallest safe recovery.",
+            "meaning":"Use verified, meaningful new evidence when available, or a material Lead re-plan where offered, then refresh detail. Different bytes alone do not prove new information; spent authority and held bytes remain unchanged."});
         if !held.is_empty() {
             result["recovery"]["heldResults"] =
                 json!(held.iter().map(|item| json!({
@@ -104,7 +109,11 @@ pub(super) fn attach(
             })).collect::<Vec<_>>());
             result.as_object_mut().unwrap().remove("currentGrant");
         }
-        result["choices"] = json!([form]);
+        let mut choices = vec![form];
+        if state == Some("replan_required") && held.is_empty() {
+            choices.push(evidence_choice(loaded, work, assignment));
+        }
+        result["choices"] = json!(choices);
         result["leadChoiceRequired"] = json!(true);
         result.as_object_mut().unwrap().remove("beforeEditing");
         return;

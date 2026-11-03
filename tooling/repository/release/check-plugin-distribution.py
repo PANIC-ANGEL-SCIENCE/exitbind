@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import stat
 import sys
 import tarfile
 from pathlib import Path, PurePosixPath
@@ -31,6 +32,33 @@ EXPECTED_FILES = {
     "skills/exitbind/SKILL.md",
     "skills/exitbind/references/preservation.md",
     "skills/exitbind/references/operators.md",
+    "skills/exitbind/references/competence.md",
+    "skills/exitbind/references/roles/lead.md",
+    "skills/exitbind/references/roles/worker.md",
+    "skills/exitbind/references/roles/reviewer.md",
+    "skills/exitbind/resources/publication/README.md",
+    "skills/exitbind/resources/publication/pre-push",
+    "skills/exitbind/resources/publication/check-public-text",
+    "skills/exitbind/resources/publication/check-tracked-snapshot",
+    "skills/exitbind/resources/judgments/assurance.md",
+    "skills/exitbind/resources/judgments/context-lifecycle.md",
+    "skills/exitbind/resources/judgments/product.md",
+    "skills/exitbind/resources/judgments/quantitative.md",
+    "skills/exitbind/resources/judgments/workflow.md",
+    "skills/exitbind/resources/analysis/README.md",
+    "skills/exitbind/resources/analysis/rollout-metrics.py",
+    "skills/exitbind/resources/verification/README.md",
+    "skills/exitbind/resources/verification/bind-target.py",
+    "skills/exitbind/resources/workflows/continuity.md",
+    "skills/exitbind/resources/workflows/dispatch.md",
+    "skills/exitbind/resources/economy/instructions.md",
+}
+EXECUTABLES = {
+    "skills/exitbind/resources/publication/pre-push",
+    "skills/exitbind/resources/publication/check-public-text",
+    "skills/exitbind/resources/publication/check-tracked-snapshot",
+    "skills/exitbind/resources/analysis/rollout-metrics.py",
+    "skills/exitbind/resources/verification/bind-target.py",
 }
 FORBIDDEN_COMPONENTS = {
     "hooks",
@@ -215,7 +243,7 @@ def package_files(package: Path, errors: list[str]) -> set[str]:
 
 
 def check_skill(repo_root: Path, package: Path, errors: list[str]) -> None:
-    for relative in [CANONICAL_SKILL, "skills/exitbind/references/preservation.md", "skills/exitbind/references/operators.md"]:
+    for relative in sorted(path for path in EXPECTED_FILES if path.startswith("skills/exitbind/")):
         check_skill_asset(repo_root, package, relative, errors)
 
 
@@ -235,6 +263,11 @@ def check_skill_asset(repo_root: Path, package: Path, relative: str, errors: lis
             f"(canonical sha256={hashlib.sha256(canonical_bytes).hexdigest()}, "
             f"bundled sha256={hashlib.sha256(bundled_bytes).hexdigest()})",
         )
+    if relative in EXECUTABLES:
+        source_mode = stat.S_IMODE(canonical.stat().st_mode)
+        bundled_mode = stat.S_IMODE(bundled.stat().st_mode)
+        if source_mode & 0o100 == 0 or bundled_mode & 0o100 == 0:
+            fail(errors, f"executable mode differs or is missing: {relative}")
 
 
 def check_catalogs(repo_root: Path, errors: list[str]) -> None:
@@ -294,6 +327,8 @@ def check_archive(package: Path, archive: Path, errors: list[str]) -> None:
                     continue
                 if tar.extractfile(member).read() != (package / relative).read_bytes():
                     fail(errors, f"archive content differs from package: {member.name}")
+                if relative in EXECUTABLES and member.mode != 0o755:
+                    fail(errors, f"archive executable mode differs from package: {member.name}")
     except (OSError, tarfile.TarError) as error:
         fail(errors, f"invalid archive {archive}: {error}")
 

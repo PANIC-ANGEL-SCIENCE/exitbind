@@ -3,6 +3,8 @@
 //! behavior, never that a host model selected the skill.
 #![cfg(unix)]
 
+#[path = "host_bridge/stop_install.rs"]
+mod stop_install;
 mod support;
 
 use std::{fs, os::unix::fs::PermissionsExt, path::Path};
@@ -83,12 +85,54 @@ fn install_makes_both_hosts_discoverable_and_status_separates_the_layers() {
         assert!(text.contains("Keep read-only questions and tiny obvious reversible edits direct."));
         assert!(text.contains("<!-- exitbind-managed-bootstrap:v1 -->"));
         assert!(text.contains("do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions"));
+        assert!(text.contains("references/competence.md"));
+        let reference = path.parent().unwrap().join("references/competence.md");
+        assert_eq!(
+            fs::read(reference).unwrap(),
+            &include_bytes!("../skills/exitbind/references/competence.md")[..]
+        );
+        for (role, expected) in [
+            (
+                "lead",
+                &include_bytes!("../skills/exitbind/references/roles/lead.md")[..],
+            ),
+            (
+                "worker",
+                &include_bytes!("../skills/exitbind/references/roles/worker.md")[..],
+            ),
+            (
+                "reviewer",
+                &include_bytes!("../skills/exitbind/references/roles/reviewer.md")[..],
+            ),
+        ] {
+            let relative = format!("references/roles/{role}.md");
+            assert!(text.contains(&relative));
+            assert_eq!(
+                fs::read(path.parent().unwrap().join(relative)).unwrap(),
+                expected
+            );
+        }
+        for name in ["pre-push", "check-public-text", "check-tracked-snapshot"] {
+            let resource = path
+                .parent()
+                .unwrap()
+                .join("resources/publication")
+                .join(name);
+            assert!(fs::metadata(resource).unwrap().permissions().mode() & 0o100 != 0);
+        }
     }
 
     let after = json(exitbind(&home, &["host", "status", "--json"]));
     assert_eq!(after["binaryVersion"], env!("CARGO_PKG_VERSION"));
     for host in after["hosts"].as_array().unwrap() {
         assert_eq!(host["bootstrapSkill"], "current");
+        assert_eq!(host["competenceReference"], "current");
+        assert_eq!(host["referenceAssets"].as_array().unwrap().len(), 20);
+        assert!(host["referenceAssets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["state"] == "current"));
         assert_eq!(host["installedVersion"], env!("CARGO_PKG_VERSION"));
         assert_eq!(host["hostPresent"], true);
     }
@@ -99,6 +143,115 @@ fn install_makes_both_hosts_discoverable_and_status_separates_the_layers() {
 
     let again = json(exitbind(&home, &["host", "install", "--json"]));
     assert_eq!(again["hosts"][0]["action"], "unchanged");
+    fs::remove_dir_all(home).unwrap();
+}
+
+#[test]
+fn host_reference_conflicts_are_visible_and_explicit_install_restores_missing_bytes() {
+    let home = host_home("host-reference-ownership");
+    json(exitbind(
+        &home,
+        &["host", "install", "--hosts", "codex", "--json"],
+    ));
+    let skill = bootstrap(&home, "codex");
+    let reference = skill.parent().unwrap().join("references/competence.md");
+    let old_skill = "<!-- exitbind-managed-bootstrap:v1 -->\nold skill\n";
+    fs::write(&skill, old_skill).unwrap();
+    fs::write(&reference, "operator-owned reference\n").unwrap();
+
+    let status = json(exitbind(
+        &home,
+        &["host", "status", "--hosts", "codex", "--json"],
+    ));
+    assert_eq!(status["hosts"][0]["bootstrapSkill"], "stale");
+    assert_eq!(status["hosts"][0]["competenceReference"], "unmanaged");
+    let human = exitbind(&home, &["host", "status", "--hosts", "codex"]);
+    assert!(String::from_utf8_lossy(&human.stdout).contains("competence reference: unmanaged"));
+    let refused = json(exitbind(
+        &home,
+        &["host", "install", "--hosts", "codex", "--json"],
+    ));
+    assert_eq!(refused["hosts"][0]["action"], "refused");
+    assert_eq!(fs::read_to_string(&skill).unwrap(), old_skill);
+    assert_eq!(
+        fs::read_to_string(&reference).unwrap(),
+        "operator-owned reference\n"
+    );
+
+    fs::remove_file(&reference).unwrap();
+    let restored = json(exitbind(
+        &home,
+        &["host", "install", "--hosts", "codex", "--json"],
+    ));
+    assert_eq!(restored["hosts"][0]["action"], "refreshed");
+    assert_eq!(
+        restored["hosts"][0]["competenceReferenceAction"],
+        "installed"
+    );
+    assert_eq!(
+        fs::read(&reference).unwrap(),
+        &include_bytes!("../skills/exitbind/references/competence.md")[..]
+    );
+    let role = skill.parent().unwrap().join("references/roles/worker.md");
+    fs::write(&role, "operator-owned role\n").unwrap();
+    let refused_role = json(exitbind(
+        &home,
+        &["host", "install", "--hosts", "codex", "--json"],
+    ));
+    assert_eq!(refused_role["hosts"][0]["action"], "refused");
+    assert_eq!(fs::read_to_string(&role).unwrap(), "operator-owned role\n");
+    let status = json(exitbind(
+        &home,
+        &["host", "status", "--hosts", "codex", "--json"],
+    ));
+    assert!(status["hosts"][0]["referenceAssets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["name"] == "references/roles/worker.md" && item["state"] == "unmanaged"));
+    fs::remove_file(&role).unwrap();
+    json(exitbind(
+        &home,
+        &["host", "install", "--hosts", "codex", "--json"],
+    ));
+    assert_eq!(
+        fs::read(role).unwrap(),
+        &include_bytes!("../skills/exitbind/references/roles/worker.md")[..]
+    );
+    let executable = skill
+        .parent()
+        .unwrap()
+        .join("resources/publication/pre-push");
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o600)).unwrap();
+    let status = json(exitbind(
+        &home,
+        &["host", "status", "--hosts", "codex", "--json"],
+    ));
+    assert!(status["hosts"][0]["referenceAssets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["name"] == "resources/publication/pre-push" && item["state"] == "stale"));
+    json(exitbind(
+        &home,
+        &["host", "install", "--hosts", "codex", "--json"],
+    ));
+    assert!(fs::metadata(&executable).unwrap().permissions().mode() & 0o100 != 0);
+    fs::write(&executable, "operator-owned executable\n").unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o600)).unwrap();
+    let refused = json(exitbind(
+        &home,
+        &["host", "install", "--hosts", "codex", "--json"],
+    ));
+    assert_eq!(refused["hosts"][0]["action"], "refused");
+    assert_eq!(
+        fs::read_to_string(&executable).unwrap(),
+        "operator-owned executable\n"
+    );
+    assert_eq!(
+        fs::metadata(&executable).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
     fs::remove_dir_all(home).unwrap();
 }
 

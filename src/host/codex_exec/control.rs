@@ -199,6 +199,37 @@ mod tests {
     }
 
     #[test]
+    fn marker_created_during_admission_refuses_before_provider_spawn() {
+        let fixture = Fixture::new("printf started > spawned");
+        if crate::project::git_preflight::has_git_marker(&fixture.0) {
+            if std::env::var("EXITBIND_TEST_NO_GIT_UNAVAILABLE").as_deref() == Ok("1") {
+                eprintln!(
+                    "COVERAGE UNAVAILABLE: marker-free admission requires a marker-free TMPDIR"
+                );
+                return;
+            }
+            panic!("marker-free admission requires a marker-free TMPDIR");
+        }
+        assert!(super::super::preflight_git(&fixture.0).unwrap());
+        let marker = fixture.0.join(".git");
+        let error = run_with_control(
+            &fixture.request(),
+            |_| Ok(()),
+            |_| Ok(()),
+            || {
+                fs::write(&marker, "gitdir: missing\n").unwrap();
+                Ok(())
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            RunError::InvalidRequest("Git marker appeared before Codex launch")
+        ));
+        assert!(!fixture.0.join("spawned").exists());
+    }
+
+    #[test]
     fn silent_child_hold_prevents_late_effect_and_leaves_unrelated_child_alive() {
         let fixture = Fixture::new("printf started > started\nsleep 1\nprintf late > late-effect");
         let mut unrelated = Command::new("sleep").arg("5").spawn().unwrap();

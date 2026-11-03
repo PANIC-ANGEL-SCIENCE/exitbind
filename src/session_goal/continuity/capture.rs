@@ -21,6 +21,8 @@ mod adviser;
 mod context;
 #[path = "capture/delivery.rs"]
 mod delivery;
+#[path = "capture/preflight.rs"]
+mod preflight;
 #[path = "capture/raw.rs"]
 mod raw;
 #[path = "capture/recovery.rs"]
@@ -320,6 +322,10 @@ pub(crate) fn prepare(
                 intent["receiving"] = json!(same_host::RECEIVING);
             }
             let id = hash::value(&intent);
+            let mut record = intent.clone();
+            record["id"] = json!(id);
+            record["state"] = json!("prepared");
+            let transport = preflight::check(loaded, work, &record)?;
             if let Some(old_id) = retry_of {
                 reviewer_retry::once(intents, old_id, &id)?;
             }
@@ -345,9 +351,6 @@ pub(crate) fn prepare(
                 }
             }
             if effect == "prepared" {
-                let mut record = intent.clone();
-                record["id"] = json!(id);
-                record["state"] = json!("prepared");
                 intents.push(record);
             }
             let next = if fence.continuation.is_none() {
@@ -358,7 +361,7 @@ pub(crate) fn prepare(
             } else {
                 continuation(loaded, work)
             };
-            Ok(json!({
+            let mut response = json!({
                 "work": work,
                 "intent": id,
                 "assignment": assignment,
@@ -367,7 +370,14 @@ pub(crate) fn prepare(
                 "selected": selected,
                 "perspectives": perspectives,
                 "next": format!("Launch the native child normally; the next compatible subagent this session starts is the one captured. Then read `{next}`."),
-            }))
+            });
+            if let Some(transport) = transport {
+                if transport["state"] == "unknown" {
+                    response["next"] = json!(format!("Native transport capacity is unverified. Read `{next}` and select an execution path that can supply the complete current assignment."));
+                }
+                response["transportPreflight"] = transport;
+            }
+            Ok(response)
         };
         if retry_of.is_some() {
             storage::with_retry_intents(loaded, prepare)

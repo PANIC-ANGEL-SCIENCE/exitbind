@@ -26,9 +26,31 @@ pub(crate) struct GoalOwner {
 /// `None` when the session has no native Goal owner (or its selectors are
 /// unusable); the caller then uses the working-directory project.
 pub(crate) fn goal_owner(payload: &serde_json::Map<String, Value>) -> Option<GoalOwner> {
+    goal_owner_with_access(payload, session_goal::native::Access::RequireWritable)
+}
+
+fn goal_owner_with_access(
+    payload: &serde_json::Map<String, Value>,
+    access: session_goal::native::Access,
+) -> Option<GoalOwner> {
+    let session = session(payload, access)?;
+    goal_owner_for_session(&session, access)
+}
+
+/// Use a callback's explicit host and payload selector without inheriting an
+/// unrelated parent process's native session environment.
+pub(crate) fn goal_owner_for_session_readonly(
+    session: &session_goal::native::Session,
+) -> Option<GoalOwner> {
+    goal_owner_for_session(session, session_goal::native::Access::ReadExisting)
+}
+
+fn goal_owner_for_session(
+    session: &session_goal::native::Session,
+    access: session_goal::native::Access,
+) -> Option<GoalOwner> {
     let started = Instant::now();
-    let session = session(payload)?;
-    let owner = session.owner().ok().flatten()?;
+    let owner = session.owner_with_access(access).ok().flatten()?;
     let mut candidates = Vec::new();
     if let Ok(Some(hint)) = read_hint(&session.root) {
         if hint.host == session.host
@@ -78,9 +100,12 @@ fn verified(path: &str, owner: &session_goal::native::Owner) -> Option<config::L
 /// The host session the event belongs to: the process selectors, which the
 /// payload must not contradict; without selectors, the Claude Code payload
 /// session ID (a Claude owner record exists only for a Claude session key).
-fn session(payload: &serde_json::Map<String, Value>) -> Option<session_goal::native::Session> {
+fn session(
+    payload: &serde_json::Map<String, Value>,
+    access: session_goal::native::Access,
+) -> Option<session_goal::native::Session> {
     let reported = payload.get("session_id").and_then(Value::as_str);
-    match session_goal::native::current() {
+    match session_goal::native::current_with_access(access) {
         Ok(Some(session)) => reported
             .map_or(true, |id| session.reports(id))
             .then_some(session),

@@ -85,14 +85,14 @@ pub(crate) fn stage(
     source_exists: bool,
     exact: &[usize],
     events: &[&str],
-    expected: &Value,
+    expected: &[Value],
 ) -> Result<StagedSettings, String> {
     let mut next = document.clone();
     let mut actions = Vec::new();
     let mut changed = false;
-    let expected_object = expected
-        .as_object()
-        .ok_or("expected hook handler must be an object")?;
+    if expected.len() != events.len() || exact.len() != events.len() {
+        return Err("hook event and handler counts differ".into());
+    }
     if action == "apply" {
         let object = next
             .as_object_mut()
@@ -105,6 +105,10 @@ pub(crate) fn stage(
             .and_then(Value::as_object_mut)
             .ok_or("hook settings hooks must be an object")?;
         for (i, event) in events.iter().enumerate() {
+            let expected = &expected[i];
+            if !expected.is_object() {
+                return Err("expected hook handler must be an object".into());
+            }
             if exact[i] > 0 {
                 actions.push(format!("keep exact {event} handler"));
                 continue;
@@ -134,7 +138,10 @@ pub(crate) fn stage(
                 actions: vec!["no changes".into()],
             });
         };
-        for event in events.iter().copied() {
+        for (i, event) in events.iter().copied().enumerate() {
+            let expected_object = expected[i]
+                .as_object()
+                .ok_or("expected hook handler must be an object")?;
             let Some(groups) = hooks.get_mut(event).and_then(Value::as_array_mut) else {
                 continue;
             };

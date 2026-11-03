@@ -120,18 +120,64 @@ fn present(home: &Path, host: &Host) -> bool {
     home.join(host.evidence).is_dir()
 }
 
-fn observe(path: &Path, expected: &str) -> BridgeState {
+fn observe(path: &Path, expected: &str, executable: bool) -> BridgeState {
     match fs::symlink_metadata(path) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => BridgeState::Missing,
         Err(_) => BridgeState::Unreadable,
         Ok(meta) if meta.file_type().is_symlink() || !meta.is_file() => BridgeState::Unsafe,
-        Ok(_) => match fs::read(path) {
+        Ok(meta) => match fs::read(path) {
             Err(_) => BridgeState::Unreadable,
-            Ok(bytes) if bytes == expected.as_bytes() => BridgeState::Current,
-            Ok(bytes) if managed(&bytes) => BridgeState::Stale,
+            Ok(bytes)
+                if bytes == expected.as_bytes()
+                    && (!executable || crate::project::skill_assets::owner_can_execute(&meta)) =>
+            {
+                BridgeState::Current
+            }
+            Ok(bytes)
+                if if executable {
+                    crate::project::skill_assets::publication_marker(&bytes)
+                } else {
+                    managed(&bytes)
+                } =>
+            {
+                BridgeState::Stale
+            }
             Ok(_) => BridgeState::Unmanaged,
         },
     }
+}
+
+struct Reference {
+    relative: &'static str,
+    path: PathBuf,
+    content: &'static str,
+    executable: bool,
+    state: BridgeState,
+}
+
+fn references(home: &Path, host: &Host) -> Result<Vec<Reference>, String> {
+    let skill = home.join(host.relative);
+    let directory = skill.parent().ok_or("host bridge has no skill directory")?;
+    Ok(crate::project::skill_assets::ASSETS
+        .iter()
+        .map(|asset| {
+            let path = directory.join(asset.relative);
+            Reference {
+                relative: asset.relative,
+                state: observe(&path, asset.content, asset.executable),
+                path,
+                content: asset.content,
+                executable: asset.executable,
+            }
+        })
+        .collect())
+}
+
+fn reference_record(reference: &Reference, action: Option<&str>) -> Result<Value, String> {
+    Ok(
+        json!({"name":reference.relative,"path":utf8(&reference.path)?,
+        "state":reference.state.as_str(),"action":action}),
+    )
 }
 
 fn managed(bytes: &[u8]) -> bool {
@@ -160,7 +206,13 @@ pub(crate) fn status(hosts: Option<&str>) -> Result<Vec<Value>, String> {
         .into_iter()
         .map(|host| -> Result<Value, String> {
             let path = home.join(host.relative);
-            let state = observe(&path, &expected);
+            let state = observe(&path, &expected, false);
+            let references = references(&home, &host)?;
+            let reference = &references[0];
+            let reference_assets = references
+                .iter()
+                .map(|item| reference_record(item, None))
+                .collect::<Result<Vec<_>, _>>()?;
             let version = fs::read(&path).ok().as_deref().and_then(installed_version);
             let hook = crate::host::hooks::manage("status", host.name, home_text)
                 .ok()
@@ -170,6 +222,9 @@ pub(crate) fn status(hosts: Option<&str>) -> Result<Vec<Value>, String> {
                 "host": host.name,
                 "hostPresent": present(&home, &host),
                 "bootstrapSkill": state.as_str(),
+                "competenceReference": reference.state.as_str(),
+                "competenceReferencePath": utf8(&reference.path)?,
+                "referenceAssets": reference_assets,
                 "activationHook": hook,
                 "installedVersion": version,
                 "expectedVersion": crate::project::skills::package_version(),
@@ -220,6 +275,15 @@ fn install_hook(host: &Host, home: &str) -> Value {
 /// Install or refresh the managed bootstrap for the selected hosts. Only
 /// missing paths and Exitbind-managed files are written.
 pub(crate) fn install(hosts: Option<&str>, all: bool) -> Result<Vec<Value>, String> {
+    synchronize(hosts, all, true)
+}
+
+/// Update existing managed bytes only; an absent reference may be intentional.
+pub(crate) fn refresh_managed(hosts: Option<&str>) -> Result<Vec<Value>, String> {
+    synchronize(hosts, false, false)
+}
+
+fn synchronize(hosts: Option<&str>, all: bool, create: bool) -> Result<Vec<Value>, String> {
     let home = home()?;
     let home_text = utf8(&home)?.to_owned();
     let expected = content();
@@ -227,26 +291,46 @@ pub(crate) fn install(hosts: Option<&str>, all: bool) -> Result<Vec<Value>, Stri
     for host in selected(hosts)? {
         let path = home.join(host.relative);
         let path_text = utf8(&path)?.to_owned();
-        let state = observe(&path, &expected);
+        let state = observe(&path, &expected, false);
+        let references = references(&home, &host)?;
         let host_present = present(&home, &host);
-        let action = if !host_present && !all && hosts.is_none() {
-            "skipped_host_absent"
-        } else if state == BridgeState::Current {
-            "unchanged"
-        } else if !state.writable() {
-            "refused"
+        let skipped = !host_present && !all && hosts.is_none();
+        let allowed = state.writable()
+            && references
+                .iter()
+                .all(|reference| reference.state.writable())
+            && (create || state != BridgeState::Missing);
+        let (action, reference_assets) = if skipped {
+            (
+                "skipped_host_absent",
+                references
+                    .iter()
+                    .map(|item| reference_record(item, Some("skipped")))
+                    .collect::<Result<Vec<_>, _>>()?,
+            )
+        } else if !allowed {
+            (
+                "refused",
+                references
+                    .iter()
+                    .map(|item| reference_record(item, Some("refused")))
+                    .collect::<Result<Vec<_>, _>>()?,
+            )
         } else {
-            let previous = if state == BridgeState::Missing {
-                None
-            } else {
-                Some(fs::read_to_string(&path).map_err(|error| error.to_string())?)
-            };
-            write_managed(&home, &path, &expected, previous.as_deref())?;
-            if state == BridgeState::Missing {
-                "installed"
-            } else {
-                "refreshed"
+            let mut reference_assets = Vec::new();
+            for reference in &references {
+                let action = sync_file(
+                    &home,
+                    &reference.path,
+                    reference.content,
+                    reference.state,
+                    create,
+                    reference.executable,
+                )?;
+                reference_assets.push(reference_record(reference, Some(action))?);
             }
+            let action = sync_file(&home, &path, &expected, state, create, false)?;
+            (action, reference_assets)
         };
         let hook = if action == "skipped_host_absent" {
             json!({"state": "skipped"})
@@ -259,10 +343,54 @@ pub(crate) fn install(hosts: Option<&str>, all: bool) -> Result<Vec<Value>, Stri
             "action": action,
             "previousState": state.as_str(),
             "path": path_text,
+            "competenceReferenceAction": reference_assets[0]["action"],
+            "competenceReferencePreviousState": references[0].state.as_str(),
+            "competenceReferencePath": utf8(&references[0].path)?,
+            "referenceAssets": reference_assets,
             "activationHook": hook,
         }));
     }
     Ok(results)
+}
+
+fn sync_file(
+    home: &Path,
+    path: &Path,
+    expected: &str,
+    state: BridgeState,
+    create: bool,
+    executable: bool,
+) -> Result<&'static str, String> {
+    if state == BridgeState::Current {
+        return Ok("unchanged");
+    }
+    if state == BridgeState::Missing && !create {
+        return Ok("missing");
+    }
+    let previous = if state == BridgeState::Missing {
+        None
+    } else {
+        Some(fs::read_to_string(path).map_err(|error| error.to_string())?)
+    };
+    if let Some(previous) = &previous {
+        let owned = if executable {
+            crate::project::skill_assets::publication_marker(previous.as_bytes())
+        } else {
+            managed(previous.as_bytes())
+        };
+        if !owned {
+            return Err(format!(
+                "host bridge ownership changed during refresh: {}",
+                path.display()
+            ));
+        }
+    }
+    write_managed(home, path, expected, previous.as_deref(), executable)?;
+    Ok(if state == BridgeState::Missing {
+        "installed"
+    } else {
+        "refreshed"
+    })
 }
 
 /// Write through the hardened managed-settings writer: it validates every
@@ -274,10 +402,14 @@ fn write_managed(
     path: &Path,
     bytes: &str,
     previous: Option<&str>,
+    executable: bool,
 ) -> Result<(), String> {
-    let mode = fs::symlink_metadata(path)
+    let mut mode = fs::symlink_metadata(path)
         .ok()
         .map(|info| std::os::unix::fs::PermissionsExt::mode(&info.permissions()) & 0o777);
+    if executable {
+        mode = Some(mode.map_or(0o700, |current| current | 0o100));
+    }
     let root = fs::canonicalize(home).map_err(|error| error.to_string())?;
     crate::host::settings::atomic_write(path, bytes, mode, previous, &root)
         .map_err(|error| format!("cannot install host bridge: {error}"))

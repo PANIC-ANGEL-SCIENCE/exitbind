@@ -3,6 +3,8 @@ mod support;
 
 #[path = "native_continuity/goal_owner_hooks.rs"]
 mod goal_owner_hooks;
+#[path = "native_continuity/goal_stop.rs"]
+mod goal_stop;
 #[path = "native_continuity/same_host_lens.rs"]
 mod same_host_lens;
 

@@ -362,7 +362,9 @@ fn receiver_gets_a_current_named_prepare_route_without_changing_legacy_capture()
     );
 }
 
-fn prepare_codex_direct(label: &str) -> (support::TempRoot, String, String, String, String) {
+fn codex_direct_prepare_route(
+    label: &str,
+) -> (support::TempRoot, String, String, String, Vec<String>) {
     let (root, work) = project(
         label,
         json!([{"id":"docs","text":"Document the flag."}]),
@@ -397,11 +399,46 @@ fn prepare_codex_direct(label: &str) -> (support::TempRoot, String, String, Stri
     let named = &view["receive"]["currentAssignmentPrepare"];
     let assignment = named["assignment"].as_str().unwrap().to_owned();
     let native = named["nativeTaskName"].as_str().unwrap().to_owned();
-    let prepared = run(&root, &fill(&named["command"], &[]), b"");
+    let route = fill(&named["command"], &[]);
+    (root, work, assignment, native, route)
+}
+
+fn prepare_codex_direct(label: &str) -> (support::TempRoot, String, String, String, String) {
+    let (root, work, assignment, native, route) = codex_direct_prepare_route(label);
+    let prepared = run(&root, &route, b"");
     assert!(prepared.status.success(), "{prepared:?}");
     let prepared: Value = serde_json::from_slice(&prepared.stdout).unwrap();
+    assert_eq!(prepared["transportPreflight"]["state"], "unknown");
     let intent = prepared["intent"].as_str().unwrap().to_owned();
     (root, work, assignment, native, intent)
+}
+
+#[test]
+fn unverified_codex_capacity_does_not_accept_a_missing_required_original() {
+    let (root, work, _, _, route) = codex_direct_prepare_route("codex-missing-original");
+    let ledger = root.join(format!(
+        ".exitbind/runs/work-{}.jsonl",
+        work.strip_prefix("smw_").unwrap()
+    ));
+    let before = std::fs::read(&ledger).unwrap();
+    let scoped = std::str::from_utf8(&before)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .find(|event| event["action"] == "submit" && event["role"] == "lead")
+        .unwrap();
+    assert_eq!(scoped["artifact"]["root"], "state");
+    std::fs::remove_file(root.join(scoped["artifact"]["path"].as_str().unwrap())).unwrap();
+    let output = run(&root, &route, b"");
+    assert!(!output.status.success(), "{output:?}");
+    let error = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(error.contains("no child was prepared"), "{error}");
+    assert!(!root.join(".exitbind/child-intents.json").exists());
+    assert_eq!(std::fs::read(&ledger).unwrap(), before);
 }
 
 fn codex_direct_hook(root: &Path, native: &str, event: &str, message: Option<&str>) -> Output {

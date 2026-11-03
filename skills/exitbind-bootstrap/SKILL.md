@@ -13,6 +13,8 @@ Exitbind is installed. It supplies local exact-result checks, review and Lead ac
 
 Classify actual effects and existing project policy before setup. For read-only questions, disposable prototypes and tiny obvious reversible edits, do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions. Material or promotion consequences select governance before mutation. The Lead recommends review and the owner chooses required/omitted; reuse existing scoped decisions. Failed required activation stays an explicit blocker.
 
+For selected material whole-session work, record the accepted goal with `goal incorporate --goal-id ID --goal TEXT` before dependent actions. Retain every approved outcome and refinement, including selected publication and installation. Answer a side request in commentary and continue the active goal. A real owner-only question can use an open Goal decision recorded with `--decision QUESTION`; ask that exact recorded question. Stop hooks allow that declared wait and bounded host re-entry; a question mark alone is no exemption. Close through the current Goal route only after every obligation and required check is satisfied. The final whole-Goal answer is only its emitted room card, with no `EXIT READY` suffix. Small direct tasks stay direct.
+
 Keep confirmed constraints, exploratory ideas, consequential unknowns, decision reasons and when to reconsider, and accepted changes distinct. Discuss options before a goal without starting Work; proceed on clear tasks. Ask one focused question or suggest a small permitted test only when an essential unknown affects a costly or hard-to-reverse choice. Accepted changes use the existing authorized route and retain the earlier reason and affected main and side commitments. Use current applicable lessons; dialogue and inferred preferences grant no policy or permission, and raw dialogue or tool output is not added as permanent policy.
 
 For a known Work or explicit `smw_…` locator, use the selected executable's `work detail WORK --json` directly: current profile/rules, assignment, evidence, tasks and exact action forms. Unknown project work uses `work resume --json`, then its emitted current detail route. Stale/incomplete detail needs its supported refresh/expansion before dependent action. Focus is navigation, never authority. Keep exact executable/config arguments on routes marked `sameExecutableRequired`/`sameConfigRequired`; do not guess ledger paths, flags or placeholders.
@@ -57,6 +59,13 @@ Run `exitbind host status` when asked whether setup is installed/current. An ins
 Use Exitbind for your own project work. Exitbind source-contributor instructions
 belong in its optional CONTRIBUTING.md; do not import them into a consumer's
 project rules or require a source checkout to use an installed binary.
+
+When available, the optional [competence reference](references/competence.md)
+offers task-relevant framing, architecture, evidence, recovery and external-use
+questions. It does not change the current role, identity or authority.
+The same installation can supply neutral [Lead](references/roles/lead.md),
+[Worker](references/roles/worker.md) and [Reviewer](references/roles/reviewer.md)
+starter responsibilities without replacing a configured personal profile.
 
 After acquiring the complete current assignment and required instructions, use
 `work detail WORK --view action --json` for routine state and action inspection.

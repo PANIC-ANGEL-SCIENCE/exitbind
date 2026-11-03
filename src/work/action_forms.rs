@@ -679,7 +679,7 @@ fn forms(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
             Some("replan_required") if informed => None,
             Some("replan_required") => Some(json!({
                 "requiredAction": "work replan",
-                "meaning": "complete a material re-plan before another mutation request"
+                "meaning": "before another mutation request, complete a material re-plan or record meaningful new exact evidence; inspect current detail for available forms"
             })),
             Some("evidence_required") => Some(json!({
                 "requiredAction": "work evidence",

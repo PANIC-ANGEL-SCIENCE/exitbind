@@ -21,6 +21,13 @@ Use Exitbind for your own project work. Exitbind source-contributor instructions
 belong in its optional CONTRIBUTING.md; do not import them into a consumer's
 project rules or require a source checkout to use an installed binary.
 
+For task-relevant framing, architecture, evidence, recovery or external-use
+judgment, the optional [competence reference](references/competence.md) offers
+questions for the current role. It does not change identity or authority.
+Neutral starter responsibilities are available for [Lead](references/roles/lead.md),
+[Worker](references/roles/worker.md) and [Reviewer](references/roles/reviewer.md).
+Configured profiles retain their ownership and authority.
+
 After acquiring the complete current assignment and required instructions, use
 `work detail WORK --view action --json` for routine state and action inspection.
 It also carries the guidance bodies and lessons delivered to the current
@@ -115,7 +122,11 @@ A review finding is evidence, not a requirement. Consume the Lead's current disp
 
 ## Completion
 
-For an explicitly selected whole-session Goal, keep every actual approved outcome in its existing Goal path. Follow its current closure route with `--view event --json` when all obligations and checks are satisfied. Print non-null `presentation.terminal` once per `completionEvent.id` from that normal response, without status polling. The response supplies one read-only route for a lost reply; a Work acceptance alone cannot close the session Goal.
+For material work with a selected whole-session outcome, incorporate the accepted goal through `goal incorporate --goal-id ID --goal TEXT` before dependent work. Keep every approved outcome and later refinement in that native conversation Goal, including selected publication and installation. Answer a side request in commentary and continue; an intermediate answer or one accepted Work does not close the Goal. Small direct tasks stay direct.
+
+An owner-only decision may need a real question. Record its exact text as an open Goal decision with `goal incorporate --goal-id ID --goal TEXT --decision QUESTION`, then ask that exact question. Do this only for a decision the owner must make, never to evade continuation. Native Stop hooks allow that declared wait and a host-bounded re-entry; they do not prove the question's meaning or guarantee unlimited execution.
+
+When every obligation and required check is satisfied, execute the Goal's current closure route with `--view event --json`. Print only its non-null `presentation.terminal`, once per `completionEvent.id`: the existing room card has no `EXIT READY` suffix. Use the normal response without status polling; recover a lost reply only through its emitted read-only route. Never manufacture the card or use a Work acceptance as whole-Goal closure.
 
 For named coverage, inspect `goal status` before Work begins and use `goal prepare` with the Lead-selected requirement IDs, checker and scope. It returns the exact separate begin route without freezing a Work or remapping accepted coverage. Goal-optional tasks remain valid without this preparation.
 

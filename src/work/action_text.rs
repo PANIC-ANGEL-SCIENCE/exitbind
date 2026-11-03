@@ -85,6 +85,12 @@ fn render_with(view: &Value, context: &Context) -> String {
             lines.push(format!("Current edit grant: {operation}"));
         }
     }
+    if let Some(diagnosis) = action["recovery"]["diagnosis"].as_str() {
+        lines.push(format!("Diagnosis: {diagnosis}"));
+    }
+    if let Some(meaning) = action["recovery"]["meaning"].as_str() {
+        lines.push(format!("Recovery: {meaning}"));
+    }
     let fill = &action["fillRoute"];
     push_form(
         &mut lines,
