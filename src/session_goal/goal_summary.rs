@@ -260,17 +260,49 @@ pub(crate) fn hook_line(
             return candidate;
         }
     }
-    let notice = if unmapped.is_some() {
-        "Requirements without a Work omitted; read Goal status."
+    hook_omission(
+        &head,
+        unmapped.is_some(),
+        owner.map(|loaded| loaded.path.as_path()),
+        max_bytes,
+    )
+}
+
+fn hook_omission(
+    head: &str,
+    unmapped: bool,
+    config: Option<&std::path::Path>,
+    max_bytes: usize,
+) -> Option<String> {
+    let subject = if unmapped {
+        "Requirements without a Work omitted"
     } else {
-        "Goal facts omitted; read Goal status."
+        "Goal facts omitted"
     };
-    let headed = format!("{head}{notice}");
-    if headed.len() <= max_bytes {
-        Some(headed)
-    } else {
-        (notice.len() <= max_bytes).then(|| notice.to_owned())
+    if let Some(config) = config {
+        let route = crate::emitted::Route::new(["goal", "status", "--json"]).config(config);
+        let bounded = route.within(max_bytes);
+        if !bounded.needs_config() && !bounded.needs_executable() {
+            for prefix in [head, ""] {
+                let line = format!("{prefix}{subject}; read `{}`.", route.shell_text());
+                if line.len() <= max_bytes {
+                    return Some(line);
+                }
+            }
+        }
     }
+    let reason = if config.is_some() {
+        "exact retrieval route omitted; retain the current executable and owner configuration"
+    } else {
+        "exact retrieval route unavailable without the owner configuration"
+    };
+    for prefix in [head, ""] {
+        let line = format!("{prefix}{subject}; {reason}.");
+        if line.len() <= max_bytes {
+            return Some(line);
+        }
+    }
+    None
 }
 
 /// `Requirements without a Work: R2 (source S), R3 (source S)`, or nothing.
@@ -347,6 +379,33 @@ mod tests {
     #[test]
     fn a_goal_without_journey_membership_states_no_journey() {
         assert!(journey(&json!({"goal":"g"}), None, false, None).is_none());
+    }
+
+    #[test]
+    fn hook_omission_names_exact_owner_route_or_truthfully_reports_it_unavailable() {
+        let config = std::path::Path::new("/tmp/project/exitbind.json");
+        let route = crate::emitted::command_line(&["goal", "status", "--json"], Some(config));
+        let full = hook_omission("Goal goal: ", true, Some(config), 384).unwrap();
+        assert!(full.contains(&route), "bytes={}: {full}", full.len());
+        assert!(full.contains("Requirements without a Work omitted"));
+        let long = format!("/tmp/{}/exitbind.json", "a".repeat(500));
+        let omitted =
+            hook_omission("Goal goal: ", true, Some(std::path::Path::new(&long)), 384).unwrap();
+        assert!(
+            omitted.contains("exact retrieval route omitted"),
+            "{omitted}"
+        );
+        assert!(
+            omitted.contains("current executable and owner configuration"),
+            "{omitted}"
+        );
+        assert!(!omitted.contains(&long), "{omitted}");
+        let unavailable = hook_omission("Goal goal: ", false, None, 384).unwrap();
+        assert!(
+            unavailable
+                .contains("exact retrieval route unavailable without the owner configuration"),
+            "{unavailable}"
+        );
     }
 
     #[test]

@@ -211,6 +211,13 @@ pub fn run() -> Result<(), String> {
                     if minimal.len() + fixed(&receive, direct) + update_bytes <= 3072 {
                         text = minimal;
                         update_reserve = update_bytes;
+                    } else {
+                        let compact = super::receive_text::receive_work_compact(Some(&loaded.path));
+                        if minimal.len() + fixed(&compact, direct) + update_bytes <= 3072 {
+                            text = minimal;
+                            receive = compact;
+                            update_reserve = update_bytes;
+                        }
                     }
                 }
             }

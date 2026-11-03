@@ -102,7 +102,7 @@ impl Fixture {
             .env("HOME", &self.base)
             .env("XDG_CACHE_HOME", self.base.join("cache"))
             .env_remove("EXITBIND_NO_UPDATE_CHECK")
-            .env_remove("EXITBIND_NO_UPDATE_CHECK")
+            .env_remove("SOULMATE_NO_UPDATE_CHECK")
             .env("EXITBIND_TEST_LAUNCH_SENTINEL", self.host.join("launched"));
         if !update {
             command.env("EXITBIND_NO_UPDATE_CHECK", "1");
@@ -148,26 +148,75 @@ fn snapshot(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
     files
 }
 
-fn stable_hook_with_resource_observation(output: &[u8]) -> Value {
+fn stable_hook_with_resource_observation(output: &[u8], facts_route: &str) -> Value {
     let mut parsed: Value = serde_json::from_slice(output).unwrap();
     let context = parsed["hookSpecificOutput"]["additionalContext"]
         .as_str()
         .unwrap()
         .to_owned();
-    let marker = "project available bytes ";
-    let start = context.find(marker).expect("current resource observation");
-    let number_start = start + marker.len();
-    let number_end = context[number_start..]
-        .find('.')
-        .map(|offset| number_start + offset)
-        .expect("resource observation terminator");
-    let _observed_bytes = context[number_start..number_end]
-        .parse::<u64>()
-        .expect("filesystem availability is a reported integer");
     let mut normalized = context;
-    normalized.replace_range(number_start..number_end, "<observed>");
+    assert!(
+        normalized.contains(facts_route),
+        "missing exact facts route: {normalized}"
+    );
+    let marker = "project available bytes ";
+    if let Some(start) = normalized.find(marker) {
+        let number_start = start + marker.len();
+        let number_end = normalized[number_start..]
+            .find('.')
+            .map(|offset| number_start + offset)
+            .expect("resource observation terminator");
+        let _observed_bytes = normalized[number_start..number_end]
+            .parse::<u64>()
+            .expect("filesystem availability is a reported integer");
+        normalized.replace_range(number_start..number_end, "<observed>");
+    } else {
+        assert!(
+            !normalized.contains("Host resources:"),
+            "partial resource line: {normalized}"
+        );
+    }
     parsed["hookSpecificOutput"]["additionalContext"] = json!(normalized);
     parsed
+}
+
+#[test]
+fn stable_hook_requires_exact_facts_route_and_a_complete_resource_line_if_present() {
+    let route = "/tmp/exitbind project context --json --config /tmp/exitbind.json";
+    let output = |text: &str| {
+        serde_json::to_vec(&json!({"hookSpecificOutput":{"additionalContext":text}})).unwrap()
+    };
+    let present =
+        format!("Current project facts: `{route}`.\nHost resources: project available bytes 42.");
+    let normalized = stable_hook_with_resource_observation(&output(&present), route);
+    assert!(normalized["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap()
+        .contains("project available bytes <observed>."));
+    let omitted = format!("Current project facts: `{route}`.");
+    assert_eq!(
+        stable_hook_with_resource_observation(&output(&omitted), route)["hookSpecificOutput"]
+            ["additionalContext"]
+            .as_str(),
+        Some(omitted.as_str())
+    );
+    let malformed = format!(
+        "Current project facts: `{route}`.\nHost resources: project available bytes invalid."
+    );
+    assert!(
+        std::panic::catch_unwind(|| stable_hook_with_resource_observation(
+            &output(&malformed),
+            route
+        ))
+        .is_err()
+    );
+    assert!(
+        std::panic::catch_unwind(|| stable_hook_with_resource_observation(
+            &output("missing project facts"),
+            route
+        ))
+        .is_err()
+    );
 }
 
 fn hook_context(output: &[u8]) -> String {
@@ -188,6 +237,11 @@ fn session_lifecycle_hooks_only_add_bounded_context_and_preserve_host_files() {
     for mode in ["portable", "local"] {
         let fixture = Fixture::new(mode);
         let before = snapshot(&fixture.base);
+        let facts_route = format!(
+            "{} project context --json --config {}",
+            env!("CARGO_BIN_EXE_exitbind"),
+            fixture.control.join("exitbind.json").display()
+        );
         let mut previous = None;
         for source in ["startup", "resume", "compact", "clear"] {
             let payload = fixture.payload("SessionStart", source);
@@ -206,7 +260,7 @@ fn session_lifecycle_hooks_only_add_bounded_context_and_preserve_host_files() {
             assert!(context.contains("Preserve the existing root host conversation"));
             assert!(!context.contains("native session sentinel"));
             assert!(!context.contains("existing-root-sentinel"));
-            let stable = stable_hook_with_resource_observation(&output.stdout);
+            let stable = stable_hook_with_resource_observation(&output.stdout, &facts_route);
             if let Some(previous) = &previous {
                 assert_eq!(&stable, previous);
             }
@@ -302,26 +356,56 @@ fn session_update_context_is_fresh_cache_bound_and_subagent_silent() {
         &serde_json::to_vec(&fixture.payload("SessionStart", "startup")).unwrap(),
         true,
     );
-    let configured_text: Value = serde_json::from_slice(&configured.stdout).unwrap();
-    assert!(configured_text["hookSpecificOutput"]["additionalContext"]
-        .as_str()
-        .unwrap()
-        .contains("Run `exitbind` update"));
-    let configured_context = configured_text["hookSpecificOutput"]["additionalContext"]
-        .as_str()
-        .unwrap();
+    assert!(configured.status.success(), "{configured:?}");
+    let configured_context = hook_context(&configured.stdout);
+    assert!(
+        configured_context.contains("Update available:"),
+        "{configured_context}"
+    );
+    assert!(
+        configured_context.contains("Run `exitbind` update to install."),
+        "{configured_context}"
+    );
+    assert!(
+        configured_context.contains("Preserve the existing root host conversation"),
+        "{configured_context}"
+    );
+    assert!(
+        configured_context.contains(env!("CARGO_BIN_EXE_exitbind")),
+        "{configured_context}"
+    );
+    assert!(
+        configured_context.contains(fixture.control.join("exitbind.json").to_str().unwrap()),
+        "{configured_context}"
+    );
+    let resume_route = format!(
+        "{} work resume --json --config {}",
+        env!("CARGO_BIN_EXE_exitbind"),
+        fixture.control.join("exitbind.json").display()
+    );
+    assert!(
+        configured_context.contains(&resume_route),
+        "{configured_context}"
+    );
+    assert!(configured_context.len() <= 3072, "{configured_context}");
     assert!(configured_context.contains("once"));
     assert!(configured_context.contains("explicit authorization"));
 
     let mut unconfigured = fixture.payload("SessionStart", "startup");
     unconfigured["cwd"] = json!(fixture.host.clone());
     let unconfigured = fixture.hook_with_update(&serde_json::to_vec(&unconfigured).unwrap(), true);
-    assert!(String::from_utf8_lossy(&unconfigured.stdout).contains("Run `exitbind` update"));
+    assert!(unconfigured.status.success(), "{unconfigured:?}");
+    let unconfigured = hook_context(&unconfigured.stdout);
+    assert!(
+        unconfigured.contains("Update available:")
+            && unconfigured.contains("Run `exitbind` update to install."),
+        "{unconfigured}"
+    );
 
     let mut subagent = fixture.payload("SubagentStart", "startup");
     subagent["agent_name"] = json!("worker");
     let subagent = fixture.hook_with_update(&serde_json::to_vec(&subagent).unwrap(), true);
-    assert!(!String::from_utf8_lossy(&subagent.stdout).contains("Run `exitbind` update"));
+    assert!(!String::from_utf8_lossy(&subagent.stdout).contains("Update available:"));
 }
 
 #[test]
@@ -354,7 +438,7 @@ fn fresh_no_update_cache_stays_silent_without_curl() {
     assert!(output.status.success());
     let context = hook_context(&output.stdout);
     assert!(context.contains("Exitbind is available but not active for this task"));
-    assert!(!context.contains("Run `exitbind` update"));
+    assert!(!context.contains("Update available:"));
     assert!(context.len() <= 3072, "{} bytes", context.len());
     assert!(!calls.exists());
     assert!(!fixture.host.join("launched").exists());
@@ -381,15 +465,15 @@ fn failed_session_lookup_backs_off_and_opt_out_stays_silent() {
     let payload = fixture.payload("SessionStart", "startup");
     let failed = fixture.hook_with_update(&serde_json::to_vec(&payload).unwrap(), true);
     assert!(failed.status.success());
-    assert!(!String::from_utf8_lossy(&failed.stdout).contains("Run `exitbind` update"));
+    assert!(!String::from_utf8_lossy(&failed.stdout).contains("Update available:"));
     let cache_text = fs::read_to_string(cache.join("update.json")).unwrap();
     assert!(cache_text.contains("backoff_until"));
     let calls_before = fs::read_to_string(&calls).unwrap();
     let backed_off = fixture.hook_with_update(&serde_json::to_vec(&payload).unwrap(), true);
-    assert!(!String::from_utf8_lossy(&backed_off.stdout).contains("Run `exitbind` update"));
+    assert!(!String::from_utf8_lossy(&backed_off.stdout).contains("Update available:"));
     assert_eq!(fs::read_to_string(&calls).unwrap(), calls_before);
     let opted_out = fixture.hook(&serde_json::to_vec(&payload).unwrap());
-    assert!(!String::from_utf8_lossy(&opted_out.stdout).contains("Run `exitbind` update"));
+    assert!(!String::from_utf8_lossy(&opted_out.stdout).contains("Update available:"));
 }
 
 #[test]
@@ -421,7 +505,16 @@ fn stale_session_cache_refreshes_with_local_fake_curl() {
     );
     assert!(output.status.success());
     assert!(calls.is_file());
-    assert!(String::from_utf8_lossy(&output.stdout).contains("Run `exitbind` update"));
+    let context = hook_context(&output.stdout);
+    assert!(
+        context.contains("Update available:")
+            && context.contains("Run `exitbind` update to install."),
+        "{context}"
+    );
+    assert!(
+        context.contains("Preserve the existing root host conversation"),
+        "{context}"
+    );
 }
 
 /// A session that never opens the skill file still learns the one rule that
