@@ -29,8 +29,8 @@ const NOT_ROUTES: &NotRoutes = &[
         &[
             "HOOK_COMMAND",
             "HOOK_COMMAND",
-            "hook_command()",
-            "hook_command()",
+            "hook_command(host, event)",
+            "hook_command(host, event)",
         ],
         "installed host hook command",
     ),

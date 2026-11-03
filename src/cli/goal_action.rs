@@ -24,6 +24,7 @@ macro_rules! goal_actions {
 goal_actions! {
     Quarantine => "quarantine",
     Recover => "recover",
+    CorrectOwner => "correct-owner",
     Prepare => "prepare",
     Require => "require",
     Cover => "cover",
@@ -41,6 +42,8 @@ pub(super) enum Admission {
     Owner,
     /// Adoption authorizes the target journal and an unowned current session.
     Adoption,
+    /// Exact replay after a correction may be requested from the old config.
+    OwnerCorrection,
     ReadOnly,
 }
 
@@ -56,6 +59,7 @@ impl GoalAction {
             | Self::Usage => Admission::ProjectOrOwner,
             Self::Quarantine | Self::Recover => Admission::Owner,
             Self::Adopt => Admission::Adoption,
+            Self::CorrectOwner => Admission::OwnerCorrection,
             Self::Status => Admission::ReadOnly,
         }
     }

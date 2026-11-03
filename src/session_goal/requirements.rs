@@ -33,6 +33,30 @@ pub(crate) fn named(record: &Value) -> bool {
     record["continuation"]["kind"] == "goal_requirements"
 }
 
+/// The current recorded source snapshots, including the Goal's own source.
+/// Historical requirement references remain in the journal, not this list.
+pub(super) fn recorded_sources(record: &Value) -> Result<Vec<(String, String, String)>, String> {
+    let goal = Goal::read(record)?;
+    let mut sources = Vec::new();
+    for item in
+        std::iter::once(&goal.source).chain(goal.requirements.iter().map(|item| &item.source))
+    {
+        let source = (
+            item.reference.clone(),
+            item.sha256.clone(),
+            item.text.clone(),
+        );
+        if !sources.contains(&source) {
+            sources.push(source);
+        }
+    }
+    Ok(sources)
+}
+
+fn effective_identity(loaded: &Loaded, record: &Value, goal: &Goal) -> Result<String, String> {
+    super::owner_correction::effective_identity(loaded, record, &goal.project_identity)
+}
+
 pub(crate) fn bound(record: &Value, work: &str) -> bool {
     named(record)
         && record["continuation"]["mappings"]
@@ -158,7 +182,7 @@ pub(crate) fn close(
     goal_id: &str,
     result_ref: &str,
 ) -> Result<Value, String> {
-    super::mutate(root, |previous| {
+    super::mutate(root, loaded, |previous| {
         let previous = previous.ok_or("no canonical goal is open")?;
         validate_close_candidate(
             loaded,

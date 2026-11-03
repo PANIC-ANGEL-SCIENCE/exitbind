@@ -100,7 +100,8 @@ fn prepare_inner(request: PrepareRequest<'_>, allow_closed: bool) -> Result<Prep
         );
     }
     let goal = Goal::read(&record)?;
-    if goal.project_identity != identity(loaded)? {
+    let project_identity = effective_identity(loaded, &record, &goal)?;
+    if project_identity != identity(loaded)? {
         return Err("named goal belongs to another project".into());
     }
     if !goal.source.coverage_confirmed {
@@ -112,7 +113,7 @@ fn prepare_inner(request: PrepareRequest<'_>, allow_closed: bool) -> Result<Prep
     let references = selected(&goal, ids)?;
     let contract = Contract {
         goal_id: goal_id.into(),
-        project_identity: goal.project_identity.clone(),
+        project_identity,
         integration,
         requirements: vec![],
         checker_input,
@@ -416,7 +417,7 @@ pub(crate) fn project_progress_for_work(
         ));
     }
     let goal = Goal::read(&record)?;
-    if goal.project_identity != contract.project_identity {
+    if effective_identity(loaded, &record, &goal)? != contract.project_identity {
         return Ok(Some(
             json!({"kind":"project_named_contract","scope":"project",
             "goalId":contract.goal_id,"state":"stale","reason":"project_goal_owner_changed",

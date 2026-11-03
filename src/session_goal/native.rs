@@ -14,8 +14,8 @@ use std::{
     rc::Rc,
 };
 
-const OWNER_FILE: &str = "owner.json";
-const OWNER_MAX_BYTES: u64 = 4096;
+pub(super) const OWNER_FILE: &str = "owner.json";
+pub(super) const OWNER_MAX_BYTES: u64 = 512 * 1024;
 /// The owner-record field of a session that adopted another session's
 /// journal: that journal's session key.
 const ADOPTED_FIELD: &str = "journalSessionKey";
@@ -270,7 +270,7 @@ impl Session {
         self.key != self.selector_key
     }
 
-    fn owner_value(&self, access: Access) -> Result<Option<Value>, String> {
+    pub(super) fn owner_value(&self, access: Access) -> Result<Option<Value>, String> {
         if !self.ensure_root_with_access(false, access)? {
             return Ok(None);
         }
@@ -293,7 +293,11 @@ impl Session {
         let Some(value) = self.owner_value(access)? else {
             return Ok(None);
         };
-        validate_owner(&value, &self.key, self.host)?;
+        if value["protocol"] == 2 {
+            super::owner_correction::resolve_owner(self, &value, access)?;
+            return Ok(None);
+        }
+        validate_owner_v1(&value, &self.key, self.host)?;
         Ok(value[ADOPTED_FIELD].as_str().map(str::to_owned))
     }
 
@@ -363,12 +367,17 @@ impl Session {
         let Some(value) = self.owner_value(access)? else {
             return Ok(None);
         };
-        validate_owner(&value, &self.key, self.host)?;
+        if value["protocol"] == 2 {
+            return super::owner_correction::resolve_owner(self, &value, access)
+                .map(|resolved| Some(resolved.owner));
+        }
+        validate_owner_v1(&value, &self.key, self.host)?;
         // The journal an adoption names is never itself an adoption, and an
         // adoption record that did not resolve names no journal to read.
         if value.get(ADOPTED_FIELD).is_some() {
             return Err("native session Goal owner record names another session's journal that cannot be read".into());
         }
+        super::owner_correction::validate_legacy_history(self, &value, access)?;
         Ok(Some(Owner {
             project_id: value["ownerProjectId"].as_str().map(str::to_owned),
             identity_sha256: value["ownerIdentitySha256"]
@@ -573,7 +582,7 @@ fn read_private(
     }
 }
 
-fn validate_owner(value: &Value, key: &str, host: &str) -> Result<(), String> {
+pub(super) fn validate_owner_v1(value: &Value, key: &str, host: &str) -> Result<(), String> {
     let object = value
         .as_object()
         .ok_or("native session Goal owner record is malformed")?;
@@ -608,6 +617,69 @@ fn validate_owner(value: &Value, key: &str, host: &str) -> Result<(), String> {
         .remove("sha256");
     if hash::value(&without_digest) != digest {
         return Err("native session Goal owner digest mismatch".into());
+    }
+    Ok(())
+}
+
+/// Recheck native Goal authority under the Goal journal lock, including for
+/// writers that selected their owner before the lock was acquired.
+pub(super) fn require_mutation_owner(root: &Path, loaded: &Loaded) -> Result<(), String> {
+    if root == loaded.state_root {
+        let native_root = base_directory().ok().is_some_and(|base| {
+            root.parent() == Some(base.as_path())
+                && root
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .and_then(|name| name.strip_prefix("session-"))
+                    .is_some_and(valid_hash)
+        });
+        if !native_root {
+            return Ok(());
+        }
+    }
+    require_recorded_owner(root, &owner_for(loaded)?)
+}
+
+pub(super) fn require_recorded_owner(root: &Path, expected: &Owner) -> Result<(), String> {
+    let key = root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.strip_prefix("session-"))
+        .filter(|key| valid_hash(key))
+        .ok_or("native Goal journal root is invalid")?;
+    if root.parent() != Some(base_directory()?.as_path()) {
+        return Err("native Goal journal root is outside the session store".into());
+    }
+    let probe = Session::for_key("codex", key)?;
+    let value = probe
+        .owner_value(Access::RequireWritable)?
+        .ok_or("native Goal owner is unavailable under the journal lock")?;
+    let host = match value["host"].as_str() {
+        Some("codex") => "codex",
+        Some("claude") => "claude",
+        _ => return Err("native Goal owner host is invalid".into()),
+    };
+    let session = Session::for_key(host, key)?;
+    let (owner, pending) = if value["protocol"] == 2 {
+        let resolved =
+            super::owner_correction::resolve_owner(&session, &value, Access::RequireWritable)?;
+        (resolved.owner, resolved.pending)
+    } else {
+        (
+            session.owner()?.ok_or("native Goal owner is unavailable")?,
+            false,
+        )
+    };
+    if pending {
+        return Err(
+            "native Goal owner correction is pending; retry or abort the exact correction".into(),
+        );
+    }
+    if owner.identity_sha256 != expected.identity_sha256 || owner.project_id != expected.project_id
+    {
+        return Err(
+            "native Goal owner no longer matches the selected owner under the journal lock".into(),
+        );
     }
     Ok(())
 }

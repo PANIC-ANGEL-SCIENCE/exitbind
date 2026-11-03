@@ -209,7 +209,7 @@ fn install_capacity_state(
     members: usize,
     admissions: usize,
 ) -> Value {
-    super::super::mutate(root, |previous| {
+    super::super::mutate(root, loaded, |previous| {
         let previous = previous.ok_or("canonical Goal is missing")?;
         let parent_goal_id = previous["goalId"].as_str().ok_or("Goal id is missing")?;
         let parent_event_sha256 = previous["eventSha256"]

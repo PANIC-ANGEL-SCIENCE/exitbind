@@ -12,8 +12,12 @@ mod continuity;
 pub(crate) mod display;
 pub(crate) mod goal_summary;
 mod journal_form;
+mod mutation;
+use mutation::mutate_associated;
+pub(crate) use mutation::{mutate, mutate_history, sealed, with_history};
 pub(crate) mod journey;
 pub(crate) mod native;
+pub(crate) mod owner_correction;
 pub(crate) mod quarantine;
 pub(crate) mod recovery;
 #[cfg(test)]
@@ -325,6 +329,7 @@ fn validate_record(value: &Value, previous: Option<&Value>, line: usize) -> Resu
     recovery::validate_record(value, line)?;
     quarantine::validate_record(value, line)?;
     adoption::validate_record(value, line)?;
+    owner_correction::validate_transition(value, previous, line)?;
     let expected_previous_hash = previous
         .map(|record| record["eventSha256"].clone())
         .unwrap_or(Value::Null);
@@ -392,81 +397,6 @@ fn validate_record(value: &Value, previous: Option<&Value>, line: usize) -> Resu
 
 fn history_ledger(root: &Path) -> Result<crate::run::ledger::LedgerPath, String> {
     crate::run::ledger::ledger_path(root, &relative(), true)
-}
-
-pub(crate) fn sealed(mut value: Value, previous: Option<&Value>) -> Value {
-    if let Some(previous) = previous {
-        association::preserve_same_goal(previous, &mut value);
-        journey::preserve_same_goal(previous, &mut value);
-        recovery::preserve_same_goal(previous, &mut value);
-        quarantine::preserve_same_goal(previous, &mut value);
-        adoption::preserve_same_goal(previous, &mut value);
-    }
-    value["previousEventSha256"] = previous
-        .and_then(|record| record["eventSha256"].as_str())
-        .map_or(Value::Null, |hash| json!(hash));
-    value["eventSha256"] = json!(crate::evidence::hash::value(&value));
-    value
-}
-
-/// Append a native Goal record while allowing a recovery request to locate an
-/// earlier exact replay under the same journal lock. The ordinary mutation
-/// path deliberately keeps its latest-record-only contract.
-pub(crate) fn mutate_history<F>(root: &Path, operation: F) -> Result<Value, String>
-where
-    F: FnOnce(&[Value]) -> Result<Value, String>,
-{
-    let ledger = history_ledger(root)?;
-    crate::run::ledger::with_lock(&ledger, || {
-        let raw = raw_history(root)?;
-        let history = records_from_raw(raw.as_deref())?;
-        let record = operation(&history)?;
-        if history.iter().any(|saved| saved == &record) {
-            return Ok(record);
-        }
-        crate::run::ledger::append(
-            &ledger,
-            &journal_form::stored(&record, history.last()),
-            raw.is_none(),
-            raw.as_deref().unwrap_or_default(),
-        )?;
-        Ok(record)
-    })
-}
-
-pub(crate) fn with_history<T, F>(root: &Path, operation: F) -> Result<T, String>
-where
-    F: FnOnce(&[Value]) -> Result<T, String>,
-{
-    let ledger = history_ledger(root)?;
-    crate::run::ledger::with_lock(&ledger, || {
-        let raw = raw_history(root)?;
-        let history = records_from_raw(raw.as_deref())?;
-        operation(&history)
-    })
-}
-
-pub(crate) fn mutate<F>(root: &Path, operation: F) -> Result<Value, String>
-where
-    F: FnOnce(Option<&Value>) -> Result<Value, String>,
-{
-    let ledger = history_ledger(root)?;
-    crate::run::ledger::with_lock(&ledger, || {
-        let raw = raw_history(root)?;
-        let history = records_from_raw(raw.as_deref())?;
-        let previous = history.last();
-        let record = operation(previous)?;
-        if previous == Some(&record) {
-            return Ok(record);
-        }
-        crate::run::ledger::append(
-            &ledger,
-            &journal_form::stored(&record, history.last()),
-            raw.is_none(),
-            raw.as_deref().unwrap_or_default(),
-        )?;
-        Ok(record)
-    })
 }
 
 fn text(value: Option<&str>, name: &str) -> Result<String, String> {
@@ -672,7 +602,7 @@ fn external_item(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn incorporate(
     root: &Path,
-    _loaded: &crate::config::Loaded,
+    loaded: &crate::config::Loaded,
     goal_id: &str,
     goal: &str,
     obligation: Option<&str>,
@@ -698,7 +628,7 @@ pub(crate) fn incorporate(
         return Err("a category cannot be both considered and none-applicable".into());
     }
     let refs = result_refs(result_ref)?;
-    mutate(root, |previous| {
+    mutate(root, loaded, |previous| {
         let revision = previous
             .and_then(|value| value["revision"].as_u64())
             .unwrap_or(0)

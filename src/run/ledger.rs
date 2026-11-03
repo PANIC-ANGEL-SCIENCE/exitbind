@@ -12,6 +12,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+mod atomic_record;
+pub(crate) use atomic_record::replace_exact;
 mod claim;
 mod memo;
 pub(crate) mod observation;

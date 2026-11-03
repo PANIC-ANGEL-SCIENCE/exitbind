@@ -257,35 +257,45 @@ pub(crate) fn record_goal_numeric_event(
     }
     let normalized = normalize_event("__goal__", event)?;
     validate_contract(&normalized)?;
-    let ledger = goal_usage_ledger(loaded)?;
-    crate::run::ledger::with_lock(&ledger, || {
-        let raw = super::read_goal_usage_raw(loaded)?;
-        let existing = parse_goal_records(raw.as_deref())?;
-        if let Some(previous) = existing.iter().find(|value| {
-            value["id"] == normalized["id"] && value["goalId"] == normalized["goalId"]
-        }) {
-            if previous == &normalized {
-                return Ok(json!({"status":"replayed", "id":normalized["id"], "goalId":goal_id}));
+    let goal_ledger = crate::session_goal::history_ledger(root)?;
+    crate::run::ledger::with_lock(&goal_ledger, || {
+        crate::session_goal::native::require_mutation_owner(root, loaded)?;
+        validate_goal(root, &goal_id)?;
+        let ledger = goal_usage_ledger(loaded)?;
+        crate::run::ledger::with_lock(&ledger, || {
+            let raw = super::read_goal_usage_raw(loaded)?;
+            let existing = parse_goal_records(raw.as_deref())?;
+            if let Some(previous) = existing.iter().find(|value| {
+                value["id"] == normalized["id"] && value["goalId"] == normalized["goalId"]
+            }) {
+                if previous == &normalized {
+                    return Ok(
+                        json!({"status":"replayed", "id":normalized["id"], "goalId":goal_id}),
+                    );
+                }
+                return Err(
+                    "goal usage observation identity conflicts with an existing record".into(),
+                );
             }
-            return Err("goal usage observation identity conflicts with an existing record".into());
-        }
-        if existing.len() >= MAX_USAGE_EVENTS {
-            return Err("goal usage observation limit reached; no observation recorded".into());
-        }
-        validate_monotonic(&existing, &normalized)?;
-        let bytes = serde_json::to_vec(&normalized).map_err(|error| error.to_string())?;
-        let current_bytes = raw.as_ref().map_or(0, String::len);
-        if current_bytes.saturating_add(bytes.len()).saturating_add(1) > MAX_JOURNAL_BYTES as usize
-        {
-            return Err("goal usage observation ledger exceeds its byte bound".into());
-        }
-        crate::run::ledger::append(
-            &ledger,
-            &normalized,
-            raw.is_none(),
-            raw.as_deref().unwrap_or_default(),
-        )?;
-        Ok(json!({"status":"recorded", "id":normalized["id"], "goalId":goal_id}))
+            if existing.len() >= MAX_USAGE_EVENTS {
+                return Err("goal usage observation limit reached; no observation recorded".into());
+            }
+            validate_monotonic(&existing, &normalized)?;
+            let bytes = serde_json::to_vec(&normalized).map_err(|error| error.to_string())?;
+            let current_bytes = raw.as_ref().map_or(0, String::len);
+            if current_bytes.saturating_add(bytes.len()).saturating_add(1)
+                > MAX_JOURNAL_BYTES as usize
+            {
+                return Err("goal usage observation ledger exceeds its byte bound".into());
+            }
+            crate::run::ledger::append(
+                &ledger,
+                &normalized,
+                raw.is_none(),
+                raw.as_deref().unwrap_or_default(),
+            )?;
+            Ok(json!({"status":"recorded", "id":normalized["id"], "goalId":goal_id}))
+        })
     })
 }
 

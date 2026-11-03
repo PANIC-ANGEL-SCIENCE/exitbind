@@ -15,7 +15,7 @@ pub(crate) fn cover_summary(
     project: bool,
 ) -> Result<Value, String> {
     let goal = Goal::read(record)?;
-    if goal.project_identity != identity(loaded)? {
+    if effective_identity(loaded, record, &goal)? != identity(loaded)? {
         return Err("named goal belongs to another project".into());
     }
     let event = record["eventSha256"]
@@ -130,9 +130,12 @@ pub(crate) fn projection_selected(
     record: &Value,
 ) -> Result<Value, String> {
     let goal = Goal::read(record)?;
-    if goal.project_identity != identity(loaded)? {
+    let project_identity =
+        super::super::owner_correction::recorded_identity(record, &goal.project_identity)?;
+    if project_identity != identity(loaded)? {
         return Err("named goal belongs to another project".into());
     }
+    let source_error = effective_identity(loaded, record, &goal).err();
     let mut rows = Vec::new();
     let mut evidence = std::collections::BTreeMap::<String, Value>::new();
     for requirement in &goal.requirements {
@@ -159,7 +162,7 @@ pub(crate) fn projection_selected(
                     }
                     let contract = work::contract(loaded, &mapping.work)?;
                     if contract.goal_id != record["goalId"]
-                        || contract.project_identity != goal.project_identity
+                        || contract.project_identity != project_identity
                         || !contract.covers(&wanted)
                     {
                         return Err("mapped Work does not cover the current requirement".to_owned());
@@ -178,7 +181,9 @@ pub(crate) fn projection_selected(
             }
             supports.push(item);
         }
-        let state = if mappings.is_empty() {
+        let state = if source_error.is_some() {
+            "unknown"
+        } else if mappings.is_empty() {
             "unmapped"
         } else if supports.iter().any(|item| item["state"] == "failed") {
             "failed"
@@ -191,7 +196,9 @@ pub(crate) fn projection_selected(
         } else {
             "current"
         };
-        let action = if state == "pending" {
+        let action = if source_error.is_some() {
+            Value::Null
+        } else if state == "pending" {
             mappings
                 .iter()
                 .find(|mapping| {
@@ -225,7 +232,9 @@ pub(crate) fn projection_selected(
     }
     let complete =
         goal.source.coverage_confirmed && rows.iter().all(|row| row["satisfied"] == true);
-    let next = if !goal.source.coverage_confirmed {
+    let next = if source_error.is_some() {
+        Value::Null
+    } else if !goal.source.coverage_confirmed {
         let mut args = Route::new([
             "goal",
             "cover",
@@ -344,7 +353,9 @@ pub(crate) fn projection_selected(
             .collect::<Vec<_>>()
             .join(",")
     };
-    let preparation = if goal.source.coverage_confirmed {
+    let preparation = if source_error.is_some() {
+        json!({"available":false,"reason":"recorded_source_unavailable"})
+    } else if goal.source.coverage_confirmed {
         let mut current = Route::new([
             "goal",
             "prepare",
@@ -378,8 +389,22 @@ pub(crate) fn projection_selected(
     } else {
         json!({"available":false,"reason":"lead_must_confirm_finite_coverage_first","selectedRequirementIds":preparation_ids.split(',').collect::<Vec<_>>()})
     };
+    let source_status = source_error.map_or_else(
+        || json!({"state":"current"}),
+        |error| {
+            let detail = match crate::drift::split(&error) {
+                Some((context, mut value)) => {
+                    value["context"] = json!(context);
+                    value
+                }
+                None => json!({"error":error}),
+            };
+            json!({"state":"unavailable","detail":detail})
+        },
+    );
     Ok(
         json!({"goalId":record["goalId"],"goalRevision":record["revision"],"source":{"ref":goal.source.reference,"sha256":goal.source.sha256},
+        "sourceStatus":source_status,
         "coverageConfirmed":goal.source.coverage_confirmed,"coverageOwner":"lead","coverageLimit":"Declared finite coverage is not proof of complete natural-language interpretation.",
         "requirements":rows,"coverageCurrent":complete,"preFreezePreparation":preparation,"historicalClosure":record["closure"],"nextAction":next,"readOnly":true}),
     )

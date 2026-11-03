@@ -41,3 +41,31 @@ include the specified duration, applicable combinations and measurable success
 condition. State the model and limits of the evidence; no finite local check
 establishes a universal security guarantee. Use PASS, FAIL or INCONCLUSIVE
 only for the named claim, and name the specific evidence or missing condition.
+
+## Preparing an independent review
+
+When preparing a packet for a selected review, identify the accepted contract
+and exact subject: its base and revision, plus a digest of included changes and
+any included or excluded untracked files. A commit alone does not describe a
+modified worktree. Check that each material requirement, implementation and
+falsifiable evidence, including relevant invalid and bypass cases, refers to that
+subject and applicable environment. Identify the independent reviewer and the
+scope of that review. Distinguish missing or stale evidence from an unavailable
+artifact, conflicting accepted decisions or unestablished independence; name
+the owner or observation needed to resolve each gap. Packet preparation is not a
+correctness verdict, review approval or acceptance, and does not add a new gate
+or require a second record when the existing route carries the facts.
+
+## Interface and verification changes
+
+When removing or changing an interface asset, trace relevant routes, templates,
+styles, translations and dynamically named resources as well as direct imports.
+Use the project's supported build or render path where available; a text search
+alone does not establish what a user sees. For check or CI changes, compare the
+actual local and selected CI toolchains, inputs, platform and temporary-file
+behavior, including checkout and comparison-base differences when relevant.
+Resolve the project's pinned formatter, linter and affected tests before using
+them; a different installed toolchain is not equivalent. Prefer an early
+decisive existing check, and reuse qualified evidence only for matching inputs.
+Preserve invalid-state and final checks; do not loosen a budget or test merely
+to obtain a pass.

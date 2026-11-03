@@ -552,7 +552,7 @@ pub(crate) fn record(owner: &Loaded, request: Request<'_>) -> Result<Value, Stri
         );
     }
     let mut replayed = false;
-    let saved = super::mutate_history(&root, |history| {
+    let saved = super::mutate_history(&root, owner, |history| {
         if let Some(saved) = history.iter().rev().find(|saved| {
             saved[FIELD]["residuals"].as_array().is_some_and(|items| {
                 items.iter().any(|item| {

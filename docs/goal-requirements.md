@@ -28,7 +28,8 @@ Code's own `CLAUDE_CODE_SESSION_ID` names the current session, so it is used
 when an exported `EXITBIND_NATIVE_SESSION_ID` still names an earlier one. These values identify a journal;
 they do not authenticate the caller or grant host authority. Session journals
 are private user-state data, separate from configured project Work/evidence
-state, and are fixed to the project that first incorporates the Goal.
+state, and are owned by the project that first incorporates the Goal unless
+the explicit empty-Goal correction below is applied.
 
 With no recognized native identity, Goal commands keep their existing
 configured-project behavior. Under a native identity, use `goal ... --project`
@@ -37,6 +38,27 @@ falls back to the project journal when the session Goal is absent, closed, or
 unavailable. A project other than the fixed owner may read a bounded
 context-only Goal preview, but cannot edit its requirements, map named
 coverage, evaluate owner evidence, or close it.
+
+An open named native Goal that has never had a Work association, mapping,
+journey member, integration, or admission can be corrected to another project
+with `goal correct-owner`. From the original session and current owner config,
+provide the canonical absolute `--target-config PATH`, `--request-id ID`, `--reason TEXT` and
+`--relocations JSON`. Each relocation is an object with `originalRef`,
+`recordedSha256`, and `targetPath`: select every current Goal and requirement
+source, including distinct recorded versions of one original path. Each target
+must be a regular, symlink-free file inside the target project with exactly the
+recorded bytes. The original source references and Goal history remain intact.
+
+Before using `--old-writers-quiesced`, the Lead must establish that old-version
+writers of this Goal have stopped. The marker cannot fence a writer that already
+ran old code. Preview with that attestation, then use its exact `applyArgv`.
+If the reader barrier is installed but the Goal event is not committed, retry
+that argv or use the exact `abortArgv`; after commit, another bound correction
+is the supported reversal while the Goal still meets the empty-Work conditions.
+The new owner record is intentionally unreadable to older versions: use a
+version supporting this correction to read the Goal. Existing version-1 owner
+records remain readable. The correction transfers no Work check, review,
+acceptance, or grant.
 
 A new session of the same host (after `/clear` or a restart) has no Goal of
 its own. When the project's Work records name exactly one open Goal journal of

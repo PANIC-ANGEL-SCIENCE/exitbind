@@ -293,7 +293,7 @@ pub(crate) fn adopt(loaded: &Loaded, journal_key: &str) -> Result<Value, String>
         ));
     }
     let goal_id = latest["goalId"].clone();
-    let recorded = record::append(&target.root, &goal_id, &session, &owner)?;
+    let recorded = record::append(&target.root, loaded, &goal_id, &session, &owner)?;
     // A rerun after a crash between the journal and the owner record writes
     // only the owner record; the response names what this run wrote.
     let owner_record = !session.adopted();

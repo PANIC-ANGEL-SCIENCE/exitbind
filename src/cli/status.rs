@@ -61,6 +61,12 @@ pub(super) fn goal_status(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
         a.flags.contains_key("project"),
     )?;
     let mut value = record.clone().unwrap_or_else(|| json!({"closed": false}));
+    if let Some(session) = &scope.session {
+        if let Some(recovery) = crate::session_goal::owner_correction::pending_recovery(session, l)?
+        {
+            value["ownerCorrectionRecovery"] = recovery;
+        }
+    }
     value["currentReadiness"] = presentation["currentReadiness"].clone();
     value["goalProgress"] = presentation["goalProgress"].clone();
     let named = record

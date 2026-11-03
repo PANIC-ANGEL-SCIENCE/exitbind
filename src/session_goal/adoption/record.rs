@@ -18,12 +18,13 @@ pub(crate) struct Appended {
 /// an adopter; unchanged when it is already listed.
 pub(super) fn append(
     root: &Path,
+    loaded: &crate::config::Loaded,
     goal_id: &Value,
     session: &Session,
     owner: &Owner,
 ) -> Result<Appended, String> {
     let mut appended = false;
-    let record = super::super::mutate(root, |previous| {
+    let record = super::super::mutate(root, loaded, |previous| {
         let previous =
             previous.ok_or("the adopted Goal journal disappeared; nothing was written")?;
         if previous["goalId"] != *goal_id

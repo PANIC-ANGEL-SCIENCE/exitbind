@@ -596,7 +596,7 @@ pub(crate) fn recover(
     if request.current_binding != Some(preview_sha256.as_str()) {
         return Err("--current-binding does not match the exact current recovery preview".into());
     }
-    let record = super::mutate_history(root, |history| {
+    let record = super::mutate_history(root, owner_loaded, |history| {
         if request.apply {
             if let Some(saved) = find_replay(
                 history,

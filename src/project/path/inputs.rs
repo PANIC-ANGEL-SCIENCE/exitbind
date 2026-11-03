@@ -77,6 +77,14 @@ pub(crate) const INPUTS: &[Input] = &[
         route: "pass the outside card to setup --apply as its --task-card value, which snapshots it inside the project, or copy the source into the project",
     },
     Input {
+        label: "relocated requirement source",
+        options: "--relocations",
+        commands: "goal correct-owner",
+        outcome: Outcome::Confined(Root::Product),
+        judge: "src/session_goal/owner_correction/source.rs",
+        route: "copy the exact recorded source bytes inside the target project",
+    },
+    Input {
         label: "project checker",
         options: "--artifact",
         commands: "goal prepare, work begin",
@@ -150,7 +158,7 @@ pub(crate) const INPUTS: &[Input] = &[
     },
     Input {
         label: "root",
-        options: "--root, --control-root, --state-root, --config",
+        options: "--root, --control-root, --state-root, --config, --target-config",
         commands: "every command",
         outcome: Outcome::Selector,
         judge: "src/config/mod.rs, src/project/setup.rs",

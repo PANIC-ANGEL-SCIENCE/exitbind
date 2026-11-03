@@ -288,12 +288,13 @@ fn stop_can_observe_existing_private_read_only_goal_state() {
         "--goal",
         "Finish the full request",
     ]);
-    let root = fs::read_dir(&fixture.store)
+    let roots: Vec<_> = fs::read_dir(&fixture.store)
         .unwrap()
-        .next()
-        .unwrap()
-        .unwrap()
-        .path();
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.join(".exitbind").is_dir())
+        .collect();
+    assert_eq!(roots.len(), 1, "expected exactly one native Goal journal");
+    let root = roots.into_iter().next().unwrap();
     let state = root.join(".exitbind");
     let before = files_under(&fixture.store);
     for path in [&fixture.store, &root, &state] {

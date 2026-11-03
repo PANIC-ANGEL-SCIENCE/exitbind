@@ -95,3 +95,4 @@ RoutedInText	src/run/view.rs	predecessor changed after replacement preview; refr
 Identity	src/run/view.rs	successor start differs from its native admission; repeat the exact request
 LeadPreparation	src/run/view.rs	successor check policy differs from predecessor; choose an explicit new checked run
 LeadPreparation	src/run/view.rs	successor preservation policy differs from predecessor; choose an explicit new checked run
+Transient	src/run/ledger/atomic_record.rs	private record differs from its observed bytes

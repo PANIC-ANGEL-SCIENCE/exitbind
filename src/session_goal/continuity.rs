@@ -200,7 +200,7 @@ fn init(loaded: &Loaded, work_id: &str, input: &Value) -> Result<(Value, bool), 
         "binding":null,
     });
     let mut appended = true;
-    let record = mutate(&loaded.state_root, |previous| {
+    let record = mutate(&loaded.state_root, loaded, |previous| {
         let Some(previous) = previous else {
             if input.get("expectedRevision").is_some() && revision(input, "expectedRevision")? != 0
             {

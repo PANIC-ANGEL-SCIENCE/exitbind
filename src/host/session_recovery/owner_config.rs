@@ -58,7 +58,16 @@ fn goal_owner_for_session(
             && hint.owner_identity_sha256 == owner.identity_sha256
             && hint.owner_project_id == owner.project_id
         {
-            candidates.push(hint.owner_config_path);
+            candidates.push((hint.owner_config_path, None));
+        }
+    }
+    let correction = session_goal::owner_correction::owner_config_binding(session, access).ok()?;
+    if let Some(binding) = &correction {
+        candidates.clear();
+        if binding.local_identity_sha256 == owner.identity_sha256
+            && binding.project_id == owner.project_id
+        {
+            candidates.push((binding.path.clone(), Some(binding.clone())));
         }
     }
     if let Ok(Some(record)) = session_goal::read_for_recovery(&session.root) {
@@ -67,8 +76,8 @@ fn goal_owner_for_session(
             members.filter(|member| member["ownerIdentitySha256"] == owner.identity_sha256.as_str())
         {
             if let Some(path) = member["configPath"].as_str() {
-                if !candidates.iter().any(|known| known == path) {
-                    candidates.push(path.to_owned());
+                if correction.is_none() && !candidates.iter().any(|(known, _)| known == path) {
+                    candidates.push((path.to_owned(), None));
                 }
             }
         }
@@ -77,7 +86,18 @@ fn goal_owner_for_session(
         .into_iter()
         .take(MAX_CANDIDATES)
         .take_while(|_| started.elapsed() < BUDGET)
-        .find_map(|path| verified(&path, &owner).map(|loaded| (path, loaded)));
+        .find_map(|(path, binding)| {
+            let loaded = verified(&path, &owner)?;
+            if binding.as_ref().is_some_and(|expected| {
+                session_goal::recovery::config_binding_for_current(&loaded)
+                    .ok()
+                    .as_ref()
+                    != Some(expected)
+            }) {
+                return None;
+            }
+            Some((path, loaded))
+        });
     Some(GoalOwner { owner, config })
 }
 

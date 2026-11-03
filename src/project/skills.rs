@@ -432,11 +432,8 @@ fn create_asset(path: &Path, content: &str, executable: bool) -> Result<(), Stri
     if !executable {
         return crate::project::managed_files::write_exclusive(path, content.as_bytes());
     }
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
-        .map_err(|error| error.to_string())?;
+    let mut file =
+        crate::project::managed_files::open_state_file(path).map_err(|error| error.to_string())?;
     file.write_all(content.as_bytes())
         .map_err(|error| error.to_string())?;
     super::skill_assets::set_executable(&file)

@@ -569,6 +569,8 @@ mod lead_reason;
 mod lead_reason_forms;
 #[path = "goal_requirements/native_recovery.rs"]
 mod native_recovery;
+#[path = "goal_requirements/owner_correction.rs"]
+mod owner_correction;
 #[path = "goal_requirements/pause_record.rs"]
 mod pause_record;
 #[path = "goal_requirements/refuse_before_write.rs"]

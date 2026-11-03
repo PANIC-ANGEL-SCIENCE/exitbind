@@ -17,7 +17,7 @@ pub(crate) fn close(
         return requirements::close(root, loaded, goal_id, result_ref);
     }
     let result_ref = text(Some(result_ref), "result-ref")?;
-    mutate(root, |previous| {
+    mutate(root, loaded, |previous| {
         let previous = previous.ok_or("no canonical session goal is open")?;
         validate_governed_candidate(loaded, root, previous, goal_id, &result_ref)?;
         for category in CATEGORIES {
@@ -124,7 +124,7 @@ pub(crate) fn close_direct(
     let result_ref = result_ref
         .map(|value| text(Some(value), "result-ref"))
         .transpose()?;
-    mutate(root, |previous| {
+    mutate(root, loaded, |previous| {
         let previous = previous.ok_or("no canonical session goal is open")?;
         let inputs_sha256 =
             validate_direct_candidate(loaded, root, previous, goal_id, result_ref.as_deref())?;
@@ -266,7 +266,7 @@ pub(crate) fn direct_complete(
     if !CATEGORIES.contains(&category) {
         return Err(format!("unknown session-goal category '{category}'"));
     }
-    mutate(root, |previous| {
+    mutate(root, loaded, |previous| {
         let revision = previous
             .and_then(|value| value["revision"].as_u64())
             .unwrap_or(0)

@@ -67,6 +67,8 @@ pub(crate) enum Class {
     RecoveryWorkConfiguration,
     /// A journey member's stamped configuration bytes are not kept.
     JourneyMemberConfiguration,
+    /// A relocated native Goal source no longer matches its recorded bytes.
+    GoalOwnerSource,
 }
 
 /// What a class says and which route it offers.
@@ -79,6 +81,12 @@ pub(crate) struct Member {
 
 /// Every agent-reachable refusal of the class.
 pub(crate) const MEMBERS: &[Member] = &[
+    Member {
+        class: Class::GoalOwnerSource,
+        classification: "native_goal_owner_source_changed",
+        message: "relocated Goal source bytes differ from the recorded source",
+        meaning: "restore the recorded source bytes at the relocated path before preparing or changing this Goal",
+    },
     Member {
         class: Class::MemoryConfiguration,
         classification: "memory_configuration_changed",
@@ -246,6 +254,8 @@ pub(crate) enum Route<'a> {
     },
     /// `session recovery show`: read the current recovery record.
     RecoveryShow,
+    /// Inspect the native Goal and its recorded source identity.
+    GoalStatus { config: &'a std::path::Path },
     /// `work detail`: inspect the current action without changing it.
     WorkDetail {
         work: &'a str,
@@ -300,6 +310,10 @@ impl Route<'_> {
             ),
             Route::RecoveryShow => (
                 Emitted::new(["session", "recovery", "show", "--json"]),
+                true,
+            ),
+            Route::GoalStatus { config } => (
+                Emitted::new(["goal", "status", "--json"]).config(config),
                 true,
             ),
             Route::WorkDetail { work, config } => (

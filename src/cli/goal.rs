@@ -9,13 +9,58 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
     let action = positional(
         a,
         0,
-        "goal requires prepare, incorporate, require, cover, assign, close, recover, adopt, status, or usage",
+        "goal requires prepare, incorporate, require, cover, assign, close, recover, correct-owner, adopt, status, or usage",
     )?;
     let action = GoalAction::parse(action).ok_or(
-        "goal requires prepare, incorporate, require, cover, assign, close, recover, adopt, status, or usage",
+        "goal requires prepare, incorporate, require, cover, assign, close, recover, correct-owner, adopt, status, or usage",
     )?;
     admit_foreign_owner(l, a, action)?;
     match action {
+        GoalAction::CorrectOwner => {
+            args::assert_options(
+                "goal correct-owner",
+                a,
+                &[
+                    "config",
+                    "json",
+                    "target-config",
+                    "relocations",
+                    "request-id",
+                    "reason",
+                    "old-writers-quiesced",
+                    "current-binding",
+                    "apply",
+                    "abort",
+                ],
+            )?;
+            args::assert_positionals("goal correct-owner", a, 1)?;
+            let response = crate::session_goal::owner_correction::correct(
+                l,
+                crate::session_goal::owner_correction::OwnerCorrectionRequest {
+                    target_config: option(
+                        a,
+                        "target-config",
+                        "goal correct-owner requires --target-config PATH",
+                    )?,
+                    relocations: option(
+                        a,
+                        "relocations",
+                        "goal correct-owner requires --relocations JSON",
+                    )?,
+                    request_id: option(
+                        a,
+                        "request-id",
+                        "goal correct-owner requires --request-id ID",
+                    )?,
+                    reason: option(a, "reason", "goal correct-owner requires --reason TEXT")?,
+                    old_writers_quiesced: a.flags.contains_key("old-writers-quiesced"),
+                    current_binding: a.options.get("current-binding").map(String::as_str),
+                    apply: a.flags.contains_key("apply"),
+                    abort: a.flags.contains_key("abort"),
+                },
+            )?;
+            print_json(&response)
+        }
         GoalAction::Quarantine => {
             args::assert_options(
                 "goal quarantine",
@@ -517,13 +562,15 @@ fn admit_foreign_owner(
             return Ok(())
         }
         Admission::Owner => crate::session_goal::native::scope(loaded, false)?,
-        Admission::Adoption | Admission::ReadOnly => return Ok(()),
+        Admission::Adoption | Admission::OwnerCorrection | Admission::ReadOnly => return Ok(()),
     };
     if scope.owner.is_some() {
         match admission {
             Admission::ProjectOrOwner => scope.require_owner_or_project()?,
             Admission::Owner => scope.require_owner()?,
-            Admission::Adoption | Admission::ReadOnly => unreachable!(),
+            Admission::Adoption | Admission::OwnerCorrection | Admission::ReadOnly => {
+                unreachable!()
+            }
         }
     }
     Ok(())

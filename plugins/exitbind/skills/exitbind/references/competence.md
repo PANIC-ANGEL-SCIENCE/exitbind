@@ -10,11 +10,14 @@ Use only the part that helps the current decision.
 
 Conditional judgments, only when relevant:
 
-- [assurance](../resources/judgments/assurance.md)
+- [assurance](../resources/judgments/assurance.md): review preparation,
+  verification, architecture, security and reliability
 - [context-lifecycle](../resources/judgments/context-lifecycle.md)
-- [product](../resources/judgments/product.md)
+- [product](../resources/judgments/product.md): public entry documentation,
+  user research, comparisons and interface decisions
 - [quantitative](../resources/judgments/quantitative.md)
-- [workflow](../resources/judgments/workflow.md)
+- [workflow](../resources/judgments/workflow.md): failure recovery, version
+  decisions and optional managed agent configuration
 
 These references add no role or authority.
 
@@ -89,8 +92,8 @@ rerunning an expensive check.
 
 Use [same-thread continuity](../resources/workflows/continuity.md) and
 [bounded dispatch](../resources/workflows/dispatch.md) when selected.
-[Rollout metrics](../resources/analysis/README.md) and
-[checkout-bound Cargo targets](../resources/verification/README.md) are
-on-demand tools; they do not collect history or qualify results automatically.
+For [session-log analysis and optional repository packing](../resources/analysis/README.md)
+or [checkout-bound Cargo targets](../resources/verification/README.md), use the
+on-demand references; they do not collect history or qualify results automatically.
 The [implementation economy reference](../resources/economy/instructions.md)
 applies only when the owner selects that mode for the implementing role.

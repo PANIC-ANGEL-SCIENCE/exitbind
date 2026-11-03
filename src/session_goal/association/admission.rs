@@ -81,7 +81,7 @@ pub(crate) fn admit(
             owner: &owner,
         },
     )?;
-    super::super::mutate(root, |previous| {
+    super::super::mutate_associated(root, &owner, |previous| {
         let previous = previous.ok_or("canonical Goal disappeared before Work admission")?;
         if previous["goalId"].as_str() != Some(candidate.goal_id.as_str())
             || previous["revision"].as_u64() != Some(candidate.revision)
@@ -243,7 +243,7 @@ fn link_admitted(
     if !valid_work(work) {
         return Err("work link-session requires a valid Work handle".into());
     }
-    super::super::mutate(root, |previous| {
+    super::super::mutate_associated(root, owner, |previous| {
         let previous = previous.ok_or("native session Goal journal is unavailable")?;
         let journey_member = super::super::journey::member_for_work(previous, work)?;
         if let Some(admission) = super::super::journey::find_admission(previous, work)? {

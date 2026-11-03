@@ -79,6 +79,17 @@ fn goal_actions_refuse_a_foreign_owner_before_writing() {
                 &binding,
                 "--apply",
             ],
+            GoalAction::CorrectOwner => vec![
+                "--target-config",
+                config,
+                "--relocations",
+                "[]",
+                "--request-id",
+                "r1",
+                "--reason",
+                "correct owner",
+                "--old-writers-quiesced",
+            ],
             GoalAction::Adopt => vec!["--session-key", &journal],
             GoalAction::Quarantine => vec![
                 &work,

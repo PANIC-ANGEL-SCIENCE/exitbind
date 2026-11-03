@@ -65,7 +65,11 @@ const NOT_EMITTERS: &[(&str, usize, &str)] = &[
 const NAMED_COMMANDS: &[(&str, usize, &str)] = &[
     // Installed into host settings on purpose: resolves the installed
     // executable through PATH after upgrades.
-    ("src/host/hooks.rs", 4, "installed host hook command"),
+    (
+        "src/host/hooks.rs",
+        6,
+        "installed host hook command, including host-bound Stop",
+    ),
     (
         "src/project/setup_statusline.rs",
         1,

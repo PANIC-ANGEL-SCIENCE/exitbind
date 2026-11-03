@@ -21,7 +21,10 @@ pub(crate) fn require(
         return Err("requirement must be an exact excerpt of the approved source file".into());
     }
     let project = identity(loaded)?;
-    super::super::mutate(root, |previous| {
+    super::super::mutate(root, loaded, |previous| {
+        if source(loaded, "requirement source", artifact)? != approved {
+            return Err("requirement source no longer matches its selected bytes".into());
+        }
         let previous =
             previous.ok_or("incorporate the agreed goal before adding named requirements")?;
         if previous["goalId"] != goal_id {
@@ -42,13 +45,17 @@ pub(crate) fn require(
                 mappings: vec![],
             }
         };
-        if goal.project_identity != project {
+        if effective_identity(loaded, previous, &goal)? != project {
             return Err("named goal belongs to another project".into());
         }
         if let Some(requirement) = goal.requirements.iter_mut().find(|item| item.id == id) {
             if requirement.text == text
                 && requirement.source.sha256 == approved.sha256
-                && requirement.source.reference == approved.reference
+                && super::super::owner_correction::current_source_path(
+                    previous,
+                    &requirement.source.reference,
+                    &requirement.source.sha256,
+                )? == approved.reference
             {
                 return Ok(previous.clone());
             }
@@ -83,13 +90,13 @@ pub(crate) fn require(
 }
 
 pub(crate) fn cover(root: &Path, loaded: &Loaded, goal_id: &str) -> Result<Value, String> {
-    super::super::mutate(root, |previous| {
+    super::super::mutate(root, loaded, |previous| {
         let previous = previous.ok_or("no canonical goal is open")?;
         if previous["goalId"] != goal_id {
             return Err("canonical goal identity does not match".into());
         }
         let mut goal = Goal::read(previous)?;
-        if goal.project_identity != identity(loaded)? {
+        if effective_identity(loaded, previous, &goal)? != identity(loaded)? {
             return Err("named goal belongs to another project".into());
         }
         if goal.source.coverage_confirmed {
@@ -122,15 +129,14 @@ pub(crate) fn assign(
         .as_str()
         .ok_or("Work start identity is missing")?
         .to_owned();
-    super::super::mutate(root, |previous| {
+    super::super::mutate(root, loaded, |previous| {
         let previous = previous.ok_or("no canonical goal is open")?;
         if previous["goalId"] != goal_id || contract.goal_id != goal_id {
             return Err("Work belongs to a different goal".into());
         }
         let mut goal = Goal::read(previous)?;
-        if goal.project_identity != identity(loaded)?
-            || contract.project_identity != goal.project_identity
-        {
+        let project = effective_identity(loaded, previous, &goal)?;
+        if project != identity(loaded)? || contract.project_identity != project {
             return Err("Work belongs to a different project".into());
         }
         let references = selected(&goal, ids)?;

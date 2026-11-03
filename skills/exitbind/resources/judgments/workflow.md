@@ -13,6 +13,11 @@ as observation or hypothesis, not acceptance or a new decision. When a user
 requests a critical examination of an idea, test its assumptions with focused
 questions while preserving the user's actual goal and settled choices.
 
+When retiring guidance or an operating path, identify its useful responsibilities
+and their existing successors, preserve source and rollback, and check the actual
+transfer path. Leave a responsibility unresolved if the replacement or its
+delivery is not established; a copied file alone is not evidence of use.
+
 Choose direct execution or bounded delegation from coupling, uncertainty and
 actual executor capability. Carry relevant constraints, identities, inputs,
 negative cases, checks and return conditions. Keep shared decisions and
@@ -33,11 +38,38 @@ identity, selected destination, local check, remote acceptance and exact-source
 CI result. Use the existing publication and reporting mechanisms for the
 actual surface. An absent or unsafe required guard is a stop, not a pass.
 
-For a version decision, assess the public compatibility contract and observed
-change before choosing a release class; selecting a class does not authorize a
-release. For an away continuation, preserve the original authority, durable
-state and process identity; a disconnected client or stale log alone does not
-prove completion. For forensic measurements, define the source and unit,
-preserve raw evidence, distinguish observed facts from estimates, and avoid
-claiming unseen behavior. Do not select a provider or increase spend without
-the owner's actual authorization.
+For an away continuation, preserve the original authority, durable state and
+process identity; a disconnected client or stale log alone does not prove
+completion. For forensic measurements, define the source and unit, preserve
+raw evidence, distinguish observed facts from estimates, and avoid claiming
+unseen behavior. Do not select a provider or increase spend without the
+owner's actual authorization.
+
+## Version decisions
+
+For an explicitly requested version decision, identify the released baseline,
+artifact, actual change and governing policy. Follow the project's declared
+scheme and support promises before an ecosystem convention; if the relevant
+policy or evidence is missing, state the uncertainty instead of inventing a
+definitive class. Consider each affected public command, API, configuration,
+persisted format, protocol, platform, dependency and authority boundary,
+including support windows, old and new consumers, mixed versions, migration and
+rollback as relevant.
+Use the most consequential supported change. If no distributed artifact or
+public contract changes, the policy may require no release; bundled help can
+still require a new artifact. For a SemVer policy, compatible fixes and
+additions normally map to patch and minor, incompatible changes to major;
+prerelease handling and pre-1.0 promises follow the selected policy. For
+example, a new enum value can break an exhaustive old reader, and an urgent
+security fix can still be incompatible. A version choice is not release approval.
+
+## Managed agent configuration
+
+When asked to manage an optional tool such as dotagents, inspect the selected
+project or user scope, current manifest, generated lock, tool version and actual
+destinations using that tool's available help. Distinguish authored settings,
+resolved dependencies and generated host files. Preserve unrelated files and
+credentials; record the intended change, validate the resulting configuration
+and read back the affected projections. Retain a supported rollback path.
+Tool availability or a lockfile does not authorize installation, network access,
+publication, model changes or a different destination.

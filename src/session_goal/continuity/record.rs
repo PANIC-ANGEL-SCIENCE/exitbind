@@ -488,7 +488,7 @@ pub(crate) fn continuation_record_value(
         init(loaded, work_id, &input)?
     } else {
         let mut appended = true;
-        let record = mutate(&loaded.state_root, |previous| {
+        let record = mutate(&loaded.state_root, loaded, |previous| {
             let previous = previous.ok_or("continuation has not been initialized")?;
             let record = apply(loaded, work_id, previous, &input)?;
             appended = &record != previous;

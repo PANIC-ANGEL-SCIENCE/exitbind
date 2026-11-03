@@ -20,16 +20,15 @@ pub(crate) fn assign_successor(
     predecessor: &str,
     successor: &str,
 ) -> Result<Value, String> {
-    super::super::mutate(root, |previous| {
+    super::super::mutate(root, loaded, |previous| {
         let previous = previous.ok_or("no canonical named Goal is open")?;
         let proven = verify_actual(root, loaded, predecessor, successor)?;
         if previous["goalId"] != goal_id || proven.contract.goal_id != goal_id {
             return Err("successor belongs to a different named Goal".into());
         }
         let mut goal = Goal::read(previous)?;
-        if goal.project_identity != identity(loaded)?
-            || goal.project_identity != proven.contract.project_identity
-        {
+        let project = effective_identity(loaded, previous, &goal)?;
+        if project != identity(loaded)? || project != proven.contract.project_identity {
             return Err("successor belongs to a different project".into());
         }
         let references = selected(&goal, ids)?;

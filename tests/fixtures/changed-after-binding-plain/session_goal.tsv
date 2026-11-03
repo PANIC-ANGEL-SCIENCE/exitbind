@@ -70,3 +70,12 @@ Integrity	src/session_goal/requirements/model.rs	requirement source hash mismatc
 Integrity	src/session_goal/requirements/successor.rs	predecessor's current named Goal contract differs from its frozen Work
 NotARefusal	src/session_goal/requirements/view.rs	additional direct completion is stale or unknown
 RoutedInText	src/session_goal/continuity/capture/return_result.rs	selected host actor facts changed after delivery; {route}
+Identity	src/session_goal/native.rs	native Goal owner no longer matches the selected owner under the journal lock
+Transient	src/session_goal/owner_correction.rs	configuration differs from the loaded owner selection; preview again
+LeadPreparation	src/session_goal/owner_correction.rs	current owner configuration differs from the saved correction
+Transient	src/session_goal/owner_correction.rs	native Goal journal no longer matches the selected predecessor
+LeadPreparation	src/session_goal/owner_correction.rs	owner correction preview no longer matches its exact inputs
+RoutedInText	src/session_goal/owner_correction.rs	pending correction no longer matches its preview
+NotCurrentState	src/session_goal/owner_correction.rs	pending owner correction no longer matches; inspect current Goal state
+LeadPreparation	src/session_goal/owner_correction/source.rs	relocated source bytes do not match the recorded source snapshot
+Transient	src/session_goal/requirements/mutation.rs	requirement source no longer matches its selected bytes
