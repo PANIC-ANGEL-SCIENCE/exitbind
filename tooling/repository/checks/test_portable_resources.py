@@ -52,6 +52,44 @@ def command(identity, exit_code=0, text="fixture secret", timestamp=None):
 
 
 class RolloutMetricsTests(unittest.TestCase):
+    def test_custom_tool_call_only_reports_unknown_command_coverage(self):
+        data = record("response_item", {"type": "custom_tool_call", "name": "private-tool",
+                      "call_id": "private-call-id", "input": "tools.exec_command({cmd: 'printf private-input'})"})
+        result = metrics.analyze(io.BytesIO(data))
+        self.assertEqual(result["unclassified_tool_records"], 1)
+        self.assertEqual(result["command_events"], 0)
+        for field in ("dedupe_complete", "hourly_complete", "command_patterns_complete"):
+            self.assertFalse(result[field], field)
+        encoded = json.dumps(result)
+        for private in ("private-tool", "private-call-id", "private-input", "exec_command"):
+            self.assertNotIn(private, encoded)
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "private-rollout.jsonl"
+            path.write_bytes(data)
+            observed = subprocess.run([sys.executable, str(METRICS_PATH), str(path)],
+                                      capture_output=True, text=True, timeout=3, check=False)
+            self.assertEqual(observed.returncode, 0)
+            self.assertEqual(json.loads(observed.stdout), dict(result, snapshot_bytes=len(data),
+                                                               input_metadata_changed=False))
+            for private in (str(path), "private-tool", "private-call-id", "private-input", "exec_command"):
+                self.assertNotIn(private, observed.stdout + observed.stderr)
+
+    def test_unclassified_tool_records_do_not_hide_observed_command(self):
+        data = (record("response_item", {"type": "function_call", "arguments": "private-function-args"})
+                + record("response_item", {"type": "function_call_output", "output": "private-result"})
+                + record("response_item", {"type": "future_tool_call", "input": "private-future"})
+                + command("visible-only-as-count", text="git status", timestamp="2026-11-03T12:00:00Z"))
+        result = metrics.analyze(io.BytesIO(data))
+        self.assertEqual(result["unclassified_tool_records"], 3)
+        self.assertEqual(result["command_events"], 1)
+        self.assertEqual(result["commands_per_hour"], {"2026-11-03T12:00Z": 1})
+        self.assertEqual(result["command_families"]["version_control"], 1)
+        for field in ("dedupe_complete", "hourly_complete", "command_patterns_complete"):
+            self.assertFalse(result[field], field)
+        encoded = json.dumps(result)
+        for private in ("private-function-args", "private-result", "private-future", "visible-only-as-count"):
+            self.assertNotIn(private, encoded)
+
     def test_aggregates_without_disclosing_content_or_summing_tokens(self):
         data = (record("session_meta", {"text": "fixture secret"}) + command("item-1", 3)
                 + command("item-1", 3) + record("token_usage_record", {"input_tokens": 12345})

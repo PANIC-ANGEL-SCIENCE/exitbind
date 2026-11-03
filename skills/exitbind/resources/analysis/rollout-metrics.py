@@ -68,6 +68,7 @@ def analyze(stream, limit=MAX_RECORD, window=MAX_WINDOW, max_bytes=None):
     counts = {kind: 0 for kind in sorted(TYPES)}
     result = {"bytes_read": 0, "records": 0, "malformed": 0, "oversized": 0,
               "other_records": 0, "record_types": counts, "command_event_records": 0,
+              "unclassified_tool_records": 0,
               "command_events": 0,
               "command_nonzero_exit": 0, "command_replays_in_window": 0,
               "command_exit_unknown": 0, "command_missing_id": 0,
@@ -118,6 +119,13 @@ def analyze(stream, limit=MAX_RECORD, window=MAX_WINDOW, max_bytes=None):
         else:
             result["other_records"] += 1
         payload = item.get("payload")
+        if kind == "response_item" and isinstance(payload, dict):
+            payload_type = payload.get("type")
+            if isinstance(payload_type, str) and (
+                payload_type.endswith(("_call", "_call_output"))
+                or payload_type in ("tool_use", "tool_result")
+            ):
+                result["unclassified_tool_records"] += 1
         if kind != "event_msg" or not isinstance(payload, dict) or payload.get("type") != "item_completed":
             continue
         command = payload.get("item")
@@ -159,7 +167,8 @@ def analyze(stream, limit=MAX_RECORD, window=MAX_WINDOW, max_bytes=None):
         result["command_families"][command_family(text)] += 1
         commands[text] = commands.get(text, 0) + 1
     result["dedupe_complete"] = not any(result[key] for key in
-        ("malformed", "oversized", "other_records", "command_missing_id", "command_invalid_id", "command_id_overflow"))
+        ("malformed", "oversized", "other_records", "unclassified_tool_records",
+         "command_missing_id", "command_invalid_id", "command_id_overflow"))
     result["hourly_complete"] = result["dedupe_complete"] and not (
         result["command_hour_missing"] or result["command_hour_overflow"])
     result["command_patterns_complete"] = result["dedupe_complete"] and not result["command_text_untracked"]

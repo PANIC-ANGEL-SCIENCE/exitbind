@@ -19,6 +19,13 @@ use validated UTC timestamps with at most 744 distinct hour bins; missing and
 over-cap hours are counted separately. Check `hourly_complete` before treating
 the histogram as complete.
 
+Tool-call and tool-result response records that this script cannot classify are
+counted as `unclassified_tool_records`; their contents are not parsed. Each such
+record makes command, hourly and pattern coverage incomplete, even if some
+ordinary command completions were observed. This count is records, not distinct
+calls or commands: records may overlap with observed completions. In particular,
+zero observed commands does not establish that no commands ran.
+
 The fixed command families classify only the first executable token; shell
 wrappers, compound commands and unrecognized tools may land in `other` or a
 wrapper family. Exact repetition counts require identical full command text for
