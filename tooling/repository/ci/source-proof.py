@@ -122,7 +122,6 @@ class NoCredentialRedirect(urllib.request.HTTPRedirectHandler):
         redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
         if redirected is not None:
             redirected.remove_header("Authorization")
-            redirected.remove_unredirected_header("Authorization")
         return redirected
 
 
@@ -485,8 +484,8 @@ def main():
     try:
         current = context()
         proof = discover(Client(), current, sys.argv[2])
-    except Exception:  # Provider data is optional; any discovery failure executes checks.
-        print("No compatible provider proof; checks will execute.", file=sys.stderr)
+    except Exception as error:  # Provider data is optional; any discovery failure executes checks.
+        print(f"No compatible provider proof ({type(error).__name__}); checks will execute.", file=sys.stderr)
     for key, value in decision(proof, current if proof else {}).items():
         print(f"{key}={value}")
 
