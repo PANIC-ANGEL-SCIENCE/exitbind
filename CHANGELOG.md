@@ -8,7 +8,11 @@ Keep each existing Work's governor and configuration pinned. Read-only reviewer
 recovery creates a fresh eligible attempt without replaying a worker, resetting
 accounting or granting mutation authority. A complete actor packet that exceeds
 the native host's context limit remains unavailable and receives no automatic
-return credit.
+return credit. The first reviewer retry upgrades that state root's child-intent
+container to version 2; earlier readers, including 0.31.24, then refuse
+prepared-child operations and automatic callbacks there. Keep a
+0.31.25-compatible reader for that state root rather than downgrading or editing
+the container to bypass the refusal.
 
 - Prepare native recipients with current assignment, requirement and pre-effect
   facts, with working source routes and explicit bounded omissions.
