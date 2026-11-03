@@ -282,6 +282,11 @@ const OTHER_WRITES: &[(&str, usize, &str)] = &[
         "run ledgers and locks under the state root",
     ),
     (
+        "src/run/ledger/atomic_record.rs",
+        1,
+        "atomic replacement of the private native session Goal owner marker",
+    ),
+    (
         "src/run/quarantine/admission.rs",
         1,
         "quarantine records under the state root",

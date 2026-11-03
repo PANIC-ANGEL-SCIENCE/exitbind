@@ -8,6 +8,18 @@ pub(super) const FIELD: &str = "nativeGoalOwnerCorrections";
 const MAX_CORRECTIONS: usize = 16;
 const MAX_SOURCES: usize = 33;
 
+/// A committed correction keeps its selected configuration and project
+/// identity, while later edits may change configuration bytes. Full binding
+/// equality still protects each preview and apply.
+pub(crate) fn same_owner_binding(left: &ConfigBinding, right: &ConfigBinding) -> bool {
+    left.path == right.path
+        && left.product_root == right.product_root
+        && left.state_root == right.state_root
+        && left.project_id == right.project_id
+        && left.project_identity_sha256 == right.project_identity_sha256
+        && left.local_identity_sha256 == right.local_identity_sha256
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct SourceRelocation {
@@ -175,7 +187,7 @@ pub(in crate::session_goal) fn validate_transition(
         || Some(decision.previous_event_sha256.as_str()) != old["eventSha256"].as_str()
         || prior
             .last()
-            .is_some_and(|prior| prior.target_config != decision.old_config)
+            .is_some_and(|prior| !same_owner_binding(&prior.target_config, &decision.old_config))
     {
         return Err(format!(
             "invalid canonical session goal line {line}: owner correction predecessor mismatch"
@@ -202,5 +214,54 @@ pub(in crate::session_goal) fn preserve_same_goal(previous: &Value, next: &mut V
         && next.get(FIELD).is_none()
     {
         next[FIELD] = previous[FIELD].clone();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{same_owner_binding, ConfigBinding};
+
+    #[test]
+    fn committed_binding_ignores_only_config_bytes() {
+        let binding = ConfigBinding {
+            path: "/project/exitbind.json".into(),
+            config_sha256: "config-a".into(),
+            product_root: "/project".into(),
+            state_root: "/state".into(),
+            project_id: Some("project".into()),
+            project_identity_sha256: "project-identity".into(),
+            local_identity_sha256: "local-identity".into(),
+        };
+        let mut changed = binding.clone();
+        changed.config_sha256 = "config-b".into();
+        assert!(same_owner_binding(&binding, &changed));
+        for changed in [
+            ConfigBinding {
+                path: "/other/config".into(),
+                ..binding.clone()
+            },
+            ConfigBinding {
+                product_root: "/other".into(),
+                ..binding.clone()
+            },
+            ConfigBinding {
+                state_root: "/other-state".into(),
+                ..binding.clone()
+            },
+            ConfigBinding {
+                project_id: Some("other".into()),
+                ..binding.clone()
+            },
+            ConfigBinding {
+                project_identity_sha256: "other".into(),
+                ..binding.clone()
+            },
+            ConfigBinding {
+                local_identity_sha256: "other".into(),
+                ..binding.clone()
+            },
+        ] {
+            assert!(!same_owner_binding(&binding, &changed));
+        }
     }
 }

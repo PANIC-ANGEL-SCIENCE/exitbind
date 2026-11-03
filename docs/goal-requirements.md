@@ -53,12 +53,23 @@ Before using `--old-writers-quiesced`, the Lead must establish that old-version
 writers of this Goal have stopped. The marker cannot fence a writer that already
 ran old code. Preview with that attestation, then use its exact `applyArgv`.
 If the reader barrier is installed but the Goal event is not committed, retry
-that argv or use the exact `abortArgv`; after commit, another bound correction
-is the supported reversal while the Goal still meets the empty-Work conditions.
-The new owner record is intentionally unreadable to older versions: use a
-version supporting this correction to read the Goal. Existing version-1 owner
-records remain readable. The correction transfers no Work check, review,
-acceptance, or grant.
+that argv or use the exact `abortArgv`; abort preserves the original owner and
+Goal event but leaves a version-2 owner record in place. After commit, another
+bound correction is the supported reversal while the Goal still meets the
+empty-Work conditions. The version-2 owner record is intentionally unreadable
+to older versions, even after abort: use a version supporting this correction
+to read the Goal. Existing version-1 owner records remain readable. The
+correction transfers no Work check, review, acceptance, or grant.
+
+After commit, edits to the selected configuration preserve Goal ownership when
+its canonical path and project and state-root identities remain the same.
+Existing Work and evidence still follow their own currentness rules.
+
+Goal usage observations remain in the state root that recorded them. When the
+correction changes state roots, the target's `goal usage` does not include
+observations from the old root. Review and preserve the old usage report before
+applying; do not treat the target report as a complete cross-root total or sum
+reports without checking for overlapping observations.
 
 A new session of the same host (after `/clear` or a restart) has no Goal of
 its own. When the project's Work records name exactly one open Goal journal of

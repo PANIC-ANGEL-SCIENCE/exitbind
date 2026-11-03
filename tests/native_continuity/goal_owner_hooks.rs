@@ -455,18 +455,24 @@ fn every_hook_event_resolves_the_project_that_owns_the_native_goal() {
 #[test]
 fn stop_uses_the_verified_goal_owner_even_from_another_project_directory() {
     let fixture = Fixture::new();
+    let before = files_under(&fixture.store);
     let payload = json!({"hook_event_name":"Stop", "cwd":fixture.decoy,
         "session_id":SESSION, "stop_hook_active":false, "last_assistant_message":"A side answer."});
     let output = exitbind(
         &fixture.decoy,
         &fixture.store,
         Some(SESSION),
-        &["hook-run"],
+        &["hook-run", "--host", "claude"],
         payload.to_string().as_bytes(),
     );
     assert!(output.status.success(), "{}", text(&output));
-    let response: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(response["decision"], "block");
+    let response: Value = serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|error| panic!("invalid Stop response: {error}; {}", text(&output)));
+    assert_eq!(
+        response,
+        json!({"decision":"block", "reason":"The session Goal is open. Continue the authorized work."})
+    );
+    assert_eq!(files_under(&fixture.store), before);
 }
 
 /// The same table with no native Goal: the cwd project is used and named.

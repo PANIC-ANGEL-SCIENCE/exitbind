@@ -8,6 +8,7 @@ mod model;
 mod source;
 
 pub(super) use self::marker::{resolve_owner, validate_legacy_history};
+pub(crate) use self::model::same_owner_binding;
 use self::model::{decisions, OwnerCorrectionDecision, SavedRequest};
 pub(super) use self::model::{preserve_same_goal, validate_transition};
 use crate::config::Loaded;
@@ -248,7 +249,7 @@ fn exact_decision(context: DecisionContext<'_, '_>) -> Result<OwnerCorrectionDec
         return Err("native Goal owner correction history bound reached".into());
     }
     if let Some(last) = existing.last() {
-        if last.target_config != old_config {
+        if !same_owner_binding(&last.target_config, &old_config) {
             return Err("current owner configuration differs from the saved correction".into());
         }
         source::current(loaded, record)?;
@@ -459,7 +460,14 @@ pub(crate) fn correct(
             match routes(&saved, &pending.preview_sha256) {
                 Ok((retry, abort)) => pending_refusal(&crate::drift::plain(&error), &retry, &abort),
                 Err(_) => {
-                    format!("{error}; pending reader barrier: inspect Goal status for recovery")
+                    let status = crate::emitted::command_line(
+                        &["goal", "status", "--json"],
+                        Some(&loaded.path),
+                    );
+                    format!(
+                        "{}; pending reader barrier: read `{status}` for recovery",
+                        crate::drift::plain(&error)
+                    )
                 }
             }
         } else {
@@ -672,7 +680,10 @@ pub(super) fn effective_identity(
         return Ok(original.to_owned());
     };
     let fresh = fresh(loaded)?;
-    if super::recovery::config_binding_for_current(&fresh)? != decision.target_config {
+    if !same_owner_binding(
+        &super::recovery::config_binding_for_current(&fresh)?,
+        &decision.target_config,
+    ) {
         return Err("named Goal owner configuration does not match its correction".into());
     }
     source::current(&fresh, record)?;

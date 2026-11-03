@@ -6,7 +6,8 @@ pub(super) const LEAD_ACTS: [&str; 4] =
     ["work return", "work act", "work disposition", "run submit"];
 /// Commands that take `--reason` but write no `submit` event: not a Lead act
 /// on a Work, each keeps its text in its own record.
-pub(super) const NOT_LEAD_ACTS: [&str; 14] = [
+pub(super) const NOT_LEAD_ACTS: [&str; 15] = [
+    "goal correct-owner",
     "goal quarantine",
     "goal recover",
     "memory choose",

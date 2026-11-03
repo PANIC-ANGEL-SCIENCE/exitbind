@@ -88,13 +88,11 @@ fn goal_owner_for_session(
         .take_while(|_| started.elapsed() < BUDGET)
         .find_map(|(path, binding)| {
             let loaded = verified(&path, &owner)?;
-            if binding.as_ref().is_some_and(|expected| {
-                session_goal::recovery::config_binding_for_current(&loaded)
-                    .ok()
-                    .as_ref()
-                    != Some(expected)
-            }) {
-                return None;
+            if let Some(expected) = binding.as_ref() {
+                let current = session_goal::recovery::config_binding_for_current(&loaded).ok()?;
+                if !session_goal::owner_correction::same_owner_binding(&current, expected) {
+                    return None;
+                }
             }
             Some((path, loaded))
         });

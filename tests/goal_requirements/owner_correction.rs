@@ -150,6 +150,10 @@ fn owner_correction_preserves_journal_and_prepares_checked_target_work() {
     assert!(after_raw.starts_with(&before_raw));
     let after = support::goal_journal::latest(&journal);
     assert_eq!(after["goalId"], before["goalId"]);
+    assert_eq!(
+        after["nativeGoalOwnerCorrections"][0]["reason"],
+        "Correct the selected project"
+    );
     assert_eq!(after["goal"], before["goal"]);
     assert_eq!(after["source"], before["source"]);
     assert_eq!(after["categories"], before["categories"]);
@@ -214,6 +218,171 @@ fn owner_correction_preserves_journal_and_prepares_checked_target_work() {
 }
 
 #[test]
+fn corrected_owner_survives_config_edits_and_retains_identity_checks() {
+    let fixture = Fixture::new("owner-correction-config-edits");
+    let (_, journal) = paths(&fixture.old);
+    let preview = fixture.preview("config-edits");
+    let applied = value(&fixture.execute(&preview, "applyArgv"));
+    let saved = applied["event"]["nativeGoalOwnerCorrections"][0].clone();
+    let committed = fs::read(&journal).unwrap();
+
+    let config_path = fixture.target.root.join("exitbind.json");
+    let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+    config["$schema"] = json!("https://example.invalid/updated-schema.json");
+    config["agents"]["worker"]["displayName"] = json!("A changed agent label");
+    let changed_config = serde_json::to_string_pretty(&config).unwrap() + "\n";
+    fs::write(&config_path, &changed_config).unwrap();
+    assert_eq!(
+        value(&fixture.execute(&preview, "applyArgv"))["kind"],
+        "native_goal_owner_correction_replayed"
+    );
+    assert_eq!(fs::read(&journal).unwrap(), committed);
+    assert_eq!(
+        fixture.target.status()["requirements"]["sourceStatus"]["state"],
+        "current"
+    );
+
+    fixture.target.value(
+        &[
+            "goal",
+            "require",
+            "--goal-id",
+            "import",
+            "--requirement",
+            "R1",
+            "--obligation",
+            "Reject invalid input",
+            "--artifact",
+            "relocated.txt",
+        ],
+        None,
+    );
+    assert_eq!(row(&fixture.target.status(), "R1")["revision"], 2);
+    fixture
+        .target
+        .value(&["goal", "cover", "--goal-id", "import"], None);
+    let prepared = fixture.target.value(
+        &[
+            "goal",
+            "prepare",
+            "--goal-id",
+            "import",
+            "--requirement",
+            "R1,R2,R3",
+            "--artifact",
+            "check.sh",
+            "--check-command",
+            "sh check.sh all",
+            "--scope",
+            "integration",
+            "--json",
+        ],
+        None,
+    );
+    assert_eq!(
+        prepared["selectedRequirementIds"],
+        json!(["R1", "R2", "R3"])
+    );
+
+    // The foreign cwd has its own project. The corrected owner has no Work
+    // hint yet, so Stop must resolve its saved owner path after the edit.
+    let (session, store) = fixture.target.native_session.as_ref().unwrap();
+    let payload = json!({"hook_event_name":"Stop", "cwd":fixture.old.root,
+        "session_id":session, "stop_hook_active":false, "last_assistant_message":"A side answer."});
+    let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
+    command
+        .current_dir(&fixture.old.root)
+        .args(["hook-run", "--host", "codex"])
+        .env("EXITBIND_SESSION_GOALS_DIR", store)
+        .env("EXITBIND_NO_UPDATE_CHECK", "1")
+        .env_remove("CODEX_SESSION_ID")
+        .env_remove("CLAUDE_CODE_SESSION_ID")
+        .env_remove("EXITBIND_NATIVE_SESSION_ID")
+        .env("CODEX_THREAD_ID", session)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let before_stop = fixture.old.native_store_snapshot();
+    let mut child = command.spawn().unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(payload.to_string().as_bytes())
+        .unwrap();
+    let stopped = child.wait_with_output().unwrap();
+    assert!(stopped.status.success(), "{stopped:?}");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&stopped.stdout).unwrap(),
+        json!({"decision":"block", "reason":"The session Goal is open. Continue the authorized work."})
+    );
+    assert_eq!(fixture.old.native_store_snapshot(), before_stop);
+
+    let alternate = fixture.target.root.join("alternate-config.json");
+    fs::write(&alternate, &changed_config).unwrap();
+    let before_refusals = fixture.old.native_store_snapshot();
+    let wrong_path = fixture.target.call_with_config(
+        &["goal", "cover", "--goal-id", "import"],
+        None,
+        &alternate,
+    );
+    assert!(
+        !wrong_path.status.success(),
+        "a different config path must not acquire the corrected owner"
+    );
+    assert!(
+        String::from_utf8_lossy(&wrong_path.stderr).contains("owner configuration does not match"),
+        "{wrong_path:?}"
+    );
+    config["project"]["root"] = json!(fixture.old.root);
+    fs::write(&config_path, serde_json::to_string(&config).unwrap()).unwrap();
+    let wrong_root = fixture
+        .target
+        .call(&["goal", "cover", "--goal-id", "import"], None);
+    assert!(
+        !wrong_root.status.success(),
+        "a different project root must not acquire the corrected owner"
+    );
+    assert!(
+        String::from_utf8_lossy(&wrong_root.stderr).contains("owned by another configured project"),
+        "{wrong_root:?}"
+    );
+    assert_eq!(fixture.old.native_store_snapshot(), before_refusals);
+    fs::write(&config_path, changed_config).unwrap();
+    fs::remove_file(alternate).unwrap();
+
+    let work = fixture.target.begin("R1,R2,R3", "sh check.sh all");
+    fixture.target.drive(&work, true);
+    fixture.target.value(
+        &[
+            "goal",
+            "assign",
+            "--goal-id",
+            "import",
+            "--requirement",
+            "R1,R2,R3",
+            "--result-ref",
+            &work,
+        ],
+        None,
+    );
+    let closed = fixture.target.value(
+        &[
+            "goal",
+            "close",
+            "--goal-id",
+            "import",
+            "--result-ref",
+            &work,
+        ],
+        None,
+    );
+    assert_eq!(closed["closure"]["closed"], true);
+    assert_eq!(closed["nativeGoalOwnerCorrections"][0], saved);
+    assert!(fs::read(&journal).unwrap().starts_with(&committed));
+}
+
+#[test]
 fn pending_barrier_can_be_aborted_or_retried_without_a_second_owner_commit() {
     let fixture = Fixture::new("owner-correction-interruption");
     let (_, journal) = paths(&fixture.old);
@@ -236,9 +405,20 @@ fn pending_barrier_can_be_aborted_or_retried_without_a_second_owner_commit() {
     fixture
         .target
         .file("relocated.txt", "temporarily unavailable bytes\n");
+    let before_retry = fixture.old.native_store_snapshot();
     let failed_retry = fixture.execute(&first, "applyArgv");
-    assert!(!failed_retry.status.success());
-    assert!(String::from_utf8_lossy(&failed_retry.stderr).contains("abort exact argv"));
+    assert!(!failed_retry.status.success(), "{failed_retry:?}");
+    let refusal: Value = serde_json::from_slice(&failed_retry.stdout)
+        .unwrap_or_else(|error| panic!("invalid JSON refusal: {error}; {failed_retry:?}"));
+    let diagnostic = refusal["error"]
+        .as_str()
+        .expect("JSON refusal has an error");
+    assert!(
+        diagnostic.contains(&format!("retry exact argv {}", first["applyArgv"]))
+            && diagnostic.contains(&format!("abort exact argv {}", first["abortArgv"])),
+        "unexpected recovery refusal: {diagnostic}"
+    );
+    assert_eq!(fixture.old.native_store_snapshot(), before_retry);
     assert_eq!(
         value(&fixture.execute(&first, "abortArgv"))["kind"],
         "native_goal_owner_correction_aborted"
@@ -721,6 +901,9 @@ fn a_committed_owner_change_is_reversed_only_by_another_bound_event() {
     let first = fixture.preview("forward");
     value(&fixture.execute(&first, "applyArgv"));
     let forward_prefix = fs::read(&journal).unwrap();
+    let target_config = fixture.target.root.join("exitbind.json");
+    let target_bytes = fs::read_to_string(&target_config).unwrap();
+    fs::write(&target_config, format!("{target_bytes}\n")).unwrap();
     let source = fs::read(fixture.old.root.join("request.txt")).unwrap();
     let relocation = json!([{"originalRef":"request.txt","recordedSha256":sha(&source),
         "targetPath":"request.txt"}])
@@ -742,6 +925,14 @@ fn a_committed_owner_change_is_reversed_only_by_another_bound_event() {
             "--json",
         ],
         None,
+    );
+    assert_ne!(
+        preview["decision"]["oldConfig"]["configSha256"],
+        first["decision"]["targetConfig"]["configSha256"]
+    );
+    assert_eq!(
+        preview["decision"]["oldConfig"]["path"],
+        first["decision"]["targetConfig"]["path"]
     );
     let argv = preview["applyArgv"]
         .as_array()
