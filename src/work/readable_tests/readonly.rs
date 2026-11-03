@@ -2,6 +2,25 @@
 use super::*;
 use std::os::unix::{ffi::OsStrExt, fs::PermissionsExt};
 
+struct RestorePermissions<'a> {
+    path: &'a std::path::Path,
+    original: std::fs::Permissions,
+}
+
+impl RestorePermissions<'_> {
+    fn restore(&self) -> std::io::Result<()> {
+        std::fs::set_permissions(self.path, self.original.clone())
+    }
+}
+
+impl Drop for RestorePermissions<'_> {
+    fn drop(&mut self) {
+        if let Err(error) = self.restore() {
+            eprintln!("could not restore fixture store permissions: {error}");
+        }
+    }
+}
+
 #[test]
 fn readonly_scope_retains_and_rechecks_the_shared_journey_witness() {
     if !crate::compatibility::is_exitbind() {
@@ -71,12 +90,15 @@ fn readonly_scope_retains_and_rechecks_the_shared_journey_witness() {
         crate::session_goal::progress_for_work(&loaded, &successor, &next["progress"]).unwrap();
 
     let store = scope.root.parent().unwrap();
-    let permissions = std::fs::metadata(store).unwrap().permissions();
+    let permissions = RestorePermissions {
+        path: store,
+        original: std::fs::metadata(store).unwrap().permissions(),
+    };
     std::fs::set_permissions(store, std::fs::Permissions::from_mode(0o500)).unwrap();
     let path = std::ffi::CString::new(store.as_os_str().as_bytes()).unwrap();
     if unsafe { libc::access(path.as_ptr(), libc::W_OK) } == 0 {
         eprintln!("COVERAGE UNAVAILABLE: current credentials can write a mode-0500 fixture");
-        std::fs::set_permissions(store, permissions).unwrap();
+        permissions.restore().unwrap();
         return;
     }
     let mut observation = crate::session_goal::WorkGoalObservation::acquire(&loaded, &successor);
@@ -89,10 +111,13 @@ fn readonly_scope_retains_and_rechecks_the_shared_journey_witness() {
     let mut stale = crate::session_goal::WorkGoalObservation::acquire(&loaded, &successor);
     stale.progress(&next["progress"]).unwrap();
     assert!(stale.has_journey_observation());
-    revise_goal(&loaded, &scope.root, "readonly-goal", "Changed", true).unwrap();
+    permissions.restore().unwrap();
+    let changed = revise_goal(&loaded, &scope.root, "readonly-goal", "Changed", true);
+    std::fs::set_permissions(store, std::fs::Permissions::from_mode(0o500)).unwrap();
+    changed.unwrap();
     assert!(
         stale.finish().is_err(),
         "the final witness must refuse the changed Goal"
     );
-    std::fs::set_permissions(store, permissions).unwrap();
+    permissions.restore().unwrap();
 }

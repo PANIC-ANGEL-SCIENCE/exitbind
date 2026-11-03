@@ -414,7 +414,7 @@ fn prepare_codex_direct(label: &str) -> (support::TempRoot, String, String, Stri
 }
 
 #[test]
-fn unverified_codex_capacity_does_not_accept_a_missing_required_original() {
+fn missing_required_original_invalidates_codex_child_route_before_preparation() {
     let (root, work, _, _, route) = codex_direct_prepare_route("codex-missing-original");
     let ledger = root.join(format!(
         ".exitbind/runs/work-{}.jsonl",

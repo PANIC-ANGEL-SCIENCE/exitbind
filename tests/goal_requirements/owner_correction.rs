@@ -871,9 +871,20 @@ fn restoring_a_legacy_owner_after_commit_cannot_hide_the_correction() {
     let work = fixture
         .target
         .begin_ordinary("Retain the native Work association", "true", &[]);
+    let token = work.strip_prefix("smw_").expect("native Work handle");
+    let companion_path = fixture
+        .target
+        .root
+        .join(format!(".exitbind/runs/work-{token}.session-goal.json"));
+    let companion: Value = serde_json::from_slice(&fs::read(&companion_path).unwrap()).unwrap();
+    let marker: Value = serde_json::from_slice(&fs::read(&owner).unwrap()).unwrap();
+    assert_eq!(companion["kind"], "native_session_goal_context");
+    assert_eq!(companion["work"], work);
+    assert_eq!(companion["parentGoalId"], "import");
+    assert_eq!(companion["sessionKey"], marker["sessionKey"]);
     let attached = fixture
         .target
-        .value(&["work", "next", &work, "--json"], None);
+        .value(&["work", "next", &work, "--json", "--full"], None);
     assert_eq!(
         attached["presentation"]["goalProgress"]["goal"], "Import names safely and show a count",
         "{attached}"
@@ -892,8 +903,9 @@ fn restoring_a_legacy_owner_after_commit_cannot_hide_the_correction() {
         .success());
     let next = fixture
         .target
-        .value(&["work", "next", &work, "--json"], None);
+        .value(&["work", "next", &work, "--json", "--full"], None);
     let progress = &next["presentation"]["goalProgress"];
+    assert_eq!(progress["overall"], "unavailable", "{next}");
     assert_eq!(
         progress["decomposition"]["reason"], "native_session_goal_context_invalid",
         "{next}"
