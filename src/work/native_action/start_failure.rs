@@ -226,6 +226,25 @@ pub(super) fn message(
 mod tests {
     use super::*;
 
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    use std::io::{BufRead, BufReader, Read, Write};
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    use std::os::unix::process::CommandExt;
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    struct OwnedChild(std::process::Child);
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    impl Drop for OwnedChild {
+        fn drop(&mut self) {
+            drop(self.0.stdin.take());
+            if matches!(self.0.try_wait(), Ok(None)) {
+                let _ = self.0.kill();
+            }
+            let _ = self.0.wait();
+        }
+    }
+
     fn config() -> &'static Path {
         Path::new("/fixture/exitbind.json")
     }
@@ -328,17 +347,97 @@ mod tests {
     }
 
     #[test]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     fn a_recorded_child_is_relaunchable_only_once_the_host_proves_it_ended() {
+        const CHILD: &str = "EXITBIND_TEST_OWNED_NATIVE_START";
+        const READY: &str = "EXITBIND_OWNED_PROCESS=";
+        const TEST: &str = "work::action::native_action::start_failure::tests::a_recorded_child_is_relaunchable_only_once_the_host_proves_it_ended";
+        if std::env::var_os(CHILD).is_some() {
+            let identity = crate::host::codex_exec::observer_identity();
+            let mut stdout = std::io::stdout().lock();
+            writeln!(
+                stdout,
+                "\n{READY}{}",
+                json!({"pid":identity.pid,"startTimeTicks":identity.start_time_ticks})
+            )
+            .unwrap();
+            stdout.flush().unwrap();
+            drop(stdout);
+            std::io::stdin().read_to_end(&mut Vec::new()).unwrap();
+            return;
+        }
+
+        // The child has its own group, and blocks on this test's stdin pipe.
+        // Its own observer identity supplies the real host start marker.
+        let child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([TEST, "--exact", "--test-threads=1", "--nocapture"])
+            .env(CHILD, "1")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let mut child = OwnedChild(child);
+        let pid = child.0.id();
+        let stdout = child.0.stdout.take().expect("owned child stdout");
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let reader = std::thread::spawn(move || {
+            for line in BufReader::new(stdout).lines() {
+                match line {
+                    Ok(line) => {
+                        if let Some(value) = line.strip_prefix(READY) {
+                            let _ = sender.send(
+                                serde_json::from_str::<Value>(value)
+                                    .map_err(|error| error.to_string()),
+                            );
+                        }
+                    }
+                    Err(error) => {
+                        let _ = sender.send(Err(error.to_string()));
+                        break;
+                    }
+                }
+            }
+        });
+        let identity = receiver
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("owned child did not report its process identity")
+            .expect("owned child process identity is malformed");
+        assert_eq!(identity["pid"].as_u64(), Some(u64::from(pid)));
+        assert!(identity["startTimeTicks"].as_u64().is_some());
         let mut journal = failed(json!([]), json!([]), Value::Null);
-        journal["processIdentity"] = json!({"pid": 123, "processGroup": 123, "startTimeTicks": 45});
-        // Host-independent: a recorded child never relaunches unless the host
-        // reads it as ended; a host that cannot prove it stays conservative.
+        journal["processIdentity"] = json!({"pid":pid,"processGroup":pid,
+            "startTimeTicks":identity["startTimeTicks"]});
+        assert_eq!(recovery::liveness(&journal), ProcessLiveness::Alive);
+        assert!(!relaunchable(&journal));
+
+        let mut uncertain = journal.clone();
+        uncertain["processIdentity"]["startTimeTicks"] = Value::Null;
+        assert_eq!(recovery::liveness(&uncertain), ProcessLiveness::Uncertain);
+        assert!(!relaunchable(&uncertain));
+
+        drop(child.0.stdin.take());
+        assert!(child.0.wait().expect("reap owned child").success());
+        reader.join().expect("owned child output reader");
         assert_eq!(
-            relaunchable(&journal),
-            recovery::liveness(&journal) == ProcessLiveness::Ended
+            recovery::liveness(&journal),
+            ProcessLiveness::Ended,
+            "the reaped child and its process group must both be gone"
         );
-        // Linux reads the process table, where this start time cannot match.
-        #[cfg(target_os = "linux")]
         assert!(relaunchable(&journal));
+    }
+
+    #[test]
+    fn malformed_recorded_process_never_proves_relaunch_is_safe() {
+        let mut journal = failed(json!([]), json!([]), Value::Null);
+        for identity in [
+            Value::Null,
+            json!({"pid":0,"processGroup":0,"startTimeTicks":null}),
+            json!({"pid":"invalid","processGroup":null,"startTimeTicks":null}),
+        ] {
+            journal["processIdentity"] = identity;
+            assert_eq!(recovery::liveness(&journal), ProcessLiveness::Uncertain);
+            assert!(!relaunchable(&journal));
+        }
     }
 }
