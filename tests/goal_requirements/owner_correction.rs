@@ -876,7 +876,7 @@ fn restoring_a_legacy_owner_after_commit_cannot_hide_the_correction() {
         .target
         .root
         .join(format!(".exitbind/runs/work-{token}.session-goal.json"));
-    let companion: Value = serde_json::from_slice(&fs::read(&companion_path).unwrap()).unwrap();
+    let companion: Value = serde_json::from_slice(&fs::read(companion_path).unwrap()).unwrap();
     let marker: Value = serde_json::from_slice(&fs::read(&owner).unwrap()).unwrap();
     assert_eq!(companion["kind"], "native_session_goal_context");
     assert_eq!(companion["work"], work);
