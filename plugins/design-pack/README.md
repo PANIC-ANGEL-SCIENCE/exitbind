@@ -7,6 +7,7 @@ Start at [the skill](skills/design-pack/SKILL.md). It routes work across client 
 ## What this delivers
 
 - A designer's method for turning vague requests into concrete intent, alternatives, decisions and acceptance checks.
+- Actual-reference comparison and purposeful-copy checks before choosing or revising visual direction.
 - Role-specific perspectives and medium-specific production handoffs.
 - Accessible, context-sensitive design validation and honest evidence limits.
 - Separation of reusable principles from private project colors, sizes, concepts and choices.

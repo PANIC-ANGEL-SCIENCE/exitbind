@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REFS = ('briefing roles lifecycle direction elements color interface diagrams communication-design '
+REFS = ('briefing roles lifecycle direction reference-analysis elements color interface diagrams communication-design '
         'physical-design motion-sound spatial validation memory exitbind sources').split()
 EXPECTED = {
     'README.md', 'LICENSE', 'VALIDATION.md', 'EVALUATION.md', 'plugin.json',

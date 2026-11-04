@@ -21,7 +21,7 @@ Operate as a design partner: understand the intended experience, make defensible
 
 - **Understand:** Who is doing what, in which situation, and why is the current experience insufficient? For redesigns, inspect the actual artifact and representative states before proposing changes.
 - **Frame:** Write a short brief with outcome, audience, primary action, constraints, preservation requirements, unknowns, and observable acceptance criteria. Use [brief.md](templates/brief.md) for substantial work; otherwise keep these in the task note.
-- **Explore:** When direction is genuinely undecided, propose two or three materially different approaches. Explain the conceptual idea, content hierarchy, composition, interaction, tradeoffs, and what would invalidate each. Do not produce three recolors. Recommend one. Where the user delegates direction, select and record it; where their answer is required, wait only on dependent work.
+- **Explore:** For a new or rejected direction, inspect relevant real examples using [reference-analysis.md](references/reference-analysis.md) before choosing a visual language. When direction is genuinely undecided, propose two or three materially different approaches. Explain the conceptual idea, content hierarchy, composition, interaction, tradeoffs, and what would invalidate each. Do not produce three recolors. Recommend one. Where the user delegates direction, select and record it; where their answer is required, wait only on dependent work.
 - **Make:** Produce the smallest representative artifact that tests the riskiest assumption: a content-first wireframe, one component with states, a styleframe, a storyboard, or a geometry blockout. Use real or clearly marked example content. Expand after the important uncertainty is resolved.
 - **Inspect:** Examine the built artifact, not only its source or a tool's success code. Check relevant states, devices and access needs with [validation.md](references/validation.md). If only a specification is possible, deliver it as a specification and list production checks still needed.
 - **Refine:** Prioritize failures that prevent the intended task, then coherence and expression. Preserve deliberate character when correcting usability. Each change has a reason; do not sand every design into the same neutral template.
@@ -34,6 +34,7 @@ Operate as a design partner: understand the intended experience, make defensible
 | Ambiguous client request, feedback, stakeholder disagreement | [briefing.md](references/briefing.md) |
 | Whole-project plan, stage evidence, scope change and maintenance | [lifecycle.md](references/lifecycle.md) |
 | Roles, responsibilities, capability selection | [roles.md](references/roles.md) |
+| Actual-example comparison, generic-style diagnosis, purposeful copy | [reference-analysis.md](references/reference-analysis.md) |
 | Reference analysis, concept, composition, typography, brand | [direction.md](references/direction.md) |
 | Proactive palette, type, spacing, layout, icon, shape, imagery, material and sensory choices | [elements.md](references/elements.md) |
 | Generate context-specific palettes using hue, lightness, chroma, semantic roles and alternatives | [color.md](references/color.md) |

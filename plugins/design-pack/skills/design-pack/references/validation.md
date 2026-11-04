@@ -33,6 +33,10 @@ W3C's [page structure tutorial](https://www.w3.org/WAI/tutorials/page-structure/
 
 Choose a finite set based on the brief and risk. Do not invent a universal device matrix or run unrelated checks just to accumulate evidence.
 
+## Direction and content check
+
+Compare the rendered work with the brief and the observed reference relationships. Identify unsupported combinations, generic substitutions and decorative content that competes with the task. Apply the line-by-line copy role, deletion and swap tests in [reference-analysis.md](reference-analysis.md). Verify that counts, labels and promises reflect real content or clearly marked samples. Keep task behavior, directional fit and client acceptance as separate results; a passed browser test is not aesthetic approval.
+
 ## Findings that lead to repair
 
 Each finding includes location/state, observation, consequence for this audience, severity, confidence, proposed change and how to verify it. Rank: blocking task/safety/access failure; major comprehension/coherence failure; local usability defect; craft refinement. Explain context rather than assigning numerical “taste” scores without a rubric.

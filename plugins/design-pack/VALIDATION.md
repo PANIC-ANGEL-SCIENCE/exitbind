@@ -2,9 +2,9 @@
 
 Package: Design Pack 0.1.0. Date: 2026-11-04.
 
-Scope: self-contained package structure, declared metadata, local links, source coverage and archive integrity. No upstream programs, renderers or provider plugins were installed. Exitbind repository files and settings were not modified.
+Scope: self-contained package structure, declared metadata, local links, source coverage and archive integrity. No upstream programs, renderers or provider plugins were installed. This candidate changes pack sources and their documentation; no host settings or runtime behavior are modified.
 
-Executed `python3 scripts/check_pack.py --self-test`: PASS, 30 allowlisted files; manifest consistency, routed references, local links and 18 source records passed. Five negative cases were rejected: broken local link, manifest drift, missing sources, unexpected private file and symlink.
+Executed `python3 scripts/check_pack.py --self-test`: PASS, 31 allowlisted files; manifest consistency, routed references, local links and 18 source records passed. Five negative cases were rejected: broken local link, manifest drift, missing sources, unexpected private file and symlink.
 
 The packaging command revalidates and checks every ZIP member against the source bytes. Archive execution is additionally recorded in the delivery report outside the archive to avoid self-referential checksums. A successful structural check is not an aesthetic or accessibility result for a design produced with the pack.
 

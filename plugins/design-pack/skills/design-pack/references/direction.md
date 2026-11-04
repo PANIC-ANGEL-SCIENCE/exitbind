@@ -4,6 +4,8 @@ Start from the subject's real content: the audience, product, place, material, h
 
 ## Research and interpretation
 
+For a new or rejected direction, first use the comparison and copy workflow in [reference-analysis.md](reference-analysis.md). Name the task being borrowed, not just a style adjective. Analyze combinations before proposing a replacement.
+
 Inspect the actual references when available. Record source, creator, date/version, viewport or physical scale, what was observed and which states were inaccessible. Analyse:
 
 - Composition: focal point, reading order, alignment, balance, negative space, crop and edge behavior.
