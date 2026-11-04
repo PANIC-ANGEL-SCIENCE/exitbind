@@ -148,9 +148,26 @@ fn project_sections(
             "reviewPurpose",
             "substitution",
             "quarantineVerification",
+            "leadRepair",
         ],
         "native assignment packet",
     )?;
+    if nonempty(&packet["leadRepair"]) {
+        classified(
+            &packet["leadRepair"],
+            &[
+                "authority",
+                "decision",
+                "reason",
+                "repairBoundary",
+                "decisiveRegression",
+                "findingSha256s",
+                "dispositionSha256",
+                "basisSha256",
+            ],
+            "native Lead repair",
+        )?;
+    }
     if packet["checkEvidence"] != sections["evidence"]["checkEvidence"] {
         return Err("native assignment check evidence conflicts with canonical evidence".into());
     }
@@ -520,6 +537,7 @@ fn project_sections(
         "reviewPurpose",
         "substitution",
         "quarantineVerification",
+        "leadRepair",
     ] {
         copy_if_present(&mut actor, name, &packet[name]);
     }

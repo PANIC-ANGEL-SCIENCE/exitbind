@@ -403,6 +403,60 @@ fn case_c_repair_carries_the_lead_boundary_and_needs_fresh_review() {
         .unwrap()
         .contains(SUGGESTION));
 
+    // Exercise the native projection, not only the ordinary Work packet.
+    let view = fixture.ok(&["work", "continuation", &work], b"");
+    let bind: Vec<String> = view["receive"]["bind"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|arg| {
+            match arg.as_str().unwrap() {
+                "<HOST>" => "claude",
+                "<NATIVE_SESSION>" => "repair-session",
+                "<HOST_VERSION>" => "fixture",
+                value => value,
+            }
+            .to_owned()
+        })
+        .collect();
+    let bound = support::git_topology::command(&bind[0])
+        .current_dir(&fixture.root)
+        .args(&bind[1..])
+        .output()
+        .unwrap();
+    assert!(bound.status.success(), "{}", text(&bound));
+    let native_repair = |child: &str| {
+        let current = fixture.next(&work);
+        let view = fixture.ok(&["work", "continuation", &work], b"");
+        let named = &view["receive"]["currentAssignmentPrepare"];
+        let argv: Vec<&str> = named["command"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|arg| arg.as_str().unwrap())
+            .collect();
+        let prepared = support::git_topology::command(argv[0])
+            .current_dir(&fixture.root)
+            .args(&argv[1..])
+            .output()
+            .unwrap();
+        assert!(prepared.status.success(), "{}", text(&prepared));
+        let payload = json!({"hook_event_name":"SubagentStart", "cwd":fixture.root.path(),
+            "session_id":"repair-session", "agent_id":child,
+            "agent_type":named["nativeTaskName"]});
+        let hook = fixture.ok(&["hook-run"], payload.to_string().as_bytes());
+        let context = hook["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap();
+        let actor = context.split_once(
+            "Complete current assignment, evidence and task conditions (verified for this recipient):\n")
+            .and_then(|(_, rest)| rest.lines().next()).unwrap();
+        let actor: Value = serde_json::from_str(actor).unwrap();
+        assert_eq!(&actor["leadRepair"], repair);
+        assert_eq!(actor["boundary"], current["packet"]["declaredBoundary"]);
+    };
+    native_repair("repair-worker");
+
     // The repaired result needs its own check and review.
     fixture.give_ok(&work, &worker, "completed", "repaired");
     let checked = fixture.ok(&["work", "check", &work], b"");
@@ -412,6 +466,7 @@ fn case_c_repair_carries_the_lead_boundary_and_needs_fresh_review() {
         fixture.next(&work)["packet"]["leadRepair"]["repairBoundary"],
         boundary
     );
+    native_repair("repair-reviewer");
 
     let lead = fixture.give_ok(&work, &reviewer, "approved", "approved")["next"].clone();
     assert!(fixture.next(&work)["packet"]

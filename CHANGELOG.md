@@ -12,6 +12,8 @@ Release: https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/tag/v0.31.26 â
   still rechecks current bytes; a fit prediction is not delivery or acceptance.
 - Present the existing evidence and replan recovery routes together without
   resetting governor accounting or treating different text as semantic progress.
+- Carry the Lead's current repair boundary, reason and regression into native
+  worker and reviewer assignments after rework, preserving their existing rights.
 - Add bounded native Stop hooks for the session that owns an open Goal.
   An exact current recorded owner question can wait; the host's repeat flag
   prevents an endless hook loop. Hook registration, native trust and actual

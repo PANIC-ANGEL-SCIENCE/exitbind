@@ -53,6 +53,38 @@ fn sections() -> Value {
 }
 
 #[test]
+fn current_lead_repair_is_delivered_exactly_to_worker_and_reviewer() {
+    let route = vec!["work".into(), "expand".into(), "bound".into()];
+    for role in ["worker", "reviewer"] {
+        let mut current = sections();
+        let packet = &mut current["assignment"]["assignment"];
+        packet["role"] = json!(role);
+        packet["context"]["role"] = json!(role);
+        packet["context"]["next"]["role"] = json!(role);
+        packet["context"]["next"]["owner"] = json!(role);
+        let repair = json!({"authority":"lead", "decision":"repair",
+            "reason":"The inherited blank-row skip violates the row-shape contract",
+            "repairBoundary":"Only report.py; preserve helper, verifier and modes",
+            "decisiveRegression":"Reject zero-field records before and after valid rows",
+            "findingSha256s":["a".repeat(64)], "dispositionSha256":"b".repeat(64),
+            "basisSha256":null});
+        packet["leadRepair"] = repair.clone();
+        let actor =
+            project_sections("work-a", "binding-a", &current, &route, &Value::Null).unwrap();
+        assert_eq!(actor["leadRepair"], repair);
+        assert_eq!(actor["boundary"], json!({"write":["allowed.txt"]}));
+
+        current["assignment"]["assignment"]["leadRepair"]["newInstruction"] =
+            json!("Do not silently discard future repair terms");
+        assert!(
+            project_sections("work-a", "binding-a", &current, &route, &Value::Null)
+                .unwrap_err()
+                .contains("unclassified")
+        );
+    }
+}
+
+#[test]
 fn selected_actor_keeps_exact_late_facts_and_the_canonical_action() {
     let original = sections();
     let route = vec![
