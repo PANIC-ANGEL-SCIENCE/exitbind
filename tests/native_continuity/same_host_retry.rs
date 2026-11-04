@@ -16,7 +16,7 @@ fn failed_reviewer(name: &str) -> FailedReviewer {
     failed_reviewer_with(Fixture::new(name))
 }
 
-fn failed_reviewer_with(fixture: Fixture) -> FailedReviewer {
+fn prepare_reviewer(fixture: &Fixture) -> (String, String, Value) {
     let worker = fixture.next(Some(SESSION));
     let returned = fixture.call(
         Some(SESSION),
@@ -46,6 +46,11 @@ fn failed_reviewer_with(fixture: Fixture) -> FailedReviewer {
     assert!(prepared.status.success(), "{}", text(&prepared));
     let prepared: Value = serde_json::from_slice(&prepared.stdout).unwrap();
     let old_id = prepared["intent"].as_str().unwrap().to_owned();
+    (old_id, native, prepared)
+}
+
+fn failed_reviewer_with(fixture: Fixture) -> FailedReviewer {
+    let (old_id, native, _) = prepare_reviewer(&fixture);
     let old_result = unavailable_start(&fixture, "old-reviewer", &native);
     assert_eq!(
         fixture.intents().unwrap()[0]["assignmentDelivery"]["state"],
@@ -63,6 +68,49 @@ fn failed_reviewer_with(fixture: Fixture) -> FailedReviewer {
         old_id,
         native,
         old_result,
+    }
+}
+
+// This synthetic input deliberately has no delivery credit. Its cause is
+// legacy envelope capacity, independently of the post-render rules-race helper.
+fn capacity_uncredited_reviewer(name: &str) -> FailedReviewer {
+    let fixture = Fixture::new(name);
+    fs::write(
+        fixture.product.join("AGENTS.md"),
+        format!("Capacity fixture rule.\n{}", "r".repeat(9_000)),
+    )
+    .unwrap();
+    let (old_id, native, prepared) = prepare_reviewer(&fixture);
+    assert!(prepared["transportPreflight"]["parts"].as_u64().unwrap() > 1);
+    let context = fixture.value(
+        Some(SESSION),
+        &["work", "child", "context", &fixture.work, &old_id],
+    );
+    let contract = &context["hostResultContract"];
+    assert!(contract["schema"]["properties"]["outcome"]["enum"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("approved")));
+    let result = json!({"outcome":"approved","summary":"Synthetic uncredited observation for integrity testing.","reason":"","evidenceReferences":contract["requiredEvidenceReferences"]}).to_string();
+    let output = fixture.hook(json!({"hook_event_name":"SubagentStart","session_id":SESSION,"agent_id":"capacity-reviewer","agent_type":native})).unwrap();
+    assert!(output.contains("Complete assignment exceeds the host context envelope; automatic return cannot receive credit."), "{output}");
+    assert_eq!(
+        fixture.intents().unwrap()[0]["assignmentDelivery"]["state"],
+        "unavailable"
+    );
+    fixture.hook(json!({"hook_event_name":"SubagentStop","session_id":SESSION,"agent_id":"capacity-reviewer","agent_type":native,"last_assistant_message":result}));
+    let old = &fixture.intents().unwrap()[0];
+    assert_eq!(old["state"], "recorded");
+    assert_eq!(old["nativeChild"], "capacity-reviewer");
+    assert_eq!(old["session"], SESSION);
+    assert!(old["rawObservation"].is_object());
+    assert!(old["returnEventSha256"].is_null());
+    assert!(old["pendingReturn"].is_null() || old["pendingReturn"] == false);
+    FailedReviewer {
+        fixture,
+        old_id,
+        native,
+        old_result: result,
     }
 }
 
@@ -404,17 +452,39 @@ fn retry_refuses_write_rights_and_corrupted_original_observation() {
     let refused = direct_retry(&failed, &failed.old_id);
     assert!(!refused.status.success(), "{}", text(&refused));
 
-    let failed = failed_reviewer("reviewer-retry-corrupt-observation");
+    let failed = capacity_uncredited_reviewer("reviewer-retry-corrupt-observation");
+    // Positive control: the exact ended observation is eligible before the
+    // sole corruption; refusal must not come from another retry prerequisite.
+    let retry = argv(&failed.fixture.next(Some(SESSION))["prepareChild"]);
+    assert!(retry
+        .windows(2)
+        .any(|args| args[0] == "--retry-of" && args[1] == failed.old_id));
     let path = failed.fixture.product.join(".exitbind/child-intents.json");
     let mut state: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let original = state.clone();
     state["intents"][0]["rawObservation"]["sha256"] = json!("f".repeat(64));
     fs::write(&path, serde_json::to_vec(&state).unwrap()).unwrap();
     assert!(failed.fixture.next(Some(SESSION))["prepareChild"].is_null());
     let refused = direct_retry(&failed, &failed.old_id);
     assert!(!refused.status.success(), "{}", text(&refused));
-    let state: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
-    assert_eq!(state["version"], 1);
-    assert_eq!(state["intents"].as_array().unwrap().len(), 1);
+    assert!(
+        text(&refused).contains("captured raw observation changed"),
+        "{}",
+        text(&refused)
+    );
+    let after: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(
+        after, state,
+        "refusal must not change the retained observation or add an intent"
+    );
+    assert_eq!(after["version"], 1);
+    assert_eq!(after["intents"].as_array().unwrap().len(), 1);
+    assert!(after["intents"][0]["returnEventSha256"].is_null());
+    fs::write(&path, serde_json::to_vec(&original).unwrap()).unwrap();
+    let restored = argv(&failed.fixture.next(Some(SESSION))["prepareChild"]);
+    assert!(restored
+        .windows(2)
+        .any(|args| args[0] == "--retry-of" && args[1] == failed.old_id));
 }
 
 #[test]

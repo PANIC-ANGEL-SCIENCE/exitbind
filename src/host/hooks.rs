@@ -101,7 +101,7 @@ pub fn manage(action: &str, hosts: &str, root: &str) -> Result<Vec<Value>, Strin
         // Exitbind's own superseded wiring, not a third party's hook. Retire it
         // so a current binary cannot keep an old host bridge; everything else
         // stays a conflict and is never rewritten.
-        if action == "apply" && crate::producer::exitbind_surface() {
+        if matches!(action, "apply" | "remove") && crate::producer::exitbind_surface() {
             let retired = retire_superseded(&mut state.document, host);
             if retired > 0 {
                 state.retired = retired;

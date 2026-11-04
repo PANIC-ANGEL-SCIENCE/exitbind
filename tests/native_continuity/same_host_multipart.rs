@@ -151,7 +151,15 @@ fn concurrent_slots_use_one_bundle() {
         for index in 1..=4 {
             let fixture = &fixture;
             let input = &input;
-            handles.push(scope.spawn(move || part(&invoke(fixture, index, input))));
+            handles.push(scope.spawn(move || {
+                let started = std::time::Instant::now();
+                let output = invoke(fixture, index, input);
+                eprintln!(
+                    "Claude multipart slot {index}: {:.3}s",
+                    started.elapsed().as_secs_f64()
+                );
+                part(&output)
+            }));
         }
         handles
             .into_iter()

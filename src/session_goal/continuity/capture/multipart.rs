@@ -241,13 +241,13 @@ pub(super) fn select(
                     "partSha256":part_hashes, "receipts":vec![Value::Null; bundle.parts.len()]
                 });
             }
-            let Some(part) = bundle.parts.get(slot) else {
+            let Some((part, digest)) = bundle.parts.get(slot).zip(part_hashes.get(slot)) else {
                 return Ok(Ok(None));
             };
             Ok(Ok(Some(Piece {
                 bundle: bundle.digest.clone(),
                 slot,
-                digest: output_digest(part)?,
+                digest: digest.clone(),
                 text: part.clone(),
             })))
         })
@@ -342,8 +342,9 @@ pub(super) fn receipt(
             let pending = &intent["multipartDelivery"];
             let saved = pending["facts"].clone();
             if pending["identity"] != identity(intent)
+                || saved["binding"].as_str().is_none()
+                || facts(&saved).is_none()
                 || !intact_parts(pending)
-                || !current(loaded, intent, &saved)
             {
                 invalidate_intent(intent);
                 return Ok(Err(
@@ -359,8 +360,8 @@ pub(super) fn receipt(
                     }
                 };
             if complete {
-                // This independent final read precedes promotion under the same
-                // intent lock; emitted pieces alone are never enough.
+                // Nonfinal receipts cannot confer credit. Independently
+                // reconstruct strict currentness before the final promotion.
                 if !current(loaded, intent, &saved) {
                     invalidate_intent(intent);
                     return Ok(Err("child multipart facts changed before promotion"));

@@ -145,6 +145,47 @@ fn claude_start_upgrades_to_distinct_slots_and_preserves_foreign_handlers() {
 }
 
 #[test]
+fn remove_retires_legacy_claude_start_without_requiring_apply() {
+    let home = host_home("host-bridge-claude-legacy-remove");
+    let path = home.join(".claude/settings.json");
+    let legacy = json!({"type":"command", "command":"command -v exitbind >/dev/null 2>&1 && exitbind hook-run || true", "timeout":5});
+    let foreign = json!({"type":"command", "command":"foreign-start"});
+    fs::write(
+        &path,
+        json!({"kept":true,"hooks":{"SubagentStart":[{"hooks":[legacy,foreign]}]}}).to_string(),
+    )
+    .unwrap();
+    let root = home.to_str().unwrap();
+    let removed = json(exitbind(
+        &home,
+        &[
+            "hooks", "remove", "--hosts", "claude", "--root", root, "--json",
+        ],
+    ));
+    assert_eq!(removed["hosts"][0]["changed"], true);
+    assert_eq!(removed["hosts"][0]["state"], "absent");
+    let after: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(
+        after,
+        json!({"kept":true,"hooks":{"SubagentStart":[{"hooks":[foreign]}]}})
+    );
+    let status = json(exitbind(
+        &home,
+        &[
+            "hooks", "status", "--hosts", "claude", "--root", root, "--json",
+        ],
+    ));
+    assert_eq!(status["hosts"][0]["state"], "absent");
+    let again = json(exitbind(
+        &home,
+        &[
+            "hooks", "remove", "--hosts", "claude", "--root", root, "--json",
+        ],
+    ));
+    assert_eq!(again["hosts"][0]["changed"], false);
+}
+
+#[test]
 fn filtered_old_claude_start_is_a_conflict_and_is_not_rewritten() {
     let home = host_home("host-bridge-claude-filtered");
     let path = home.join(".claude/settings.json");
@@ -160,6 +201,14 @@ fn filtered_old_claude_start_is_a_conflict_and_is_not_rewritten() {
         ],
     ));
     assert_eq!(applied["hosts"][0]["state"], "conflict");
+    assert_eq!(fs::read_to_string(&path).unwrap(), before);
+    let removed = json(exitbind(
+        &home,
+        &[
+            "hooks", "remove", "--hosts", "claude", "--root", root, "--json",
+        ],
+    ));
+    assert_eq!(removed["hosts"][0]["state"], "conflict");
     assert_eq!(fs::read_to_string(&path).unwrap(), before);
 }
 
