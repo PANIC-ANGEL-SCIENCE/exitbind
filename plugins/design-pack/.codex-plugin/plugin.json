@@ -1,0 +1,31 @@
+{
+  "name": "design-pack",
+  "version": "0.1.0",
+  "description": "One self-contained design workflow across disciplines, from client ambiguity to verified delivery. Skills only; no external tool dependencies.",
+  "author": {
+    "name": "Design Pack contributors"
+  },
+  "license": "MIT",
+  "keywords": [
+    "design",
+    "briefing",
+    "research",
+    "art-direction",
+    "accessibility",
+    "handoff"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Design Pack",
+    "shortDescription": "From ambiguous request to defensible design",
+    "longDescription": "One self-contained design workflow across disciplines, from client ambiguity to verified delivery. Skills only; no external tool dependencies.",
+    "developerName": "Design Pack contributors",
+    "category": "Productivity",
+    "capabilities": [
+      "Read"
+    ],
+    "defaultPrompt": [
+      "Use Design Pack to interpret this brief, choose the relevant disciplines, create the result and verify what was actually produced."
+    ]
+  }
+}

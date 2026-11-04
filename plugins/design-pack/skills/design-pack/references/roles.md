@@ -1,0 +1,21 @@
+# Role perspectives and handoffs
+
+Use only relevant roles. One person or agent can apply several perspectives sequentially. Roles do not grant tools or authority, and a self-review is not independent validation.
+
+| Perspective | Core question and skillset | Produces | Checks before handoff |
+| --- | --- | --- | --- |
+| Design lead / client partner | What problem is really being commissioned? Reframing, facilitation, scope, tradeoffs, stakeholder alignment | Brief, assumption/decision log, selected direction and acceptance criteria | Client intent survives translation; consequential unknowns are explicit |
+| Research / service design | Who encounters this, in what context, across which touchpoints? Observation, interviews where authorized, journeys, evidence synthesis | Evidence summary, journey, failure points and hypotheses | Observations separated from invented personas; sample limitations stated |
+| Art direction / brand | What idea belongs to this subject? Reference analysis, visual narrative, composition, typography, imagery | Direction cards, reference annotations, representative styleframe | Coherent concept and recognizable identity; transferable principles distinguished from borrowed assets |
+| Product / interaction design | Can people complete the intended task and recover? Information architecture, flows, states, feedback, prototypes | Task flow, state inventory, interaction specification | Error, loading, empty, permission and recovery paths are covered |
+| Visual / design systems | How does expression remain coherent across surfaces? Tokens, scales, component anatomy, responsive layout | Semantic tokens, component/state rules, responsive behavior | Consistent roles without forced sameness; actual content and localization fit |
+| Content / information design | What must be understood first? Plain language, labels, hierarchy, diagrams and truthful data | Content model, interface copy, labeled visuals | No fabricated proof; actions and consequences are clear |
+| Motion / narrative direction | What changes over time, and why? Timing, staging, camera, continuity, storyboards | Timed storyboard, motion rules, reduced-motion/static equivalent | Information remains legible; motion serves the story or task |
+| Sound design | What does sound communicate? Cue taxonomy, timing, dynamics, mixing and listening | Cue sheet, level strategy, silent equivalent and audio evidence | No essential audio-only meaning; rights and listening limits recorded |
+| Spatial / 3D design | What must be plausible from which views? Silhouette, proportion, material, lighting, topology and camera | Blockout, scene/material spec, view comparisons and export contract | Hidden geometry is inference; scale, performance and fidelity constraints clear |
+| Design engineering | How does the design survive real software? Semantics, components, browser behavior, performance | Working artifact, state implementation and editable source | Actual interactions, responsiveness, assets and degradation tested |
+| Accessibility / quality review | Who is excluded, and does evidence support the promised experience? Keyboard, contrast, semantics, reflow, assistive technology | Prioritized findings, evidence matrix, unresolved gaps | Automated checks do not stand in for human task testing; findings tie to current artifact |
+
+The lead reconciles conflicts using audience, outcome and constraints. A reviewer reports observations and recommendations; only the actual designated authority accepts a governed task. Role handoff includes scope, active brief/profile, source artifact, expected output, preservation conditions and review criteria.
+
+Avoid loading all specialist documents by default. A button-label refinement usually needs content and interaction perspectives; a launch film needs art direction, motion, sound and validation; an analytical dashboard needs research, information design, UI engineering and accessibility.

@@ -1,0 +1,38 @@
+# Source lineage and rights
+
+Reviewed 2026-11-04. The user-supplied list contains **18 distinct repository names**, despite its introductory count of 19. All 18 README files and their license files were retrieved through GitHub. This is documentation research, not execution, audiovisual playback or a full source audit. File blob identifiers are recorded in `source-records.json` alongside this file; they identify the inspected bytes, not release commits.
+
+This pack independently synthesizes methods. It vendors no upstream code, rule corpus, prompt collection, fonts, recordings, videos or branded assets. The licenses below describe inspected source notices; they do not grant rights to every linked asset or constitute a legal review. Before incorporating upstream material later, inspect the exact version, license, notices and asset-specific rights.
+
+| Source | Useful contribution to this pack | Deliberate boundary | Inspected license |
+| --- | --- | --- | --- |
+| [Leonxlnx/taste-skill](https://github.com/Leonxlnx/taste-skill) | Client-specific concept, separate marketing-page and working-app concerns, inspect rendered results | No house palette, random style selection, absolute ornament bans or performance claims | MIT |
+| [emilkowalski/skills](https://github.com/emilkowalski/skills) | Purposeful motion, interaction details, comparable alternatives and realistic UI stress cases | Timing and easing are contextual choices; no borrowed rule corpus | MIT |
+| [pbakaus/impeccable](https://github.com/pbakaus/impeccable) | Separate critique, refinement, adaptation and hardening; connect product facts to design | No claimed deterministic slop detector, imported commands, live-apply fallback or relaxed safeguards | Apache-2.0 |
+| [nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) | Consistent design-system decisions and medium/context-aware selection | No copied style database or automatic industry-to-palette rule | MIT |
+| [cathrynlavery/diagram-design](https://github.com/cathrynlavery/diagram-design) | Explain a relationship before selecting a diagram form; editable output and active brand profile | No default brand tokens, fixed diagram density or blanket visual bans | MIT |
+| [Caho1/open-claude-ui](https://github.com/Caho1/open-claude-ui) | Inspect components and actual interaction states; input composition, focus, streaming and scrolling | No Claude branding, proprietary assets, decompiled implementation or claim of affiliation | MIT notice; underlying third-party rights remain separate |
+| [storytold/craft-anything](https://github.com/storytold/craft-anything) | Observe, specify, build and compare; distinguish observed and unknown behavior | No copying engine or permission to access unavailable behavior/assets | MIT OR Apache-2.0 stated in README; LICENSE-MIT inspected |
+| [penpot/penpot](https://github.com/penpot/penpot) | Structured tokens, components, variants and design/engineering handoff | Penpot/MCP is not bundled, connected or required | MPL-2.0 |
+| [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes) | Deterministic time-based output and plan/preview/render separation | No renderer, paid generation service or CLI dependency | Apache-2.0 |
+| [remotion-dev/remotion](https://github.com/remotion-dev/remotion) | Programmatic video as an editable production artifact | Not MIT; no runtime bundled or unconditional commercial-use claim | Conditional Remotion License, including company licensing terms |
+| [howseen-ai/claude-motion-design](https://github.com/howseen-ai/claude-motion-design) | Seekable timeline, representative stills, actual timing/audio verification and truthful example data | No asset downloads, copied effects, tool installation or claims from unplayed media | MIT for code; third-party media/fonts retain their terms |
+| [Leonxlnx/cinetic](https://github.com/Leonxlnx/cinetic) | Message-first film direction, structured brief, meaningful shot sequence and sound plan | No universal pace, fixed template, music reuse or guaranteed film quality | MIT |
+| [Vincentwei1021/video-shotcraft](https://github.com/Vincentwei1021/video-shotcraft) | Differentiate delegated creation from co-design; early representative artifacts, shot and cue structure | No mandatory approval treadmill, shot library, prescribed tooling or inherited personal timing preferences | Apache-2.0; Remotion and each media asset have separate terms |
+| [lemomo-ai/lemo-opuscar](https://github.com/lemomo-ai/lemo-opuscar) | Wide visual-language exploration tied to story and material | No reproduced prompt/style catalogue, demos or model-quality claims | MIT code; README identifies demo films/stills as CC BY 4.0 |
+| [yihui-dev/awesome-opus5-5-videos](https://github.com/yihui-dev/awesome-opus5-5-videos) | Prompt/result references as inspiration with creator provenance | Showcase is not evidence that this pack reproduces results; linked creators' media rights are separate | MIT repository notice |
+| [Leonxlnx/earshot](https://github.com/Leonxlnx/earshot) | Treat sound as inspectable design: cue meaning, timing, analysis and listening limits | No model, audio bank or automatic hearing claim | MIT |
+| [ahujasid/mcp-for-blender](https://github.com/ahujasid/mcp-for-blender) | Scene structure, iterative inspection and explicit 3D tool boundaries | No Blender/MCP install or execution; no tool permissions granted | MIT integration; Blender and assets have independent terms |
+| [img2threejs/img2threejs](https://github.com/img2threejs/img2threejs) | Staged shape/material review, comparison evidence and honest hidden-geometry limits | No reconstruction engine, numerical quality guarantees or unseen-surface certainty | Apache-2.0 |
+
+Additional inspected excerpts: taste-skill `skills/taste-skill/SKILL.md`, Emil `skills/emil-design-eng/SKILL.md`, diagram-design `skills/diagram-design/SKILL.md`, video-shotcraft `SKILL.md`. The attempted root `SKILL.md` for howseen was not present; its README locates the actual skill under `skill/motion-design/`. Only its README and license are used here.
+
+## Other sources and original extensions
+
+- [Design Council: Double Diamond](https://www.designcouncil.org.uk/resources/the-double-diamond/): divergent discovery/exploration and convergent definition/testing. No graphic copied.
+- [W3C WCAG quick reference](https://www.w3.org/WAI/WCAG22/quickref/) and [page structure tutorial](https://www.w3.org/WAI/tutorials/page-structure/): accessibility inspection topics and semantic structure. This pack is not a full conformance checklist.
+- [Exitbind manifests](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/tree/main/plugins/exitbind) and [project-owned agents](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/blob/main/docs/user-owned-agents.md): package layout and integration boundaries. Current retrieved manifests say 0.31.26; the pre-existing local checkout is older and was not updated.
+- Brand/print/editorial, industrial, spatial and fashion workflows are original general design guidance extending the mainly digital references. They are not attributed to those repositories and have not been physically field-tested by this task.
+- General lessons from prior user work are incorporated only as anonymized methods: reference proportion analysis, context adaptation, identity preservation, coherent visual language, evidence honesty and actual loading of saved guidance. Private project choices and raw history are excluded. This package does not claim that all previous private archives were inspected or migrated.
+
+These are inspirations and attribution, not a tool registry or integration layer. Reading the pack does not fetch or execute them.

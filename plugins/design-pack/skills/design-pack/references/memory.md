@@ -1,0 +1,27 @@
+# Reusable learning and private project profiles
+
+Keep three layers separate:
+
+1. **Pack methods:** broadly applicable processes, conditional heuristics and verification practices. No user's identity, project details, private source links or visual tokens.
+2. **Project profile:** approved or proposed colors, fonts, sizes, motifs, navigation, concepts, audience constraints and production specifications. Scope every entry to the project, artifact and date. Keep it outside this distributable package.
+3. **Task evidence:** current observations, decisions, source versions, tests and remaining gaps. Evidence of one build is not a permanent design rule.
+
+Read the applicable profile at task start and record that it was read. Merely installing a lens does not mean it influenced an assignment. Explicitly pass relevant context to another worker when delegation is authorized; do not presume invisible propagation.
+
+## Promote a lesson carefully
+
+For every candidate lesson, retain problem → context → intervention → observation → limitation. Ask whether it would remain useful for an unrelated client, medium and brand. Generalize the decision method, not the original aesthetic values.
+
+Examples:
+
+- Project request: a particular metallic title or illustrated motif. Reusable lesson: preserve approved identity while changing navigation; compare the reference's proportions and adapt to the target context.
+- Project correction: a particular icon looks inconsistent. Reusable lesson: inspect family, weight, perspective and tone before imposing one visual treatment on every element.
+- Project failure: the assistant said it used a saved guide but did not load it. Reusable lesson: record the specific guidance read and its effect on a decision; installation is not proof of use.
+
+Do not retain specific names, values or source conversations in the public rule. Do not promote a single preference into an absolute rule. New general rules should identify when they apply and what would override them.
+
+## Project profile fields
+
+Use [project-profile.md](../templates/project-profile.md) outside the package. Record project identifier, scope, source reference, date, status (`user-stated`, `observed`, `proposed`, `confirmed`, `superseded`), decision authority and relevant values. Unknown measurements stay unknown. Older choices remain historical until checked against later decisions.
+
+Before packaging or sharing, use an explicit file allowlist and inspect for private paths, personal identifiers, project assets, conversations, credentials and project tokens. Ignore rules are not a privacy guarantee. No task automatically publishes or migrates private profiles.
