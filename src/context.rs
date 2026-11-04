@@ -15,7 +15,9 @@ use std::fs;
 mod governor;
 mod recovery_observation;
 
-pub(crate) use governor::{reduce_governor, reduce_governor_seeded, sensor_request};
+pub(crate) use governor::{
+    reduce_governor, reduce_governor_seeded, retained_completion_precedes, sensor_request,
+};
 
 pub(crate) const CONTEXT_VERSION: u64 = 2;
 pub(crate) const OPAQUE_CONTEXT_VERSION: u64 = 3;

@@ -48,43 +48,9 @@ pub(super) fn obligations(
     if !extra.is_empty() {
         actor.insert("alreadyEstablished".into(), json!(extra));
     }
-    let help = &residual["humanHelp"];
-    classified(
-        help,
-        &[
-            "nextAction",
-            "ownerDecision",
-            "whatHappened",
-            "whatRemains",
-            "preservationAssignment",
-        ],
-        "native human help",
-    )?;
-    let next = &help["nextAction"];
-    classified(next, &["actor", "command", "summary"], "native help action")?;
-    if next["command"].is_object() {
-        classified(
-            &next["command"],
-            &["args", "argv", "program"],
-            "native help command",
-        )?;
-    }
-    let default_help = help["ownerDecision"] == "not_required"
-        && help["whatHappened"] == "A worker assignment is pending."
-        && help["whatRemains"] == remaining
-        && help["nextAction"]["actor"] == "worker"
-        && help["nextAction"]["summary"] == "run the pending worker assignment"
-        && help["nextAction"]["command"]["program"] == "exitbind"
-        && help["nextAction"]["command"]["args"]
-            .as_array()
-            .is_some_and(|args| {
-                matches!(args.as_slice(), [family, action, target]
-                    if family.as_str() == Some("work")
-                        && action.as_str() == Some("next")
-                        && target.as_str() == Some(work))
-            });
-    if !default_help {
-        actor.insert("currentStatus".into(), json!({"whatHappened":help["whatHappened"],"whatRemains":help["whatRemains"],"ownerDecision":help["ownerDecision"],"actor":next["actor"],"summary":next["summary"]}));
+    let status = human_help_status(&residual["humanHelp"], &remaining, work)?;
+    if !status.is_empty() {
+        actor.insert("currentStatus".into(), Value::Object(status));
     }
     let invalidation = &residual["invalidation"];
     classified(
@@ -120,6 +86,84 @@ pub(super) fn obligations(
         actor.insert("recovery".into(), recovery.clone());
     }
     Ok(())
+}
+
+/// Classify and select each help fact together so a recognized instruction
+/// cannot disappear through a separate presentation field list.
+fn human_help_status(
+    help: &Value,
+    remaining: &Value,
+    work: &str,
+) -> Result<Map<String, Value>, String> {
+    let fields = help.as_object().ok_or("native human help is unavailable")?;
+    let next = &help["nextAction"];
+    let mut status = json!({"whatHappened":null,"whatRemains":null,
+        "ownerDecision":null,"actor":null,"summary":null})
+    .as_object()
+    .unwrap()
+    .clone();
+    // Preserve the existing refusal when the required nested action is absent.
+    if !fields.contains_key("nextAction") {
+        return Err("native help action is unavailable".into());
+    }
+    for (key, value) in fields {
+        match key.as_str() {
+            "whatHappened" | "whatRemains" | "ownerDecision" => {
+                status.insert(key.clone(), value.clone());
+            }
+            "preservationEvidence" | "checkInstruction" => {
+                copy_if_present(&mut status, key, value);
+            }
+            "preservationAssignment" => {
+                // The preservation owner selects the exact primary/additional values.
+            }
+            "nextAction" => {
+                classified(
+                    value,
+                    &["actor", "command", "summary"],
+                    "native help action",
+                )?;
+                if value["command"].is_object() {
+                    classified(
+                        &value["command"],
+                        &["args", "argv", "program"],
+                        "native help command",
+                    )?;
+                }
+                status.insert("actor".into(), value["actor"].clone());
+                status.insert("summary".into(), value["summary"].clone());
+            }
+            _ if nonempty(value) => {
+                return Err(format!(
+                    "native human help contains unclassified field '{key}'"
+                ));
+            }
+            _ => {}
+        }
+    }
+    let default_help = help["ownerDecision"] == "not_required"
+        && help["whatHappened"] == "A worker assignment is pending."
+        && help["whatRemains"] == *remaining
+        && next["actor"] == "worker"
+        && next["summary"] == "run the pending worker assignment"
+        && next["command"]["program"] == "exitbind"
+        && next["command"]["args"].as_array().is_some_and(|args| {
+            matches!(args.as_slice(), [family, action, target]
+                if family.as_str() == Some("work") && action.as_str() == Some("next")
+                    && target.as_str() == Some(work))
+        });
+    if default_help {
+        for key in [
+            "whatHappened",
+            "whatRemains",
+            "ownerDecision",
+            "actor",
+            "summary",
+        ] {
+            status.remove(key);
+        }
+    }
+    Ok(status)
 }
 
 pub(super) fn governor(
@@ -255,7 +299,8 @@ pub(super) fn governor(
     } else if nonempty(&value["observations"]) {
         return Err("native governor observations are unclassified".into());
     }
-    let preserve_mutations = mutation_history(value, evidence)?;
+    let preserve_mutations =
+        mutation_history(value, evidence, packet["context"]["run"]["id"].as_str())?;
     if value["defaults"].is_object() {
         classified(
             &value["defaults"],
@@ -316,7 +361,7 @@ pub(super) fn governor(
 
 // Preserve classified mutation facts from the canonical snapshot. This
 // projection does not reconstruct events or grant mutation permission.
-fn mutation_history(value: &Value, evidence: &Value) -> Result<bool, String> {
+fn mutation_history(value: &Value, evidence: &Value, run: Option<&str>) -> Result<bool, String> {
     let Some(mutations) = value["seenMutations"].as_array() else {
         return if value["seenMutations"].is_null() && value["currentMutation"].is_null() {
             Ok(false)
@@ -334,6 +379,29 @@ fn mutation_history(value: &Value, evidence: &Value) -> Result<bool, String> {
         "operation",
     ];
     let preserve = !mutations.is_empty() || value["currentMutation"].is_object();
+    if !preserve {
+        return Ok(false);
+    }
+    let current = &value["currentMutation"];
+    if !known_keys(
+        current,
+        &[
+            "runId",
+            "eventSha256",
+            "carryLineage",
+            "subjectSha256",
+            "attempt",
+            "checkpoint",
+            "inputSha256",
+            "unit",
+            "operation",
+        ],
+    ) || !valid_mutation_identity(current)
+        || !valid_digest(&current["eventSha256"])
+        || (!current["carryLineage"].is_null() && !current["carryLineage"].is_boolean())
+    {
+        return Err("native current mutation is malformed".into());
+    }
     for mutation in mutations {
         classified(
             mutation,
@@ -362,7 +430,10 @@ fn mutation_history(value: &Value, evidence: &Value) -> Result<bool, String> {
                             .any(|name| item[*name]["sha256"].as_str() == Some(sha.as_str()))
                     })
                 });
-                if !represented {
+                let retained = run.is_some_and(|run| {
+                    crate::context::retained_completion_precedes(run, current, identity)
+                });
+                if !represented && !retained {
                     return Err("native mutation evidence original is unavailable".into());
                 }
             }
@@ -387,29 +458,6 @@ fn mutation_history(value: &Value, evidence: &Value) -> Result<bool, String> {
             }
             _ => return Err("native mutation evidence is unclassified".into()),
         }
-    }
-    if !preserve {
-        return Ok(false);
-    }
-    let current = &value["currentMutation"];
-    if !known_keys(
-        current,
-        &[
-            "runId",
-            "eventSha256",
-            "carryLineage",
-            "subjectSha256",
-            "attempt",
-            "checkpoint",
-            "inputSha256",
-            "unit",
-            "operation",
-        ],
-    ) || !valid_mutation_identity(current)
-        || !valid_digest(&current["eventSha256"])
-        || (!current["carryLineage"].is_null() && !current["carryLineage"].is_boolean())
-    {
-        return Err("native current mutation is malformed".into());
     }
     Ok(true)
 }

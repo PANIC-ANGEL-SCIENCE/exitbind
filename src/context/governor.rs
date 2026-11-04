@@ -11,6 +11,9 @@ use crate::kernel::governor::{LoopState, Phase, Transition};
 use serde_json::{json, Map, Value};
 use std::collections::BTreeSet;
 
+mod completion_history;
+pub(crate) use completion_history::retained_completion_precedes;
+
 fn semantic_mutation(value: &Value) -> Result<Value, String> {
     let object = value.as_object().ok_or("mutation must be an object")?;
     let mut key = Map::new();

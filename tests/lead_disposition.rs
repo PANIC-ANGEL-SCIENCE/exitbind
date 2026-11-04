@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use std::{
     fs,
     io::Write,
-    process::{Output, Stdio},
+    process::{Command, Output, Stdio},
 };
 
 const SUGGESTION: &str = "Suggested fix: also add a retry cache for the parser";
@@ -31,14 +31,19 @@ impl Fixture {
         Self { root }
     }
 
+    fn command(&self) -> Command {
+        let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
+        command.current_dir(&self.root).env(
+            "EXITBIND_SESSION_GOALS_DIR",
+            self.root.join(".exitbind/native-goals"),
+        );
+        command
+    }
+
     fn invoke(&self, args: &[&str], input: &[u8]) -> Output {
-        let mut child = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
-            .current_dir(&self.root)
+        let mut child = self
+            .command()
             .args(args)
-            .env(
-                "EXITBIND_SESSION_GOALS_DIR",
-                self.root.join(".exitbind/native-goals"),
-            )
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -393,6 +398,25 @@ fn case_b_rejected_finding_keeps_evidence_and_starts_nothing() {
 #[test]
 fn case_c_repair_carries_the_lead_boundary_and_needs_fresh_review() {
     let fixture = Fixture::new("disposition-repair");
+    // Native delivery verifies the callback's Goal owner, not only its cwd.
+    let goal = fixture
+        .command()
+        .env("CLAUDE_CODE_SESSION_ID", "repair-session")
+        .args([
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "repair-goal",
+            "--goal",
+            "parse the config header",
+            "--obligation",
+            "parse the config header",
+            "--config",
+            "exitbind.json",
+        ])
+        .output()
+        .unwrap();
+    assert!(goal.status.success(), "native Goal owner: {}", text(&goal));
     let (work, _) = fixture.begin(&[
         "--review-policy",
         "required",
@@ -448,11 +472,8 @@ fn case_c_repair_carries_the_lead_boundary_and_needs_fresh_review() {
             .to_owned()
         })
         .collect();
-    let bound = support::git_topology::command(&bind[0])
-        .current_dir(&fixture.root)
-        .args(&bind[1..])
-        .output()
-        .unwrap();
+    assert_eq!(bind[0], env!("CARGO_BIN_EXE_exitbind"));
+    let bound = fixture.command().args(&bind[1..]).output().unwrap();
     assert!(bound.status.success(), "{}", text(&bound));
     let native_repair = |child: &str| {
         let current = fixture.next(&work);
@@ -464,12 +485,16 @@ fn case_c_repair_carries_the_lead_boundary_and_needs_fresh_review() {
             .iter()
             .map(|arg| arg.as_str().unwrap())
             .collect();
-        let prepared = support::git_topology::command(argv[0])
-            .current_dir(&fixture.root)
-            .args(&argv[1..])
-            .output()
-            .unwrap();
+        assert_eq!(argv[0], env!("CARGO_BIN_EXE_exitbind"));
+        let prepared = fixture.command().args(&argv[1..]).output().unwrap();
         assert!(prepared.status.success(), "{}", text(&prepared));
+        let prepared_value: Value = serde_json::from_slice(&prepared.stdout).unwrap();
+        assert_eq!(
+            prepared_value["transportPreflight"]["state"],
+            "fits",
+            "native preparation: {}",
+            text(&prepared)
+        );
         let payload = json!({"hook_event_name":"SubagentStart", "cwd":fixture.root.path(),
             "session_id":"repair-session", "agent_id":child,
             "agent_type":named["nativeTaskName"]});
@@ -484,11 +509,13 @@ fn case_c_repair_carries_the_lead_boundary_and_needs_fresh_review() {
             .unwrap_or_else(|error| panic!("hook-run JSON: {error}; {}", text(&output)));
         let context = hook["hookSpecificOutput"]["additionalContext"]
             .as_str()
-            .unwrap();
+            .unwrap_or_else(|| panic!("hook context missing: {}", text(&output)));
         let actor = context.split_once(
             "Complete current assignment, evidence and task conditions (verified for this recipient):\n")
-            .and_then(|(_, rest)| rest.lines().next()).unwrap();
-        let actor: Value = serde_json::from_str(actor).unwrap();
+            .and_then(|(_, rest)| rest.lines().next())
+            .unwrap_or_else(|| panic!("native assignment missing ({} bytes): {context}", context.len()));
+        let actor: Value = serde_json::from_str(actor)
+            .unwrap_or_else(|error| panic!("native assignment JSON: {error}; {actor}"));
         assert_eq!(actor["role"], current["role"]);
         assert_eq!(actor["agent"], current["agent"]);
         assert_eq!(actor["nativeTaskName"], named["nativeTaskName"]);
