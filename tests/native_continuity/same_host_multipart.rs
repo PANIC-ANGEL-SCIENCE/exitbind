@@ -363,3 +363,57 @@ fn killed_writer_before_receipt_cannot_promote() {
         "{intent}"
     );
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn final_receipt_rechecks_rules_changed_after_the_last_selection() {
+    for changed in [false, true] {
+        let fixture = fixture(&format!("r62-multipart-final-receipt-{changed}"));
+        let input = payload(&fixture, SESSION, CHILD);
+        // Slot1 fills the pipe, so all other pieces can be acknowledged first.
+        for index in 2..=4 {
+            part(&invoke(&fixture, index, &input));
+        }
+        let intent = &fixture.intents().unwrap()[0];
+        assert!(intent["assignmentDelivery"].is_null());
+        assert!(intent["multipartDelivery"]["receipts"][0].is_null());
+        let binding = fixture.next(Some(SESSION))["current"]["binding"].clone();
+        let blocked = super::delivery::BlockedStart::for_slot(&fixture, CHILD, "sonic", 1);
+        if changed {
+            fs::write(
+                fixture.product.join("AGENTS.md"),
+                "Changed after final selection, before receipt.\n",
+            )
+            .unwrap();
+            assert_eq!(
+                fixture.next(Some(SESSION))["current"]["binding"],
+                binding,
+                "instruction drift must be independent of Work binding"
+            );
+        }
+        let output = blocked.finish();
+        part(&output).expect("the selected piece must still be emitted in full");
+        let intent = &fixture.intents().unwrap()[0];
+        if changed {
+            assert!(
+                String::from_utf8_lossy(&output.stderr)
+                    .contains("Exitbind wrote hook output but could not record the child delivery proof; automatic Work return cannot be credited."),
+                "{}",
+                text(&output)
+            );
+            assert_eq!(intent["multipartDelivery"]["state"], "invalid");
+            assert!(intent["assignmentDelivery"].is_null());
+            assert!(
+                intent["multipartDelivery"]["receipts"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(Value::is_string),
+                "all writes completed; freshness must independently prevent credit"
+            );
+        } else {
+            assert!(output.stderr.is_empty(), "{}", text(&output));
+            assert_presented(&fixture);
+        }
+    }
+}

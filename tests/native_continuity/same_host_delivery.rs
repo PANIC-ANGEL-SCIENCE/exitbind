@@ -203,12 +203,31 @@ impl BlockedStart {
     }
 
     pub(super) fn for_child(fixture: &Fixture, child_id: &str, agent_type: &str) -> Self {
+        Self::for_hook(fixture, child_id, agent_type, None)
+    }
+
+    pub(super) fn for_slot(
+        fixture: &Fixture,
+        child_id: &str,
+        agent_type: &str,
+        slot: usize,
+    ) -> Self {
+        Self::for_hook(fixture, child_id, agent_type, Some(slot))
+    }
+
+    fn for_hook(fixture: &Fixture, child_id: &str, agent_type: &str, slot: Option<usize>) -> Self {
         use std::os::unix::io::AsRawFd;
 
         let mut command =
             super::super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
+        command.arg("hook-run");
+        if let Some(slot) = slot {
+            assert!((1..=4).contains(&slot));
+            command
+                .args(["--host", "claude", "--index"])
+                .arg(slot.to_string());
+        }
         command
-            .arg("hook-run")
             .current_dir(&fixture.product)
             .env("EXITBIND_SESSION_GOALS_DIR", &fixture.store)
             .env("EXITBIND_NO_UPDATE_CHECK", "1")
