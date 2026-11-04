@@ -141,11 +141,20 @@ impl Fixture {
         self.call(&args, b"")
     }
 
-    /// Scope, work, and check once, then return the reviewer assignment.
+    fn checks(&self, work: &str) -> Value {
+        let checked = self.ok(&["work", "check", work], b"");
+        if checked["next"]["check"]["kind"] == "preservation" {
+            self.ok(&["work", "check", work], b"")
+        } else {
+            checked
+        }
+    }
+
+    /// Scope, work, and run the selected checks, then return the reviewer.
     fn to_review(&self, work: &str, first: Value) -> Value {
         let worker = self.give_ok(work, &first, "scoped", "scope")["next"].clone();
         self.give_ok(work, &worker, "completed", "implementation");
-        let checked = self.ok(&["work", "check", work], b"");
+        let checked = self.checks(work);
         assert_eq!(checked["next"]["role"], "reviewer", "{checked}");
         checked["next"].clone()
     }
@@ -375,7 +384,18 @@ fn case_b_rejected_finding_keeps_evidence_and_starts_nothing() {
 #[test]
 fn case_c_repair_carries_the_lead_boundary_and_needs_fresh_review() {
     let fixture = Fixture::new("disposition-repair");
-    let (work, _) = fixture.begin(&["--review-policy", "required"]);
+    let (work, _) = fixture.begin(&[
+        "--review-policy",
+        "required",
+        "--preserve-requirement",
+        "header:parse the config header",
+        "--preservation-check-command",
+        "true",
+    ]);
+    let intake = json!({"action":"init", "sourceRef":"owner:test-scope",
+        "sourceText":"parse the config header",
+        "requirements":[{"id":"header", "text":"parse the config header"}]});
+    fixture.ok(&["work", "record", &work], intake.to_string().as_bytes());
     let lead = pending_lead(&fixture, &work);
     refused(
         &fixture.dispose(&work, &lead, "repair", &[]),
@@ -452,6 +472,9 @@ fn case_c_repair_carries_the_lead_boundary_and_needs_fresh_review() {
             "Complete current assignment, evidence and task conditions (verified for this recipient):\n")
             .and_then(|(_, rest)| rest.lines().next()).unwrap();
         let actor: Value = serde_json::from_str(actor).unwrap();
+        assert_eq!(actor["role"], current["role"]);
+        assert_eq!(actor["agent"], current["agent"]);
+        assert_eq!(actor["nativeTaskName"], named["nativeTaskName"]);
         assert_eq!(&actor["leadRepair"], repair);
         assert_eq!(actor["boundary"], current["packet"]["declaredBoundary"]);
     };
@@ -459,7 +482,7 @@ fn case_c_repair_carries_the_lead_boundary_and_needs_fresh_review() {
 
     // The repaired result needs its own check and review.
     fixture.give_ok(&work, &worker, "completed", "repaired");
-    let checked = fixture.ok(&["work", "check", &work], b"");
+    let checked = fixture.checks(&work);
     let reviewer = checked["next"].clone();
     assert_eq!(reviewer["role"], "reviewer");
     assert_eq!(
