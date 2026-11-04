@@ -29,6 +29,8 @@ const NOT_ROUTES: &NotRoutes = &[
         &[
             "HOOK_COMMAND",
             "HOOK_COMMAND",
+            // Installed hooks must keep resolving PATH after a CLI upgrade.
+            r#"format!( "command -v exitbind >/dev/null 2>&1 && exitbind hook-run --host claude --index {slot} || true" )"#,
             "hook_command(host, event)",
             "hook_command(host, event)",
         ],

@@ -67,8 +67,8 @@ const NAMED_COMMANDS: &[(&str, usize, &str)] = &[
     // executable through PATH after upgrades.
     (
         "src/host/hooks.rs",
-        6,
-        "installed host hook command, including host-bound Stop",
+        7,
+        "installed PATH hook command, including host-bound Stop and indexed Claude delivery",
     ),
     (
         "src/project/setup_statusline.rs",
