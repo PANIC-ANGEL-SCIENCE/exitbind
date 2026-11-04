@@ -31,11 +31,14 @@ impl Fixture {
         Self { root }
     }
 
-    fn call(&self, args: &[&str], input: &[u8]) -> Output {
+    fn invoke(&self, args: &[&str], input: &[u8]) -> Output {
         let mut child = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
             .current_dir(&self.root)
             .args(args)
-            .args(["--config", "exitbind.json"])
+            .env(
+                "EXITBIND_SESSION_GOALS_DIR",
+                self.root.join(".exitbind/native-goals"),
+            )
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -46,6 +49,12 @@ impl Fixture {
             assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "{error}");
         }
         child.wait_with_output().unwrap()
+    }
+
+    fn call(&self, args: &[&str], input: &[u8]) -> Output {
+        let mut configured = args.to_vec();
+        configured.extend(["--config", "exitbind.json"]);
+        self.invoke(&configured, input)
     }
 
     fn ok(&self, args: &[&str], input: &[u8]) -> Value {
@@ -464,7 +473,15 @@ fn case_c_repair_carries_the_lead_boundary_and_needs_fresh_review() {
         let payload = json!({"hook_event_name":"SubagentStart", "cwd":fixture.root.path(),
             "session_id":"repair-session", "agent_id":child,
             "agent_type":named["nativeTaskName"]});
-        let hook = fixture.ok(&["hook-run"], payload.to_string().as_bytes());
+        // Hooks resolve the fixture from the payload cwd and session; unlike
+        // Work commands, their supported route accepts no --config option.
+        let output = fixture.invoke(
+            &["hook-run", "--host", "claude"],
+            payload.to_string().as_bytes(),
+        );
+        assert!(output.status.success(), "hook-run: {}", text(&output));
+        let hook: Value = serde_json::from_slice(&output.stdout)
+            .unwrap_or_else(|error| panic!("hook-run JSON: {error}; {}", text(&output)));
         let context = hook["hookSpecificOutput"]["additionalContext"]
             .as_str()
             .unwrap();
