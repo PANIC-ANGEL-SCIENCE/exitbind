@@ -49,6 +49,7 @@ pub(super) fn render(
     selected: &Selection,
     text: &mut String,
     event: &str,
+    multipart: bool,
 ) -> Result<bool, String> {
     text.push_str("\nSelected task perspectives for this assignment:");
     if let Some(specialist) = child.get("specialistExperience") {
@@ -75,6 +76,10 @@ pub(super) fn render(
         text.push_str(contract);
     }
     if let Some(assignment) = child.get("requiredAssignment") {
+        if multipart && child["deliveryHost"] == "claude" {
+            *text = context::complete_assignment(loaded, child, selected, assignment, text)?;
+            return Ok(true);
+        }
         if let Some(complete) =
             context::complete_with_evidence(loaded, child, selected, assignment, text, event)?
         {
@@ -168,17 +173,25 @@ pub(crate) fn preflight(
         &configuration,
     )
     .ok_or("child profile context is unavailable")?;
-    if !render(loaded, child, &selected, &mut text, "SubagentStart")? {
+    if !render(loaded, child, &selected, &mut text, "SubagentStart", true)? {
         let detail =
             crate::emitted::command_line(&["work", "detail", work, "--json"], Some(&loaded.path));
         return Err(format!("complete child assignment exceeds the native host context capacity; no child was prepared. Inspect `{detail}` and narrow optional material before preparing again"));
     }
-    let (output_bytes, context_units) =
-        crate::host::assignment_evidence::claude_size("SubagentStart", &text)?;
+    let bundle = super::multipart::bundle(&text).map_err(|error| {
+        format!("{error}; no child was prepared. Narrow optional material before preparing again")
+    })?;
+    let sizes = bundle
+        .parts
+        .iter()
+        .map(|part| crate::host::assignment_evidence::claude_size("SubagentStart", part))
+        .collect::<Result<Vec<_>, _>>()?;
+    let multipart_bytes = sizes.iter().map(|size| size.0).max().unwrap_or(0);
+    let multipart_units = sizes.iter().map(|size| size.1).max().unwrap_or(0);
     Ok(
-        json!({"host":host,"state":"fits","outputBytes":output_bytes,
-        "contextUtf16Units":context_units,
-        "meaning":"current complete host envelope fits; delivery is rechecked at launch and does not prove model understanding or execution"}),
+        json!({"host":host,"state":"fits","outputBytes":multipart_bytes,
+        "contextUtf16Units":multipart_units,"parts":bundle.parts.len(),
+        "meaning":"each current complete host envelope fits; delivery is rechecked at launch and does not prove model understanding or execution"}),
     )
 }
 

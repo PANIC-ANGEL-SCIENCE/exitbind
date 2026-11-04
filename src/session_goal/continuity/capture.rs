@@ -21,6 +21,8 @@ mod adviser;
 mod context;
 #[path = "capture/delivery.rs"]
 mod delivery;
+#[path = "capture/multipart.rs"]
+mod multipart;
 #[path = "capture/preflight.rs"]
 mod preflight;
 #[path = "capture/raw.rs"]
@@ -452,6 +454,10 @@ pub(crate) fn claim(
     let agent_type = text(payload, "agent_type");
     // Ordinary subagents without a prepared intent cost one read, no write.
     let intents = load(loaded)?;
+    if let Some(intent) = multipart::already_claimed(&intents, session, child) {
+        return Ok((!same_observed_agent_type(intent, agent_type))
+            .then(|| "the claimed child's native agent type changed".to_owned()));
+    }
     if existing_retry_child(&intents, session, child) {
         return Ok(None);
     }
@@ -480,6 +486,10 @@ pub(crate) fn claim(
         with_intents(loaded, |intents| {
             // Re-read under the mutation lock. A concurrent callback may have
             // abandoned this child after the preliminary load above.
+            if let Some(intent) = multipart::already_claimed(intents, session, child) {
+                return Ok((!same_observed_agent_type(intent, agent_type))
+                    .then(|| "the claimed child's native agent type changed".to_owned()));
+            }
             if existing_retry_child(intents, session, child) {
                 return Ok(None);
             }
@@ -615,6 +625,9 @@ pub(crate) fn finalize(
         let Some(intent) = intents.iter_mut().find(|intent| owned(intent)) else {
             return Ok(());
         };
+        if intent["state"] == "claimed" {
+            multipart::retire(intent);
+        }
         let digest = message.map(hash::text);
         if intent["state"] == "recorded" {
             // A repeated stop never changes a recorded child; a different

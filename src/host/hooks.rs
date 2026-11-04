@@ -1,6 +1,8 @@
 use super::settings;
 use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 /// The hook handshake token written by every published release to date.
 ///
@@ -88,6 +90,9 @@ pub fn manage(action: &str, hosts: &str, root: &str) -> Result<Vec<Value>, Strin
     }
     if action == "apply" {
         settings::require_compatible_command(PROTOCOL)?;
+        if crate::producer::exitbind_surface() && selected.iter().any(|host| host == "claude") {
+            require_multipart_command()?;
+        }
     }
     let mut states = Vec::new();
     for host in &selected {
@@ -96,12 +101,15 @@ pub fn manage(action: &str, hosts: &str, root: &str) -> Result<Vec<Value>, Strin
         // Exitbind's own superseded wiring, not a third party's hook. Retire it
         // so a current binary cannot keep an old host bridge; everything else
         // stays a conflict and is never rewritten.
-        if action == "apply" && crate::producer::exitbind_surface() && !state.conflicts.is_empty() {
+        if action == "apply" && crate::producer::exitbind_surface() {
             let retired = retire_superseded(&mut state.document, host);
             if retired > 0 {
-                let (exact, conflicts) = inspect(&state.document, host, &state.target)?;
+                state.retired = retired;
+                let (exact, conflicts, legacy_start) =
+                    inspect(&state.document, host, &state.target)?;
                 state.exact = exact;
                 state.conflicts = conflicts;
+                state.legacy_start = legacy_start;
             }
         }
         states.push(state);
@@ -161,8 +169,10 @@ struct State {
     source: Option<String>,
     mode: Option<u32>,
     document: Value,
-    exact: [usize; 6],
+    exact: Vec<usize>,
     conflicts: Vec<String>,
+    retired: usize,
+    legacy_start: bool,
 }
 
 fn parse_hosts(value: &str) -> Result<Vec<String>, String> {
@@ -189,7 +199,7 @@ fn parse_hosts(value: &str) -> Result<Vec<String>, String> {
 
 fn preflight(host: &str, root: &str) -> Result<State, String> {
     let loaded = settings::load(host, root)?;
-    let (exact, conflicts) = inspect(&loaded.document, host, &loaded.target)?;
+    let (exact, conflicts, legacy_start) = inspect(&loaded.document, host, &loaded.target)?;
     Ok(State {
         host: host.into(),
         target: loaded.target,
@@ -199,6 +209,8 @@ fn preflight(host: &str, root: &str) -> Result<State, String> {
         document: loaded.document,
         exact,
         conflicts,
+        retired: 0,
+        legacy_start,
     })
 }
 
@@ -206,9 +218,10 @@ fn inspect(
     document: &Value,
     host: &str,
     target: &Path,
-) -> Result<([usize; 6], Vec<String>), String> {
+) -> Result<(Vec<usize>, Vec<String>, bool), String> {
+    let specifications = specifications(host);
     let hooks = match document.get("hooks") {
-        None => return Ok(([0; 6], Vec::new())),
+        None => return Ok((vec![0; specifications.len()], Vec::new(), false)),
         Some(value) => value.as_object().ok_or_else(|| {
             format!(
                 "unexpected hooks shape in {}: hooks must be an object",
@@ -216,13 +229,10 @@ fn inspect(
             )
         })?,
     };
-    let mut exact = [0usize; 6];
+    let mut exact = vec![0usize; specifications.len()];
     let mut conflicts = Vec::new();
-    for (event_index, event) in host_events(host).iter().enumerate() {
-        let expected = expected(host, event);
-        let expected_object = expected
-            .as_object()
-            .ok_or("expected hook handler must be an object")?;
+    let mut legacy_start = false;
+    for event in host_events(host) {
         let Some(groups) = hooks.get(*event) else {
             continue;
         };
@@ -241,13 +251,34 @@ fn inspect(
             })?;
             // The plan-approval record counts only with its matcher; without
             // it the hook would run on every tool call.
-            let matched = *event != PLAN_APPROVAL.0
-                || object.get("matcher").and_then(Value::as_str) == Some(PLAN_APPROVAL.1);
+            let matched = if *event == PLAN_APPROVAL.0 {
+                object.get("matcher").and_then(Value::as_str) == Some(PLAN_APPROVAL.1)
+            } else if crate::producer::exitbind_surface()
+                && host == "claude"
+                && *event == "SubagentStart"
+            {
+                unfiltered(object)
+            } else {
+                true
+            };
             let handlers = object.get("hooks").and_then(Value::as_array).ok_or_else(|| format!("unexpected hooks shape in {}: {event}[{group_index}].hooks must be an array", target.display()))?;
             for (handler_index, handler) in handlers.iter().enumerate() {
                 let handler_object = handler.as_object().ok_or_else(|| format!("unexpected hooks shape in {}: {event}[{group_index}].hooks[{handler_index}] must be an object", target.display()))?;
-                if matched && same_record(handler_object, expected_object) {
-                    exact[event_index] += 1;
+                let matching = specifications
+                    .iter()
+                    .enumerate()
+                    .find(|(_, (name, expected))| {
+                        name == event
+                            && expected
+                                .as_object()
+                                .is_some_and(|expected| same_record(handler_object, expected))
+                    });
+                if let Some((index, _)) = matching.filter(|_| matched) {
+                    exact[index] += 1;
+                } else if obsolete_claude_start(handler, host, event) && unfiltered(object) {
+                    // A published single-part start is an upgradeable partial
+                    // install, not an unknown ownership conflict.
+                    legacy_start = true;
                 } else if handler_object
                     .get("command")
                     .and_then(Value::as_str)
@@ -262,7 +293,7 @@ fn inspect(
             }
         }
     }
-    Ok((exact, conflicts))
+    Ok((exact, conflicts, legacy_start))
 }
 
 /// Remove handler records that invoke the superseded caller, keeping every
@@ -277,11 +308,13 @@ fn retire_superseded(document: &mut Value, host: &str) -> usize {
             continue;
         };
         for group in groups.iter_mut() {
+            let can_retire_start = group.as_object().is_some_and(unfiltered);
             let Some(handlers) = group.get_mut("hooks").and_then(Value::as_array_mut) else {
                 continue;
             };
             handlers.retain(|handler| {
-                let superseded = is_superseded_record(handler, host);
+                let superseded = is_superseded_record(handler, host)
+                    || (can_retire_start && obsolete_claude_start(handler, host, event));
                 if superseded {
                     retired += 1;
                 }
@@ -302,37 +335,56 @@ fn retire_superseded(document: &mut Value, host: &str) -> usize {
 }
 
 fn stage(action: &str, state: &State) -> Result<Staged, String> {
-    let events = host_events(&state.host);
-    let expected = events
+    let specifications = specifications(&state.host);
+    let events = specifications
         .iter()
-        .map(|event| expected(&state.host, event))
+        .map(|(event, _)| *event)
+        .collect::<Vec<_>>();
+    let expected = specifications
+        .into_iter()
+        .map(|(_, handler)| handler)
         .collect::<Vec<_>>();
     let staged = settings::stage(
         action,
         &state.document,
         state.source.is_some(),
-        &state.exact[..events.len()],
-        events,
+        &state.exact,
+        &events,
         &expected,
     )?;
-    let result_state = if staged.changed {
-        let (exact, conflicts) = inspect(&staged.document, &state.host, &state.target)?;
+    let changed = staged.changed || state.retired > 0;
+    let serialized = match staged.serialized {
+        Some(serialized) => Some(serialized),
+        None if state.retired > 0 => Some(format!(
+            "{}\n",
+            serde_json::to_string_pretty(&staged.document).map_err(|error| error.to_string())?
+        )),
+        None => None,
+    };
+    let result_state = if changed {
+        let (exact, conflicts, legacy_start) =
+            inspect(&staged.document, &state.host, &state.target)?;
         State {
             document: staged.document.clone(),
             source: Some(String::new()),
             exact,
             conflicts,
+            legacy_start,
             ..state.clone()
         }
     } else {
         state.clone()
     };
+    let mut actions = staged.actions;
+    if state.retired > 0 {
+        actions.push(format!("retire {} superseded handlers", state.retired));
+    }
     Ok(Staged {
         state: state.clone(),
         result_state,
-        serialized: staged.serialized,
-        changed: staged.changed,
-        actions: staged.actions,
+        serialized,
+        changed,
+        actions,
     })
 }
 
@@ -344,13 +396,13 @@ struct Staged {
     actions: Vec<String>,
 }
 fn result(action: &str, state: &State) -> Value {
-    let events = host_events(&state.host);
-    let applicable = &state.exact[..events.len()];
+    let specifications = specifications(&state.host);
+    let applicable = &state.exact;
     let installed = applicable.iter().all(|count| *count > 0);
-    let partial = applicable.iter().any(|count| *count > 0);
+    let partial = state.legacy_start || applicable.iter().any(|count| *count > 0);
     let state_name = if !state.conflicts.is_empty() {
         "conflict"
-    } else if installed {
+    } else if installed && !state.legacy_start {
         "installed"
     } else if partial {
         "partial"
@@ -369,7 +421,7 @@ fn result(action: &str, state: &State) -> Value {
                 }
             ));
         } else {
-            for (i, event) in events.iter().enumerate() {
+            for (i, (event, _)) in specifications.iter().enumerate() {
                 actions.push(if state.exact[i] > 0 {
                     format!("keep exact {event} handler")
                 } else {
@@ -386,8 +438,12 @@ fn result(action: &str, state: &State) -> Value {
         }
     }
     let mut exact_handlers = Map::new();
-    for (i, event) in events.iter().enumerate() {
-        exact_handlers.insert((*event).to_owned(), json!(state.exact[i]));
+    for (i, (event, _)) in specifications.iter().enumerate() {
+        let count = exact_handlers
+            .get(*event)
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        exact_handlers.insert((*event).to_owned(), json!(count + state.exact[i] as u64));
     }
     json!({"action":action,"host":state.host,"supported":true,"targetPath":state.target.display().to_string(),"settingsFileExists":state.source.is_some(),"state":state_name,"exactHandlers":exact_handlers,"conflicts":state.conflicts,"changed":false,"actions":actions})
 }
@@ -413,6 +469,64 @@ fn is_superseded_record(handler: &Value, host: &str) -> bool {
     ];
     let _ = host;
     known.iter().any(|record| record == handler)
+}
+
+fn obsolete_claude_start(handler: &Value, host: &str, event: &str) -> bool {
+    crate::producer::exitbind_surface()
+        && host == "claude"
+        && event == "SubagentStart"
+        && handler == &expected(host, event)
+}
+
+fn unfiltered(group: &Map<String, Value>) -> bool {
+    group
+        .get("matcher")
+        .map_or(true, |matcher| matcher.as_str() == Some(""))
+}
+
+fn specifications(host: &str) -> Vec<(&'static str, Value)> {
+    let mut result = Vec::new();
+    for &event in host_events(host) {
+        if crate::producer::exitbind_surface() && host == "claude" && event == "SubagentStart" {
+            for slot in 1..=super::runtime::multipart::SLOTS {
+                result.push((event, json!({"type":"command", "command":format!(
+                    "command -v exitbind >/dev/null 2>&1 && exitbind hook-run --host claude --index {slot} || true"
+                ), "timeout":HOOK_TIMEOUT_SECONDS})));
+            }
+        } else {
+            result.push((event, expected(host, event)));
+        }
+    }
+    result
+}
+
+/// The legacy protocol token alone does not prove that the PATH binary accepts
+/// multipart flags. Probe its parser before installing those handlers.
+fn require_multipart_command() -> Result<(), String> {
+    let message = "PATH-installed exitbind does not support Claude multipart hooks; update the CLI before applying hooks";
+    let mut child = Command::new("exitbind")
+        .args(["hook-run", "--host", "claude", "--index", "1"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|_| message.to_owned())?;
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if let Some(status) = child.try_wait().map_err(|_| message.to_owned())? {
+            return if status.success() {
+                Ok(())
+            } else {
+                Err(message.into())
+            };
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(message.into());
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
 
 fn expected(host: &str, event: &str) -> Value {

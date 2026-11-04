@@ -96,9 +96,20 @@ pub(crate) fn callback_scope(
     };
     let agent_type = super::text(payload, "agent_type");
     let intents = super::load(loaded)?;
+    let claimed = intents.iter().any(|intent| {
+        intent["state"] == "claimed"
+            && intent["session"] == session
+            && intent["nativeChild"] == child
+    });
     let matches = intents
         .iter()
         .filter(|intent| match event {
+            "SubagentStart" if claimed => {
+                intent["state"] == "claimed"
+                    && intent["session"] == session
+                    && intent["nativeChild"] == child
+                    && super::same_observed_agent_type(intent, agent_type)
+            }
             "SubagentStart" => super::claimable(intent, session, agent_type),
             "SubagentStop" => {
                 intent["session"] == session

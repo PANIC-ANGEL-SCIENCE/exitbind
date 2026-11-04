@@ -73,7 +73,16 @@ pub(super) fn note_delivery(
             value["actorContractSha256"].as_str()?,
         ))
     });
-    crate::session_goal::note_child_delivery(loaded, payload, binding, permit, facts)
+    crate::session_goal::note_child_delivery(
+        loaded,
+        payload,
+        super::multipart::Delivery::Legacy {
+            binding,
+            permit,
+            facts,
+        },
+    )
+    .map(|_| ())
 }
 
 pub(super) fn report_delivery_record(result: Result<(), String>) {

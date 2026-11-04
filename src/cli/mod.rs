@@ -178,9 +178,23 @@ pub fn run(argv: Vec<String>) -> Result<(), String> {
             Ok(())
         }
         "hook-run" => {
-            args::assert_options(command, &parsed, &["host"])?;
+            args::assert_options(command, &parsed, &["host", "index"])?;
             args::assert_positionals(command, &parsed, 0)?;
-            hook_runtime::run(parsed.options.get("host").map(String::as_str))
+            let host = parsed.options.get("host").map(String::as_str);
+            let slot = parsed
+                .options
+                .get("index")
+                .map(|value| {
+                    let slot = value
+                        .parse::<usize>()
+                        .map_err(|_| "hook slot must be 1 through 4")?;
+                    if host != Some("claude") || !(1..=4).contains(&slot) {
+                        return Err("hook slot requires --host claude and must be 1 through 4");
+                    }
+                    Ok(slot - 1)
+                })
+                .transpose()?;
+            hook_runtime::run(host, slot)
         }
         "statusline" => crate::host::statusline::run(),
         "init" => crate::project::commands::init(&parsed),

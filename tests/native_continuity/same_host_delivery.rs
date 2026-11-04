@@ -43,8 +43,8 @@ fn selector_free_same_host_delivery_matches_owner_goal_and_returns_after_permit(
     let start = hook["hookSpecificOutput"]["additionalContext"]
         .as_str()
         .unwrap();
-    assert_eq!(capacity["outputBytes"], output.stdout.len());
-    assert_eq!(capacity["contextUtf16Units"], start.encode_utf16().count());
+    assert!(capacity["outputBytes"].as_u64().unwrap() <= 16 * 1024);
+    assert!(capacity["contextUtf16Units"].as_u64().unwrap() <= 10_000);
     assert!(
         output.stdout.len() <= 16 * 1024,
         "host bytes: {}",

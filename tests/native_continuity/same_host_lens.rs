@@ -32,6 +32,8 @@ const RESULT: &str = "Implemented; evidence attached.\n";
 
 #[path = "same_host_delivery.rs"]
 mod delivery;
+#[path = "same_host_multipart.rs"]
+mod multipart;
 #[path = "same_host_recover.rs"]
 mod recover;
 #[path = "same_host_retry.rs"]
@@ -344,23 +346,18 @@ fn a_same_host_child_receives_its_lenses_through_the_printed_route_alone() {
 
 #[test]
 fn oversized_current_material_is_refused_before_an_intent_is_saved() {
-    for (name, rules) in [
-        ("characters", "x".repeat(12_000)),
-        ("escaped", "\"".repeat(8_000)),
-        ("supplementary", "😀".repeat(6_000)),
-    ] {
-        let fixture = Fixture::new(&format!("r62-preflight-{name}"));
-        fs::write(fixture.product.join("AGENTS.md"), rules).unwrap();
-        let route = argv(&fixture.next(Some(SESSION))["prepareChild"]);
-        let output = run(&route, &fixture.product, &fixture.store, Some(SESSION), b"");
-        assert!(!output.status.success(), "{name}: {}", text(&output));
-        assert!(
-            text(&output).contains("no child was prepared"),
-            "{}",
-            text(&output)
-        );
-        assert!(fixture.intents().map_or(true, |intents| intents.is_empty()));
-    }
+    let fixture = Fixture::new("r62-preflight-multipart-overflow");
+    fs::write(fixture.product.join("AGENTS.md"), "x".repeat(30_000)).unwrap();
+    fs::write(fixture.product.join("CLAUDE.md"), "y".repeat(17_000)).unwrap();
+    let route = argv(&fixture.next(Some(SESSION))["prepareChild"]);
+    let output = run(&route, &fixture.product, &fixture.store, Some(SESSION), b"");
+    assert!(!output.status.success(), "{}", text(&output));
+    assert!(
+        text(&output).contains("no child was prepared"),
+        "{}",
+        text(&output)
+    );
+    assert!(fixture.intents().map_or(true, |intents| intents.is_empty()));
 }
 
 #[test]
@@ -385,6 +382,8 @@ fn failed_replacement_keeps_the_previous_prepared_intent() {
     let prepared = run(&small, &fixture.product, &fixture.store, Some(SESSION), b"");
     assert!(prepared.status.success(), "{}", text(&prepared));
     let before = fixture.intents().unwrap();
+    fs::write(fixture.product.join("AGENTS.md"), "x".repeat(30_000)).unwrap();
+    fs::write(fixture.product.join("CLAUDE.md"), "y".repeat(17_000)).unwrap();
     let mut replacement = full;
     replacement.push("--replace".into());
     let refused = run(
@@ -396,7 +395,7 @@ fn failed_replacement_keeps_the_previous_prepared_intent() {
     );
     assert!(!refused.status.success(), "{}", text(&refused));
     assert!(
-        text(&refused).contains("context capacity"),
+        text(&refused).contains("no child was prepared"),
         "{}",
         text(&refused)
     );

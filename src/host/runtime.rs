@@ -1,10 +1,11 @@
 use serde_json::{json, Value};
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 
 mod activation;
 mod actor;
 mod child;
 mod context;
+pub(crate) mod multipart;
 mod project;
 mod stop;
 pub(crate) use activation::{assess_activation, classify_activation, Activation, ActivationFacts};
@@ -26,7 +27,7 @@ const EVENTS: [&str; 7] = [
 
 /// Hook execution is deliberately fail-open: malformed, ambiguous, or unsafe
 /// host input produces no output and never turns a host session into an error.
-pub fn run(host: Option<&str>) -> Result<(), String> {
+pub fn run(host: Option<&str>, slot: Option<usize>) -> Result<(), String> {
     let mut bytes = Vec::new();
     let mut input = io::stdin().take((MAX_INPUT + 1) as u64);
     input.read_to_end(&mut bytes).map_err(|_| String::new())?;
@@ -50,6 +51,9 @@ pub fn run(host: Option<&str>) -> Result<(), String> {
         return Ok(());
     }
     if !EVENTS.contains(&event) {
+        return Ok(());
+    }
+    if slot.is_some() && event != "SubagentStart" {
         return Ok(());
     }
     if event == "Stop" {
@@ -135,9 +139,13 @@ pub fn run(host: Option<&str>) -> Result<(), String> {
         match crate::session_goal::child_callback_scope(&loaded, object, event) {
             Ok(scope) => scope,
             Err(reason) if event == "SubagentStart" => {
-                return emit(
+                if slot.is_some() {
+                    multipart::invalidate(&loaded, object);
+                }
+                return emit_slot(
                     event,
                     &format!("Exitbind could not verify the selected child context; assignment context is unavailable: {reason}."),
+                    slot,
                 );
             }
             Err(reason) => {
@@ -155,20 +163,22 @@ pub fn run(host: Option<&str>) -> Result<(), String> {
     if event == "SubagentStart" {
         match retry_busy(|| crate::session_goal::claim_child(&loaded, object)) {
             Ok(Some(reason)) => {
-                return emit(
+                return emit_slot(
                     event,
                     &format!(
                         "Exitbind rejected the prepared child context before presentation: {reason}. The current assignment context was not presented. Native host child creation is host-controlled."
                     ),
+                    slot,
                 );
             }
             Ok(None) => {}
             Err(error) => {
-                return emit(
+                return emit_slot(
                     event,
                     &format!(
                         "Exitbind could not verify the prepared child context; no assignment context was presented: {error}. Native host child creation is host-controlled."
                     ),
+                    slot,
                 );
             }
         }
@@ -301,12 +311,21 @@ pub fn run(host: Option<&str>) -> Result<(), String> {
         text
     } else {
         let Some(agent) = exact_agent(object, &loaded.agents) else {
+            if slot.is_some() {
+                multipart::invalidate(&loaded, object);
+            }
             return Ok(());
         };
         let Some(configured) = loaded.agent(&agent) else {
+            if slot.is_some() {
+                multipart::invalidate(&loaded, object);
+            }
             return Ok(());
         };
         let Some((profile, source)) = child::profile(&loaded, configured) else {
+            if slot.is_some() {
+                multipart::invalidate(&loaded, object);
+            }
             return Ok(());
         };
         let selected = super::assignment_context::selection(
@@ -316,21 +335,29 @@ pub fn run(host: Option<&str>) -> Result<(), String> {
         );
         if let super::assignment_context::Selection::Mismatch(reason) = &selected {
             if event == "SubagentStart" {
-                return emit(
+                if slot.is_some() {
+                    multipart::invalidate(&loaded, object);
+                }
+                return emit_slot(
                     event,
                     &format!(
                         "Exitbind could not present child context: assignment context mismatch: {reason}. Native host child creation is host-controlled."
                     ),
+                    slot,
                 );
             }
             return Ok(());
         }
         if let super::assignment_context::Selection::Unavailable(reason) = &selected {
-            return emit(
+            if slot.is_some() {
+                multipart::invalidate(&loaded, object);
+            }
+            return emit_slot(
                 event,
                 &format!(
                     "Exitbind could not verify the current assignment; profile acquisition is unavailable: {reason}."
                 ),
+                slot,
             );
         }
         let Some(mut context) = child::base(
@@ -342,6 +369,9 @@ pub fn run(host: Option<&str>) -> Result<(), String> {
             &selected,
             &configuration,
         ) else {
+            if slot.is_some() {
+                multipart::invalidate(&loaded, object);
+            }
             return Ok(());
         };
         let mut finalized_context = false;
@@ -359,11 +389,15 @@ pub fn run(host: Option<&str>) -> Result<(), String> {
                                     && child["guidance"] == *guidance
                         );
                     if !matches {
-                        return emit(
+                        if slot.is_some() {
+                            multipart::invalidate(&loaded, object);
+                        }
+                        return emit_slot(
                             event,
                             &format!(
                                 "Exitbind could not present child context: prepared child scope conflicts with the selected assignment (configured agent {agent}). Native host child creation is host-controlled."
                             ),
+                            slot,
                         );
                     }
                     if child["deliveryHost"] == "codex" {
@@ -375,9 +409,22 @@ pub fn run(host: Option<&str>) -> Result<(), String> {
                         };
                         context = context::codex_unverified_with_evidence(event, evidence);
                         finalized_context = true;
-                    } else if child::render(&loaded, &child, &selected, &mut context, event)? {
-                        presented_child = Some(child.clone());
-                        finalized_context = true;
+                    } else {
+                        let rendered = child::render(
+                            &loaded,
+                            &child,
+                            &selected,
+                            &mut context,
+                            event,
+                            slot.is_some(),
+                        );
+                        if rendered.is_err() && slot.is_some() {
+                            multipart::invalidate(&loaded, object);
+                        }
+                        if rendered? {
+                            presented_child = Some(child.clone());
+                            finalized_context = true;
+                        }
                     }
                 }
                 Err(_) => {
@@ -388,6 +435,10 @@ pub fn run(host: Option<&str>) -> Result<(), String> {
                         _ => &[],
                     };
                     let message = context::unavailable_with_evidence(event, evidence);
+                    if slot.is_some() {
+                        multipart::invalidate(&loaded, object);
+                        return emit_slot(event, &message, slot);
+                    }
                     emit(event, &message)?;
                     context::report_delivery_record(retry_busy(|| {
                         context::note_delivery(&loaded, object, None)
@@ -407,6 +458,12 @@ pub fn run(host: Option<&str>) -> Result<(), String> {
             context::fallback_context(event, &context, claude_delivery, evidence)?
         }
     };
+    if let Some(index) = slot {
+        if let Some(child) = presented_child.as_ref() {
+            return multipart::deliver(&loaded, object, child, &text, index);
+        }
+        return emit_slot(event, &text, slot);
+    }
     emit(event, &text)?;
     if event == "SubagentStart" {
         context::report_delivery_record(retry_busy(|| {
@@ -414,6 +471,16 @@ pub fn run(host: Option<&str>) -> Result<(), String> {
         }));
     }
     Ok(())
+}
+
+fn emit_slot(event: &str, text: &str, slot: Option<usize>) -> Result<(), String> {
+    if slot.is_some_and(|index| index != 0) {
+        return Ok(());
+    }
+    if slot.is_some() && super::assignment_evidence::append_for_claude(text, event, &[]).is_none() {
+        return emit(event, "Exitbind could not fit the complete child profile and context into the Claude hook envelope; acquisition is unavailable.");
+    }
+    emit(event, text)
 }
 
 /// A session in a repository Exitbind does not govern yet still needs to know
@@ -511,7 +578,12 @@ fn emit(event: &str, text: &str) -> Result<(), String> {
         )
         .map_err(|_| String::new())?;
         if output.len() <= MAX_OUTPUT {
-            println!("{output}");
+            let mut stdout = io::stdout().lock();
+            stdout
+                .write_all(output.as_bytes())
+                .and_then(|()| stdout.write_all(b"\n"))
+                .and_then(|()| stdout.flush())
+                .map_err(|error| error.to_string())?;
             return Ok(());
         }
         let keep = text.len() * 3 / 4;

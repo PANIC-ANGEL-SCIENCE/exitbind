@@ -3,6 +3,8 @@
 //! supersedes the basis; only repair and supersede start another attempt.
 #![cfg(unix)]
 
+#[path = "lead_disposition/native.rs"]
+mod native;
 mod support;
 
 use serde_json::{json, Value};
@@ -498,18 +500,7 @@ fn case_c_repair_carries_the_lead_boundary_and_needs_fresh_review() {
         let payload = json!({"hook_event_name":"SubagentStart", "cwd":fixture.root.path(),
             "session_id":"repair-session", "agent_id":child,
             "agent_type":named["nativeTaskName"]});
-        // Hooks resolve the fixture from the payload cwd and session; unlike
-        // Work commands, their supported route accepts no --config option.
-        let output = fixture.invoke(
-            &["hook-run", "--host", "claude"],
-            payload.to_string().as_bytes(),
-        );
-        assert!(output.status.success(), "hook-run: {}", text(&output));
-        let hook: Value = serde_json::from_slice(&output.stdout)
-            .unwrap_or_else(|error| panic!("hook-run JSON: {error}; {}", text(&output)));
-        let context = hook["hookSpecificOutput"]["additionalContext"]
-            .as_str()
-            .unwrap_or_else(|| panic!("hook context missing: {}", text(&output)));
+        let context = native::context(&fixture, &payload);
         let actor = context.split_once(
             "Complete current assignment, evidence and task conditions (verified for this recipient):\n")
             .and_then(|(_, rest)| rest.lines().next())

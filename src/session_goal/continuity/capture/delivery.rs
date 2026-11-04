@@ -1,7 +1,7 @@
 //! Carry one actually presented child form through its exact governor grant.
 
 use super::{actor_checks, context, load, text, with_intents};
-use crate::{config::Loaded, evidence::hash, work};
+use crate::{config::Loaded, evidence::hash, host::runtime::multipart, work};
 use serde_json::{json, Value};
 
 pub(crate) struct PermitTransition<'a> {
@@ -135,9 +135,43 @@ pub(crate) fn advance(loaded: &Loaded, proof: &PermitTransition<'_>) -> Result<b
 pub(crate) fn note_delivery(
     loaded: &Loaded,
     payload: &serde_json::Map<String, Value>,
+    request: multipart::Delivery<'_>,
+) -> Result<Option<multipart::Piece>, String> {
+    match request {
+        multipart::Delivery::Legacy {
+            binding,
+            permit,
+            facts,
+        } => {
+            note_legacy(loaded, payload, binding, permit, facts)?;
+            Ok(None)
+        }
+        multipart::Delivery::Select {
+            child,
+            bundle,
+            slot,
+        } => super::multipart::select(loaded, payload, child, bundle, slot),
+        multipart::Delivery::Receipt {
+            bundle,
+            slot,
+            piece,
+        } => {
+            super::multipart::receipt(loaded, payload, bundle, slot, piece)?;
+            Ok(None)
+        }
+        multipart::Delivery::Invalidate => {
+            super::multipart::invalidate(loaded, payload)?;
+            Ok(None)
+        }
+    }
+}
+
+fn note_legacy(
+    loaded: &Loaded,
+    payload: &serde_json::Map<String, Value>,
     binding: Option<&str>,
     permit_form: Option<&Value>,
-    facts: Option<(&str, &str, &str, &str, &str)>,
+    facts: Option<multipart::Facts<'_>>,
 ) -> Result<(), String> {
     let (Some(session), Some(child)) = (text(payload, "session_id"), text(payload, "agent_id"))
     else {
@@ -162,7 +196,7 @@ pub(crate) fn note_delivery(
         };
         // A duplicate start cannot replace an already presented historical
         // proof or promote an unavailable first presentation into credit.
-        if intent.get("assignmentDelivery").is_some() {
+        if intent.get("assignmentDelivery").is_some() || intent.get("multipartDelivery").is_some() {
             return Ok(());
         }
         let work = intent["work"].as_str().ok_or("child work unavailable")?;
@@ -189,17 +223,7 @@ pub(crate) fn note_delivery(
             })
         });
         let proof = if presented {
-            permit_form.and_then(|form| {
-                let current = crate::work::current_action(loaded, work).ok()?;
-                let current_binding = binding?;
-                let canonical =
-                    crate::work::action_forms::full(loaded, work, &current, current_binding);
-                if canonical["beforeEditing"] != *form {
-                    return None;
-                }
-                let request_id = crate::work::action_forms::permit_request_id(form)?;
-                Some(json!({"sha256":hash::value(form),"requestId":request_id}))
-            })
+            binding.and_then(|binding| permit_proof(loaded, work, binding, permit_form))
         } else {
             None
         };
@@ -226,7 +250,23 @@ pub(crate) fn note_delivery(
     })
 }
 
-fn matching_facts(
+pub(super) fn permit_proof(
+    loaded: &Loaded,
+    work: &str,
+    binding: &str,
+    form: Option<&Value>,
+) -> Option<Value> {
+    let form = form?;
+    let current = crate::work::current_action(loaded, work).ok()?;
+    let canonical = crate::work::action_forms::full(loaded, work, &current, binding);
+    if canonical["beforeEditing"] != *form {
+        return None;
+    }
+    let request_id = crate::work::action_forms::permit_request_id(form)?;
+    Some(json!({"sha256":hash::value(form),"requestId":request_id}))
+}
+
+pub(super) fn matching_facts(
     current: &Value,
     binding: &str,
     (required, recipient, instructions, actor, contract): (&str, &str, &str, &str, &str),
@@ -265,6 +305,25 @@ mod tests {
             &binding,
             (&changed, &recipient, &instructions, &actor, &contract)
         ));
+        for field in [
+            "requiredFactsSha256",
+            "requiredRecipientSha256",
+            "requiredInstructionsSha256",
+            "actorFactsSha256",
+            "actorContractSha256",
+        ] {
+            let mut stale = current.clone();
+            stale[field] = json!(changed);
+            assert_eq!(stale["requiredAssignmentBinding"], binding);
+            assert!(
+                !matching_facts(
+                    &stale,
+                    &binding,
+                    (&required, &recipient, &instructions, &actor, &contract)
+                ),
+                "{field}"
+            );
+        }
     }
 
     #[test]
