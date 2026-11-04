@@ -1,5 +1,8 @@
 use super::*;
 
+#[path = "grant_offer/continuation.rs"]
+mod continuation;
+
 fn granted(
     label: &str,
 ) -> (
@@ -88,6 +91,7 @@ fn canonical_form_owner_only_offers_current_eligible_unsuppressed_grants() {
         "lineage",
         "state",
         "held",
+        "null-held",
         "heldResults",
         "reviewer",
         "quarantine",
@@ -108,6 +112,7 @@ fn canonical_form_owner_only_offers_current_eligible_unsuppressed_grants() {
             }
             "state" => next["packet"]["context"]["loop"]["state"] = json!("blocked"),
             "held" => next["held"] = json!({"reference":"retained"}),
+            "null-held" => next["held"] = Value::Null,
             "heldResults" => next["heldResults"] = json!([{"reference":"retained"}]),
             "reviewer" => next["role"] = json!("reviewer"),
             "quarantine" => next["packet"]["quarantineVerification"] = json!({}),
@@ -117,4 +122,62 @@ fn canonical_form_owner_only_offers_current_eligible_unsuppressed_grants() {
         assert!(offer.is_none(), "{change}");
         assert!(forms["currentGrant"].is_null(), "{change}");
     }
+}
+
+#[test]
+fn real_grant_delivery_reaches_native_projection_and_missing_form_refuses() {
+    if !crate::compatibility::is_exitbind() {
+        return;
+    }
+    let (_root, loaded, work, _snapshot, next) = granted("native-current-grant");
+    let (mut delivery, command, offer) =
+        crate::work::details::required_assignment_with_check(&loaded, &work, &next).unwrap();
+    let offer = offer.unwrap();
+    let binding = delivery["binding"].as_str().unwrap().to_owned();
+    let project = |sections: &Value| {
+        crate::host::runtime::selected_actor_projection(
+            &loaded,
+            &work,
+            &binding,
+            sections,
+            &command,
+            Some(&offer),
+        )
+    };
+    let actor = project(&delivery["sections"]).unwrap();
+    assert_eq!(actor["currentAction"]["currentGrant"], offer.form);
+    assert_eq!(actor["governor"]["currentMutation"], offer.mutation);
+    delivery["sections"]["currentAction"]["currentGrant"] = Value::Null;
+    assert!(project(&delivery["sections"])
+        .unwrap_err()
+        .contains("current native mutation lacks its canonical grant form"));
+}
+
+#[test]
+fn unavailable_time_amendment_suppresses_the_offer_without_erasing_history() {
+    if !crate::compatibility::is_exitbind() {
+        return;
+    }
+    let (_root, loaded, work, _snapshot, mut next) = granted("unavailable-grant-amendment");
+    // Copied malformed marker drives the real error owner, not evidence of
+    // canonical production emitting an invalid association.
+    next["packet"]["projectContinuation"] = json!({});
+    assert!(crate::work::action_forms::current_worker_grant(&next["packet"]).is_some());
+    let history = next["packet"]["context"]["loop"]["currentMutation"].clone();
+    let (forms, offer) = crate::work::action_forms::full_with_grant_offer(
+        &loaded,
+        &work,
+        &next,
+        next["current"]["binding"].as_str().unwrap(),
+    );
+    assert_eq!(forms["state"], "held_time_amendment_unavailable");
+    assert!(forms["diagnostic"]["reason"]
+        .as_str()
+        .is_some_and(|v| !v.is_empty()));
+    assert!(forms["currentGrant"].is_null());
+    assert!(offer.is_none());
+    assert_eq!(
+        next["packet"]["context"]["loop"]["currentMutation"],
+        history
+    );
 }

@@ -35,6 +35,7 @@ pub(super) fn attach(
     binding: &str,
     next: &Value,
     result: &mut Value,
+    offer: &mut Option<GrantOffer>,
 ) {
     if next["packet"]["projectContinuation"].is_object() {
         match crate::project::continuation::time_amendment_hold(
@@ -45,6 +46,7 @@ pub(super) fn attach(
         ) {
             Ok(Some(held)) => {
                 *result = held;
+                *offer = None;
                 return;
             }
             Err(reason) => {
@@ -54,6 +56,7 @@ pub(super) fn attach(
                     "meaning":"The frozen continuation no longer matches its selected mandate, and its amendment state could not be verified. No Work action is offered.",
                     "diagnostic":{"readOnly":true,"reason":reason}
                 });
+                *offer = None;
                 return;
             }
             Ok(None) => {}
@@ -108,6 +111,7 @@ pub(super) fn attach(
                 "reference": item["reference"], "sha256": item["sha256"], "bytes": item["bytes"]
             })).collect::<Vec<_>>());
             result.as_object_mut().unwrap().remove("currentGrant");
+            *offer = None;
         }
         let mut choices = vec![form];
         if state == Some("replan_required") && held.is_empty() {
@@ -146,6 +150,7 @@ pub(super) fn attach(
         }
         result.as_object_mut().unwrap().remove("beforeEditing");
         result.as_object_mut().unwrap().remove("currentGrant");
+        *offer = None;
         return;
     }
     if held.is_empty() {
@@ -160,5 +165,6 @@ pub(super) fn attach(
     result["recovery"] = json!({"state":"retained_result","heldResults":forms,
         "meaning":"return the selected exact retained bytes once, then perform the fresh applicable check and review"});
     result.as_object_mut().unwrap().remove("currentGrant");
+    *offer = None;
     result.as_object_mut().unwrap().remove("beforeEditing");
 }

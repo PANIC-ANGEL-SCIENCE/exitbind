@@ -307,7 +307,7 @@ fn forms(
                     "meaning":"The existing governor requirement must be addressed before reconciliation; changing its binding may make this admission ineligible."});
                 if matches!(governor, Some("replan_required" | "evidence_required")) {
                     if let Some(assignment) = next["assignment"].as_str() {
-                        repair::attach(loaded, work, assignment, binding, next, &mut form);
+                        repair::attach(loaded, work, assignment, binding, next, &mut form, offer);
                     }
                 }
             }
@@ -740,6 +740,6 @@ fn forms(
             });
         }
     }
-    repair::attach(loaded, work, assignment, binding, next, &mut result);
+    repair::attach(loaded, work, assignment, binding, next, &mut result, offer);
     result
 }

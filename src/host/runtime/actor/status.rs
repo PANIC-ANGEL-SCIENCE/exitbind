@@ -1,5 +1,6 @@
 //! Current obligations and material statuses for the selected actor.
 use super::{classified, copy_if_present, known_keys, nonempty};
+use crate::work::action_forms::GrantOffer;
 use serde_json::{json, Map, Value};
 
 pub(super) fn obligations(
