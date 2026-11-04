@@ -5,6 +5,7 @@
 //! leaves Lead-only ledger and navigation machinery at the exact detail route.
 
 use crate::config::Loaded;
+use crate::work::action_forms::GrantOffer;
 use serde_json::{json, Map, Value};
 
 mod evidence;
@@ -18,12 +19,13 @@ pub(crate) fn projection(
     binding: &str,
     sections: &Value,
     check_command: &Value,
+    grant_offer: Option<&GrantOffer>,
 ) -> Result<Value, String> {
     let reference = format!("{}{binding}", crate::work::readable::PREFIX);
     let detail = crate::emitted::Route::new(["work", "expand", work, &reference, "--json"])
         .config(&loaded.path)
         .full_argv()?;
-    project_sections(work, binding, sections, &detail, check_command)
+    project_sections(work, binding, sections, &detail, check_command, grant_offer)
 }
 
 fn nonempty(value: &Value) -> bool {
@@ -61,6 +63,7 @@ fn project_sections(
     sections: &Value,
     detail: &[String],
     check_command: &Value,
+    grant_offer: Option<&GrantOffer>,
 ) -> Result<Value, String> {
     if !check_command.is_null() && !check_command.is_string() {
         return Err("native frozen check command is unavailable".into());
@@ -578,9 +581,9 @@ fn project_sections(
     status::obligations(&mut actor, section, context, residual, work)?;
     status::governor(
         &mut actor,
-        &context["loop"],
+        packet,
         &sections["currentAction"],
-        packet["role"].as_str().unwrap_or_default(),
+        grant_offer,
         &sections["evidence"],
     )?;
     let recipient = super::context::recipient_assignment(sections, detail);

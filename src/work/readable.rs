@@ -5,6 +5,7 @@
 //! presents bounded UTF-8 artifacts directly so consumers do not implement
 //! paging, decoding, or integrity checks themselves.
 
+use super::action_forms::GrantOffer;
 use crate::{config::Loaded, run::RunSnapshot};
 use serde_json::{json, Map, Value};
 
@@ -54,6 +55,17 @@ pub(crate) fn read(
     snapshot: &RunSnapshot,
     next: &Value,
 ) -> Result<Value, String> {
+    read_with_grant_offer(loaded, work, snapshot, next).map(|(detail, _)| detail)
+}
+
+/// Retain the offer from the same post-held canonical assembly as the detail.
+/// The public JSON and its fingerprint do not acquire another authority field.
+pub(super) fn read_with_grant_offer(
+    loaded: &Loaded,
+    work: &str,
+    snapshot: &RunSnapshot,
+    next: &Value,
+) -> Result<(Value, Option<GrantOffer>), String> {
     read_after_reads(loaded, work, snapshot, next, || Ok(()))
 }
 
@@ -63,7 +75,7 @@ fn read_after_reads(
     snapshot: &RunSnapshot,
     next: &Value,
     after_reads: impl FnOnce() -> Result<(), String>,
-) -> Result<Value, String> {
+) -> Result<(Value, Option<GrantOffer>), String> {
     super::details::ensure_current_config(loaded)?;
     let mut canonical = next.clone();
     canonical
@@ -420,9 +432,10 @@ fn response(
     sections: Map<String, Value>,
     recipient: Value,
     snapshot: &RunSnapshot,
-) -> Result<Value, String> {
+) -> Result<(Value, Option<GrantOffer>), String> {
     let readable_complete =
         evidence_complete(&sections["evidence"]) && recipient["complete"] == true;
+    let (forms, offer) = super::action_forms::full_with_grant_offer(loaded, work, next, binding);
     let mut value = json!({
         "compact": true,
         "valid": true,
@@ -436,7 +449,7 @@ fn response(
         "sections": sections,
         "recipientContext": recipient,
         "usageAccount": crate::session_goal::usage::details_for_work(loaded, work),
-        "actionForms": super::action_forms::full(loaded, work, next, binding),
+        "actionForms": forms,
         "transport": {"encoding": "utf-8", "exact": readable_complete, "modelPaging": false},
     });
     if next["goalProgress"]["workAssociation"].is_object() {
@@ -472,7 +485,7 @@ fn response(
     if bytes.len() + 1 > MAX_GROUPED_BYTES {
         return Err("grouped work detail exceeds the bounded readable channel; use the current section routes".into());
     }
-    Ok(value)
+    Ok((value, offer))
 }
 
 pub(super) fn evidence_complete(value: &Value) -> bool {

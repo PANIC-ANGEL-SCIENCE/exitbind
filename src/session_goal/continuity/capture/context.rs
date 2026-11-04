@@ -170,19 +170,22 @@ fn context_for_intent(
     result["guidance"] = guidance;
     let mut assignment_binding = None;
     if intent["directAssignment"] == true {
-        let (delivery, check_command) = if host_delivery && selected_actor && host == "claude" {
-            let (delivery, command) = crate::work::details::required_assignment_with_check(
-                loaded,
-                work,
-                &current["next"],
-            )?;
-            (delivery, Some(command))
-        } else {
-            (
-                crate::work::details::required_assignment(loaded, work, &current["next"])?,
-                None,
-            )
-        };
+        let (delivery, check_command, grant_offer) =
+            if host_delivery && selected_actor && host == "claude" {
+                let (delivery, command, grant_offer) =
+                    crate::work::details::required_assignment_with_check(
+                        loaded,
+                        work,
+                        &current["next"],
+                    )?;
+                (delivery, Some(command), grant_offer)
+            } else {
+                (
+                    crate::work::details::required_assignment(loaded, work, &current["next"])?,
+                    None,
+                    None,
+                )
+            };
         super::reviewer_retry::ensure_fence(
             loaded,
             work,
@@ -230,6 +233,7 @@ fn context_for_intent(
                         binding,
                         &delivery["sections"],
                         check_command,
+                        grant_offer.as_ref(),
                     )?;
                     let (contract, _) =
                         crate::work::action::actor_contract(role, &result["hostResultContract"])?;

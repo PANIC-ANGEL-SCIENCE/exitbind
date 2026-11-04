@@ -705,7 +705,7 @@ fn selected_check_snapshot_refuses_changes_during_detail_assembly() {
         let snapshot =
             RunSnapshot::capture(&loaded, &crate::work::resolve(&loaded, &work).unwrap()).unwrap();
         let next = crate::work::next_from(&loaded, &work, &snapshot).unwrap();
-        let (assignment, command) =
+        let (assignment, command, _) =
             crate::work::details::required_assignment_with_check(&loaded, &work, &next).unwrap();
         assert_eq!(command, json!("true --mode strict"));
         assert_eq!(assignment["binding"], next["current"]["binding"]);
@@ -755,3 +755,6 @@ fn selected_check_snapshot_refuses_changes_during_detail_assembly() {
         }
     }
 }
+
+#[path = "readable_tests/grant_offer.rs"]
+mod grant_offer;

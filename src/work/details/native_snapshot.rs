@@ -1,5 +1,6 @@
 //! Reconstruct native delivery facts from validated Work snapshots.
 use super::{binding, ensure_current_config, native_sections};
+use crate::work::action_forms::GrantOffer;
 use crate::{config::Loaded, evidence::hash, run::RunSnapshot};
 use serde_json::{json, Value};
 
@@ -10,7 +11,7 @@ pub(crate) fn required_assignment(
     work: &str,
     current: &Value,
 ) -> Result<Value, String> {
-    required_assignment_inner(loaded, work, current, false).map(|(assignment, _)| assignment)
+    required_assignment_inner(loaded, work, current, false).map(|(assignment, _, _)| assignment)
 }
 
 /// Selected delivery also needs the exact check policy from this same snapshot.
@@ -18,11 +19,12 @@ pub(crate) fn required_assignment_with_check(
     loaded: &Loaded,
     work: &str,
     current: &Value,
-) -> Result<(Value, Value), String> {
-    let (assignment, check) = required_assignment_inner(loaded, work, current, true)?;
+) -> Result<(Value, Value, Option<GrantOffer>), String> {
+    let (assignment, check, grant_offer) = required_assignment_inner(loaded, work, current, true)?;
     Ok((
         assignment,
         check.ok_or("native check policy observation is unavailable")?,
+        grant_offer,
     ))
 }
 
@@ -31,14 +33,15 @@ fn required_assignment_inner(
     work: &str,
     current: &Value,
     include_check: bool,
-) -> Result<(Value, Option<Value>), String> {
+) -> Result<(Value, Option<Value>, Option<GrantOffer>), String> {
     let ledger = super::super::resolve(loaded, work)?;
     let snapshot = RunSnapshot::capture(loaded, &ledger)?;
     let fresh = super::super::next_from(loaded, work, &snapshot)?;
     if current["current"]["binding"] != fresh["current"]["binding"] {
         return Err("native current binding changed; refresh before execution".into());
     }
-    let detail = super::super::readable::read(loaded, work, &snapshot, &fresh)?;
+    let (detail, grant_offer) =
+        super::super::readable::read_with_grant_offer(loaded, work, &snapshot, &fresh)?;
     // Native request assembly owns its separate, validated profile read.
     // A grouped inline-profile fallback is not missing upstream evidence.
     if !super::super::readable::evidence_complete(&detail["sections"]["evidence"]) {
@@ -93,6 +96,7 @@ fn required_assignment_inner(
             "binding": detail["binding"],
         }),
         check,
+        grant_offer,
     ))
 }
 
@@ -150,7 +154,8 @@ pub(in crate::work) fn native_snapshot_facts(
     // Only this historical observation comes from the exact validated grant.
     // Current result/check inputs remain untouched.
     *observed = json!(pre_edit_inputs);
-    let forms = super::super::action_forms::full(loaded, work, &canonical, &binding);
+    let (forms, grant_offer) =
+        super::super::action_forms::full_with_grant_offer(loaded, work, &canonical, &binding);
     let mut sections = native_sections(sections, &forms, &json!(binding));
     let continuation = if managed {
         crate::project::continuation::runtime::delivery(loaded, work)?
@@ -168,7 +173,12 @@ pub(in crate::work) fn native_snapshot_facts(
         // already-supported exact legacy permit bridge.
         let actor = check_command(snapshot).and_then(|command| {
             crate::host::runtime::selected_actor_projection(
-                loaded, work, &binding, &sections, &command,
+                loaded,
+                work,
+                &binding,
+                &sections,
+                &command,
+                grant_offer.as_ref(),
             )
         });
         if let Ok(actor) = actor {

@@ -70,14 +70,14 @@ fn current_lead_repair_is_delivered_exactly_to_worker_and_reviewer() {
             "basisSha256":null});
         packet["leadRepair"] = repair.clone();
         let actor =
-            project_sections("work-a", "binding-a", &current, &route, &Value::Null).unwrap();
+            project_sections("work-a", "binding-a", &current, &route, &Value::Null, None).unwrap();
         assert_eq!(actor["leadRepair"], repair);
         assert_eq!(actor["boundary"], json!({"write":["allowed.txt"]}));
 
         current["assignment"]["assignment"]["leadRepair"]["newInstruction"] =
             json!("Do not silently discard future repair terms");
         assert!(
-            project_sections("work-a", "binding-a", &current, &route, &Value::Null)
+            project_sections("work-a", "binding-a", &current, &route, &Value::Null, None)
                 .unwrap_err()
                 .contains("unclassified")
         );
@@ -99,6 +99,7 @@ fn selected_actor_keeps_exact_late_facts_and_the_canonical_action() {
         &original,
         &route,
         &json!("sh verify.sh --mode strict"),
+        None,
     )
     .unwrap();
     assert_eq!(actor["ownerActionDetail"], json!(route));
@@ -143,6 +144,7 @@ fn selected_actor_keeps_exact_late_facts_and_the_canonical_action() {
             &different_route,
             &route,
             &json!("sh verify.sh --mode strict"),
+            None,
         )
         .unwrap();
         assert!(actor["currentStatus"].is_object());
@@ -162,6 +164,7 @@ fn check_evidence_alias_must_match_canonical_evidence() {
         &current,
         &route,
         &json!("sh verify.sh --mode strict"),
+        None,
     )
     .unwrap();
     assert_eq!(actor["evidence"]["checkEvidence"], checks);
@@ -198,6 +201,7 @@ fn check_evidence_alias_must_match_canonical_evidence() {
             &altered,
             &route,
             &json!("sh verify.sh --mode strict"),
+            None,
         )
         .unwrap_err();
         assert!(error.contains("check evidence"), "{change}: {error}");
@@ -209,6 +213,7 @@ fn check_evidence_alias_must_match_canonical_evidence() {
         &current,
         &route,
         &json!("sh verify.sh --mode strict"),
+        None,
     )
     .unwrap_err();
     assert!(error.contains("unclassified"), "{error}");
@@ -234,7 +239,7 @@ fn mutation_history_is_preserved_and_unknown_or_unbound_evidence_refuses() {
         "digest":"a".repeat(64), "identity":identity, "evidence":sha
     }]);
     let project =
-        |value: &Value| project_sections("work-a", "binding-a", value, &route, &Value::Null);
+        |value: &Value| project_sections("work-a", "binding-a", value, &route, &Value::Null, None);
     let actor = project(&original).unwrap();
     let governor = &original["assignment"]["assignment"]["context"]["loop"];
     assert_eq!(actor["governor"]["currentMutation"], current);
@@ -322,6 +327,7 @@ fn unequal_facts_survive_and_unknown_or_wrong_subject_refuses() {
         &original,
         &route,
         &json!("sh verify.sh --mode strict"),
+        None,
     )
     .unwrap();
     assert_eq!(actor["contextGoal"], "different current goal");
@@ -350,7 +356,8 @@ fn unequal_facts_survive_and_unknown_or_wrong_subject_refuses() {
                 "binding-a",
                 &original,
                 &route,
-                &json!("sh verify.sh --mode strict")
+                &json!("sh verify.sh --mode strict"),
+                None
             )
             .unwrap()
         )
@@ -362,7 +369,8 @@ fn unequal_facts_survive_and_unknown_or_wrong_subject_refuses() {
         "binding-a",
         &original,
         &route,
-        &json!("sh verify.sh --mode strict")
+        &json!("sh verify.sh --mode strict"),
+        None
     )
     .unwrap_err()
     .contains("unclassified"));
@@ -377,7 +385,8 @@ fn unequal_facts_survive_and_unknown_or_wrong_subject_refuses() {
         "binding-a",
         &original,
         &route,
-        &json!("sh verify.sh --mode strict")
+        &json!("sh verify.sh --mode strict"),
+        None
     )
     .is_err());
     original["assignment"]["assignment"]["context"]["evidence"][0]["rawEventRef"]["work"] =
@@ -390,6 +399,7 @@ fn unequal_facts_survive_and_unknown_or_wrong_subject_refuses() {
         &original,
         &route,
         &json!("sh verify.sh --mode strict"),
+        None
     )
     .unwrap_err()
     .contains("malformed"));
@@ -398,7 +408,8 @@ fn unequal_facts_survive_and_unknown_or_wrong_subject_refuses() {
         "wrong-binding",
         &sections(),
         &route,
-        &json!("sh verify.sh --mode strict")
+        &json!("sh verify.sh --mode strict"),
+        None
     )
     .is_err());
     original = sections();
@@ -408,7 +419,8 @@ fn unequal_facts_survive_and_unknown_or_wrong_subject_refuses() {
         "binding-a",
         &original,
         &route,
-        &json!("sh verify.sh --mode strict")
+        &json!("sh verify.sh --mode strict"),
+        None
     )
     .is_err());
 }
@@ -426,6 +438,7 @@ fn current_status_and_unclassified_nested_instructions_cannot_disappear() {
         &current,
         &route,
         &json!("sh verify.sh --mode strict"),
+        None,
     )
     .unwrap();
     assert_eq!(
@@ -446,6 +459,7 @@ fn current_status_and_unclassified_nested_instructions_cannot_disappear() {
         &replanned,
         &route,
         &json!("sh verify.sh --mode strict"),
+        None,
     )
     .unwrap();
     assert_eq!(actor["governor"]["postReplanSpent"], 1);
@@ -459,7 +473,8 @@ fn current_status_and_unclassified_nested_instructions_cannot_disappear() {
         "binding-a",
         &replanned,
         &route,
-        &json!("sh verify.sh --mode strict")
+        &json!("sh verify.sh --mode strict"),
+        None
     )
     .is_err());
 
@@ -472,7 +487,8 @@ fn current_status_and_unclassified_nested_instructions_cannot_disappear() {
         "binding-a",
         &mismatched_source,
         &route,
-        &json!("sh verify.sh --mode strict")
+        &json!("sh verify.sh --mode strict"),
+        None
     )
     .is_err());
 
@@ -494,7 +510,8 @@ fn current_status_and_unclassified_nested_instructions_cannot_disappear() {
             "binding-a",
             &changed,
             &route,
-            &json!("sh verify.sh --mode strict")
+            &json!("sh verify.sh --mode strict"),
+            None
         )
         .unwrap_err()
         .contains("unclassified"));
@@ -507,7 +524,8 @@ fn current_status_and_unclassified_nested_instructions_cannot_disappear() {
         "binding-a",
         &changed,
         &route,
-        &json!("sh verify.sh --mode strict")
+        &json!("sh verify.sh --mode strict"),
+        None
     )
     .unwrap_err()
     .contains("unclassified"));
@@ -522,8 +540,11 @@ fn current_status_and_unclassified_nested_instructions_cannot_disappear() {
         "binding-a",
         &changed,
         &route,
-        &json!("sh verify.sh --mode strict")
+        &json!("sh verify.sh --mode strict"),
+        None
     )
     .unwrap_err()
     .contains("unclassified"));
 }
+
+mod grants;

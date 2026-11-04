@@ -10,6 +10,14 @@ pub(crate) mod fill;
 mod quarantine;
 mod repair;
 
+/// Internal evidence of the exact offer selected by the canonical owner.
+/// This is not serialized and grants no authority independently of the Work.
+#[derive(Debug, Clone)]
+pub(crate) struct GrantOffer {
+    pub(crate) mutation: Value,
+    pub(crate) form: Value,
+}
+
 /// A printed action form's command: the route with this configuration,
 /// bounded to the action view's budget.
 pub(super) fn command(loaded: &Loaded, route: Route) -> Value {
@@ -112,15 +120,15 @@ fn allowed_outcomes(next: &Value) -> Vec<&str> {
         .unwrap_or_default()
 }
 
-fn current_grant(next: &Value) -> Option<&Value> {
-    let loop_state = &next["packet"]["context"]["loop"];
+pub(crate) fn current_worker_grant(packet: &Value) -> Option<&Value> {
+    let loop_state = &packet["context"]["loop"];
     let grant = &loop_state["currentMutation"];
     (grant["eventSha256"].is_string()
         && loop_state["currentGrantEventSha256"] == grant["eventSha256"]
         && grant["unit"] == "worker-mutation"
-        && grant["runId"] == next["packet"]["context"]["run"]["id"]
-        && grant["attempt"] == next["packet"]["attempt"]
-        && grant["subjectSha256"] == next["packet"]["context"]["subject"]["sha256"]
+        && grant["runId"] == packet["context"]["run"]["id"]
+        && grant["attempt"] == packet["attempt"]
+        && grant["subjectSha256"] == packet["context"]["subject"]["sha256"]
         && grant["carryLineage"] == true
         && matches!(
             loop_state["state"].as_str(),
@@ -263,12 +271,30 @@ pub(crate) fn project(loaded: &Loaded, work: &str, next: &Value, binding: &str) 
 /// The complete current forms: each Lead choice names its actor, and each
 /// form with placeholders names the fill route that runs it filled.
 pub(crate) fn full(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
-    let mut result = forms(loaded, work, next, binding);
-    fill::attach(loaded, work, binding, &mut result);
-    result
+    full_with_grant_offer(loaded, work, next, binding).0
 }
 
-fn forms(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
+/// Internal offer evidence comes from the exact form-selection branch, before
+/// native projection. It is never reconstructed from the serialized form.
+pub(crate) fn full_with_grant_offer(
+    loaded: &Loaded,
+    work: &str,
+    next: &Value,
+    binding: &str,
+) -> (Value, Option<GrantOffer>) {
+    let mut offer = None;
+    let mut result = forms(loaded, work, next, binding, &mut offer);
+    fill::attach(loaded, work, binding, &mut result);
+    (result, offer)
+}
+
+fn forms(
+    loaded: &Loaded,
+    work: &str,
+    next: &Value,
+    binding: &str,
+    offer: &mut Option<GrantOffer>,
+) -> Value {
     match super::pre_return_recovery::action(loaded, work, next, binding) {
         Ok(Some(mut form)) => {
             let governor = next["packet"]["context"]["loop"]["state"].as_str();
@@ -663,16 +689,21 @@ fn forms(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
             "meaning": "when the Lead selects product-managed delivery, execute one current configured native role; the provider supplies its own verdict and the host owns model access/permissions"});
     }
     if next["action"] == "spawn" && next["role"] == "worker" {
-        let grant = current_grant(next);
+        let grant = current_worker_grant(&next["packet"]);
         let governor_phase = next["packet"]["context"]["loop"]["state"].as_str();
         let held = has_held_results(next);
         if let Some(grant) = grant.filter(|_| !held) {
-            result["currentGrant"] = json!({
+            let form = json!({
                 "governorEventSha256": grant["eventSha256"],
                 "operation": grant["operation"],
                 "state": "current_for_this_worker_assignment",
                 "use": "the exact current grant may support the present mutation; it grants no host permissions",
             });
+            *offer = Some(GrantOffer {
+                mutation: grant.clone(),
+                form: form.clone(),
+            });
+            result["currentGrant"] = form;
         }
         let informed = next["packet"]["context"]["loop"]["completionInformation"].is_object();
         if let Some(next_request) = match governor_phase {

@@ -123,11 +123,13 @@ pub(super) fn obligations(
 
 pub(super) fn governor(
     actor: &mut Map<String, Value>,
-    value: &Value,
+    packet: &Value,
     action: &Value,
-    role: &str,
+    grant_offer: Option<&GrantOffer>,
     evidence: &Value,
 ) -> Result<(), String> {
+    let value = &packet["context"]["loop"];
+    let role = packet["role"].as_str().unwrap_or_default();
     classified(
         value,
         &[
@@ -180,22 +182,27 @@ pub(super) fn governor(
     } else if nonempty(&value["currentMutation"]) {
         return Err("native current mutation is unavailable".into());
     }
-    if role == "worker" && value["currentMutation"].is_object() && action["currentGrant"].is_null()
-    {
-        return Err("current native mutation lacks its canonical grant form".into());
-    }
-    if role == "worker"
-        && value["currentMutation"]["operation"].is_string()
-        && value["currentMutation"]["operation"] != action["currentGrant"]["operation"]
-    {
-        return Err("current native mutation and grant operation differ".into());
-    }
-    if action["currentGrant"].is_object()
-        && (role != "worker"
-            || value["currentMutation"]["eventSha256"]
-                != action["currentGrant"]["governorEventSha256"])
-    {
-        return Err("current native grant identity differs".into());
+    match grant_offer {
+        Some(offer) => {
+            if role != "worker"
+                || crate::work::action_forms::current_worker_grant(packet) != Some(&offer.mutation)
+            {
+                return Err("current native grant identity differs".into());
+            }
+            if !action["currentGrant"].is_object() {
+                return Err("current native mutation lacks its canonical grant form".into());
+            }
+            if offer.mutation["operation"] != action["currentGrant"]["operation"] {
+                return Err("current native mutation and grant operation differ".into());
+            }
+            if action["currentGrant"] != offer.form {
+                return Err("current native grant identity differs".into());
+            }
+        }
+        None if !action["currentGrant"].is_null() => {
+            return Err("current native grant identity differs".into());
+        }
+        None => {}
     }
     if let Some(items) = value["evidence"].as_array() {
         for item in items {
