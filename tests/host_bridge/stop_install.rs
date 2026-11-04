@@ -243,3 +243,43 @@ fn old_path_binary_cannot_install_multipart_handlers() {
     );
     assert_eq!(fs::read_to_string(path).unwrap(), before);
 }
+
+#[test]
+fn remove_keeps_foreign_only_events_when_another_owned_event_changes() {
+    for host in ["codex", "claude"] {
+        let home = host_home(&format!("host-bridge-remove-foreign-{host}"));
+        let path = home.join(if host == "codex" {
+            ".codex/hooks.json"
+        } else {
+            ".claude/settings.json"
+        });
+        let mut owned = json!({"type":"command","command":"command -v exitbind >/dev/null 2>&1 && exitbind hook-run || true","timeout":5});
+        if host == "codex" {
+            owned["additionalContextLimit"] = json!(4096);
+        }
+        let foreign_start =
+            json!({"matcher":"kept","hooks":[{"type":"command","command":"foreign-child-start"}]});
+        let foreign_stop = json!({"hooks":[{"type":"command","command":"foreign-stop"}]});
+        fs::write(&path, json!({"kept":true,"hooks":{"SessionStart":[{"hooks":[owned]}],"SubagentStart":[foreign_start],"Stop":[foreign_stop]}}).to_string()).unwrap();
+        let removed = json(exitbind(
+            &home,
+            &[
+                "hooks",
+                "remove",
+                "--hosts",
+                host,
+                "--root",
+                home.to_str().unwrap(),
+                "--json",
+            ],
+        ));
+        assert_eq!(removed["hosts"][0]["changed"], true);
+        assert_eq!(removed["hosts"][0]["state"], "absent");
+        let after: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(
+            after,
+            json!({"kept":true,"hooks":{"SubagentStart":[foreign_start],"Stop":[foreign_stop]}}),
+            "{host}"
+        );
+    }
+}

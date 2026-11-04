@@ -166,11 +166,12 @@ pub(crate) fn stage(
                     retained.push(group);
                 }
             }
+            // Preserve unmatched groups even when another event makes this
+            // staged document writable (including retired legacy handlers).
+            *groups = retained;
             if removed > 0 {
-                if retained.is_empty() {
+                if groups.is_empty() {
                     hooks.remove(event);
-                } else {
-                    hooks.insert(event.into(), Value::Array(retained));
                 }
                 actions.push(format!(
                     "remove {removed} exact {event} handler{}",
