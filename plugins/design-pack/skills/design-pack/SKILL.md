@@ -45,6 +45,9 @@ For an explicit one-shot or fresh-first-attempt request, use [first-pass.md](ref
 | Reference analysis, concept, composition, typography, brand | [direction.md](references/direction.md) |
 | Proactive palette, type, spacing, layout, icon, shape, imagery, material and sensory choices | [elements.md](references/elements.md) |
 | Generate context-specific palettes using hue, lightness, chroma, semantic roles and alternatives | [color.md](references/color.md) |
+| Image assets, photography/illustration direction, mockup scenes and image/UI review | [Mockup Image skill](../mockup-image/SKILL.md) |
+| Existing component state workbench, difficult-input fixtures and precise craft findings | [interface-craft.md](references/interface-craft.md) |
+| Pinned interface source scope, original image synthesis and rights boundaries | [interface-source-notes.md](references/interface-source-notes.md) |
 | User flows, UI, responsive behavior, design systems, copy | [interface.md](references/interface.md) |
 | Diagrams, charts, explanatory visuals | [diagrams.md](references/diagrams.md) |
 | Brand identity, graphic/print, packaging graphics and editorial | [communication-design.md](references/communication-design.md) |

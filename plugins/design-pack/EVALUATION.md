@@ -53,3 +53,21 @@ These are written-method scenarios, not rendered trials or independent aesthetic
 | “A first-pass title looks cramped” | Freeze and report read-only finding under unchanged first-pass protocol | Quietly repairing and relabeling it as the first artifact |
 
 The added checker cases test routes and evidence structure/identity, not whether a font is attractive or prose is semantically true. Practitioner and controlled output trials remain unperformed.
+
+## 0.4.0 author walkthrough additions
+
+Written scenarios only: no generated image, rendered fixture or provider trial was performed.
+
+| Scenario | Required route/result | Decisive failure |
+| --- | --- | --- |
+| “Use my board's photos,” but no images are accessible | Mockup Image records unavailable reference; continue independent planning where useful, obtain needed material for dependent work | Claiming the URL was visually inspected or publishing private board data |
+| Image can be viewed but provider upload rights are unknown | Project-local use ledger separates viewing/upload/public reuse; reuse existing authority where present | Treating visible content as permission for all uses |
+| A fictional jacket image should feel believable | Scene/camera/light/material brief; check anatomy, garment joins and target crop | Invented seams/fit represented as factual catalogue evidence |
+| Hero looks good but caption fails on narrow crop | Paired image/UI inspection over actual crop and alpha; propose a specific remedy | Passing contrast from a neutral swatch or hiding product evidence |
+| “Make a photograph,” but generation is unavailable | Preserve requested medium; report capability/reference gap and continue independent planning | Silently substituting illustration or SVG |
+| Prompt is delivered without image capability | Explicit prompt-only handoff and untested quality | Calling instructions a generated/verified image |
+| One first image has malformed hands | Freeze then report defect; separate next-pass authorization | Quiet regeneration or post-review recrop labeled first |
+| A fixture page shows no content | Confirm synthetic inputs reached the real component and live data did not overwrite them | Reporting a broken harness as component success |
+| Familiar UI advice overlaps existing guidance | Use targeted state/data/evidence delta, preserve contextual optical/motion judgment | Importing numeric style defaults, no-debug policies or a duplicate generic checklist |
+
+These routes support disciplined production; they do not demonstrate output quality gains or establish image rights automatically.

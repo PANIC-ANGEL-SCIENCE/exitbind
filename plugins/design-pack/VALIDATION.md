@@ -1,6 +1,14 @@
 # Validation record
 
-## 0.3.0 aesthetic and typography update
+## 0.4.0 imagery and interface update
+
+Date: 2026-11-05. Executed `python3 plugins/design-pack/scripts/check_pack.py --self-test` from the repository root: PASS,44 allowlisted files, three consistent0.4.0 manifests, both skill entrypoints and their local routes,18 original repository records,7 original public-site records,15 focused aesthetic records and9 pinned interface skill sources. The original three evidence ledgers and first-pass protocol remain byte-identical to the0.3.0 baseline.
+
+Positive checks accept bounded pinned interface evidence and a changed contextual transfer hypothesis, alongside the existing mixed-provenance positive cases. All41 negative cases pass:25 existing cases plus10 interface provenance cases and6 new skill/reference/template/freeze-route cases. New cases require specific expected diagnostics for unpinned/wrong source identity, inspected-scope inflation/loss, invalid digests, invented rendering/execution, missing limitations/license scope, photography misattribution and missing routes.
+
+These checks validate package structure and evidence-field constraints, not image quality, prose truth, real-world rights, provider compatibility or aesthetic improvement. [EVALUATION.md](EVALUATION.md) records written author walkthroughs only. No image was generated, private board accessed, upstream skill executed, provider installed or fixture rendered. No archive was produced by this update. Final governing check, independent review and acceptance remain separate from the worker self-test.
+
+## Historical 0.3.0 aesthetic and typography update
 
 Date: 2026-11-05. Executed `python3 plugins/design-pack/scripts/check_pack.py --self-test` from the repository root: PASS. The check covers 38 allowlisted files, three consistent 0.3.0 manifests, compact routes/local links, 18 original repository records, seven original public-site records and 15 new focused evidence records. Original source records and first-pass protocol remain unchanged.
 

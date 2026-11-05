@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REFS = ('briefing roles lifecycle direction reference-analysis visual-methods aesthetic-construction typography preview-evidence first-pass elements color interface diagrams communication-design '
+REFS = ('briefing roles lifecycle direction reference-analysis visual-methods aesthetic-construction typography preview-evidence first-pass elements color interface interface-craft interface-source-notes diagrams communication-design '
         'physical-design motion-sound spatial validation memory exitbind sources').split()
 EXPECTED = {
     'README.md', 'LICENSE', 'VALIDATION.md', 'EVALUATION.md', 'plugin.json',
@@ -18,6 +18,10 @@ EXPECTED = {
     'skills/design-pack/references/source-records.json',
     'skills/design-pack/references/web-source-records.json',
     'skills/design-pack/references/aesthetic-source-records.json',
+    'skills/design-pack/references/interface-source-records.json',
+    'skills/mockup-image/SKILL.md',
+    'skills/mockup-image/references/image-production.md',
+    'skills/mockup-image/templates/image-brief.md',
     *(f'skills/design-pack/references/{name}.md' for name in REFS),
     *(f'skills/design-pack/templates/{name}.md' for name in ('brief', 'project-profile', 'handoff')),
 }
@@ -113,6 +117,59 @@ def check_aesthetic_records(records, notes):
             errors.append('aesthetic source without lineage note')
     return errors
 
+
+INTERFACE_COMMIT = '60bf140e43c98b248e6594487384ec967e89d98a'
+INTERFACE_SKILLS = set(('better-interface better-ui better-layout better-typography '
+                        'better-colors better-writing build-design break state-machine').split())
+
+def check_interface_record(record, notes):
+    if not isinstance(record, dict):
+        return ['invalid interface record']
+    errors = []
+    if (record.get('repository') != 'jakubkrehel/skills' or
+            record.get('url') != 'https://github.com/jakubkrehel/skills' or
+            record.get('commit') != INTERFACE_COMMIT):
+        errors.append('interface source identity drift')
+    if record.get('evidence_type') != 'reported-primary-text':
+        errors.append('interface evidence type drift')
+    if record.get('readme_skill_count') != 14:
+        errors.append('interface scope count drift')
+    for flag in ('local_render_verified', 'upstream_executed'):
+        if record.get(flag) is not False:
+            errors.append(f'interface unsupported claim: {flag}')
+    for field in ('inspected_on', 'observation', 'transfer', 'limitations',
+                  'excluded_prescriptions', 'image_methods_scope'):
+        if not isinstance(record.get(field), str) or not record[field].strip():
+            errors.append(f'interface missing field: {field}')
+    if record.get('image_methods_origin') != 'original-pack-synthesis':
+        errors.append('interface image attribution drift')
+    license = record.get('license')
+    if not isinstance(license, dict):
+        errors.append('invalid interface license')
+    else:
+        if (license.get('spdx') != 'MIT' or license.get('url') !=
+                f'https://github.com/jakubkrehel/skills/blob/{INTERFACE_COMMIT}/LICENSE'):
+            errors.append('interface license provenance drift')
+        if not isinstance(license.get('scope'), str) or not license['scope'].strip():
+            errors.append('interface missing license scope')
+    skills = record.get('inspected_skills')
+    if not isinstance(skills, list) or any(not isinstance(v, dict) for v in skills):
+        return errors + ['invalid interface skills']
+    names = [v.get('name') for v in skills]
+    if any(not isinstance(n, str) for n in names):
+        return errors + ['invalid interface skill name']
+    if len(names) != 9 or set(names) != INTERFACE_SKILLS:
+        errors.append('interface inspected scope drift')
+    for item in skills:
+        url = f'https://github.com/jakubkrehel/skills/blob/{INTERFACE_COMMIT}/skills/{item.get("name")}/SKILL.md'
+        if item.get('url') != url:
+            errors.append('interface skill source drift')
+        if not isinstance(item.get('sha256'), str) or not re.fullmatch('[0-9a-f]{64}', item['sha256']):
+            errors.append('invalid interface source digest')
+        if url not in notes:
+            errors.append('interface source without lineage note')
+    return errors
+
 def check(root):
     errors = []
     files = set()
@@ -150,7 +207,7 @@ def check(root):
         for key in ('name', 'version', 'description', 'author', 'license', 'keywords'):
             if any(m.get(key) != manifests[0].get(key) for m in manifests[1:]):
                 errors.append(f'manifest mismatch: {key}')
-        if manifests[0]['name'] != 'design-pack' or manifests[0]['version'] != '0.3.0':
+        if manifests[0]['name'] != 'design-pack' or manifests[0]['version'] != '0.4.0':
             errors.append('unexpected identity/version')
         for m in manifests:
             if any(k in m for k in ('hooks','mcpServers','commands','agents','apps')):
@@ -168,6 +225,20 @@ def check(root):
         for ref in REFS:
             if f'references/{ref}.md' not in skill:
                 errors.append(f'unrouted reference: {ref}')
+        image_skill = (root/'skills/mockup-image/SKILL.md').read_text()
+        if not image_skill.startswith('---\nname: mockup-image\ndescription: ') or '\n---\n' not in image_skill[4:]:
+            errors.append('invalid image skill frontmatter')
+        if len(image_skill.splitlines()) > 100:
+            errors.append('image entrypoint too large')
+        for link in ('../design-pack/SKILL.md', 'references/image-production.md',
+                     'templates/image-brief.md', '../design-pack/references/first-pass.md'):
+            if f']({link})' not in image_skill:
+                errors.append(f'unrouted image dependency: {link}')
+        if '](../mockup-image/SKILL.md)' not in skill:
+            errors.append('unrouted image skill')
+        interface_record = json.loads((root/'skills/design-pack/references/interface-source-records.json').read_text())
+        interface_notes = (root/'skills/design-pack/references/interface-source-notes.md').read_text()
+        errors.extend(check_interface_record(interface_record, interface_notes))
         records = json.loads((root/'skills/design-pack/references/source-records.json').read_text())
         if len(records) != 18 or {r['repository'] for r in records} != REPOS:
             errors.append('source coverage mismatch')
@@ -188,6 +259,54 @@ def check(root):
     return errors
 
 def self_test():
+    interface_path = 'skills/design-pack/references/interface-source-records.json'
+    interface_record = json.loads((ROOT/interface_path).read_text())
+    interface_notes = (ROOT/'skills/design-pack/references/interface-source-notes.md').read_text()
+    alternate = json.loads(json.dumps(interface_record))
+    alternate['transfer'] = 'Use a different contextual composition while preserving evidence limits.'
+    if check_interface_record(interface_record, interface_notes) or check_interface_record(alternate, interface_notes):
+        raise RuntimeError('positive interface provenance rejected')
+    print('PASS positive pinned interface scope and contextual transfer')
+    changes = {
+        'interface-unpinned': (lambda r: r.update(commit='main'), 'interface source identity drift'),
+        'interface-all-skills-claim': (lambda r: r['inspected_skills'].append(dict(r['inspected_skills'][0])), 'interface inspected scope drift'),
+        'interface-missing-skill': (lambda r: r['inspected_skills'].pop(), 'interface inspected scope drift'),
+        'interface-wrong-path': (lambda r: r['inspected_skills'][0].update(url='https://example.com/SKILL.md'), 'interface skill source drift'),
+        'interface-bad-digest': (lambda r: r['inspected_skills'][0].update(sha256='unknown'), 'invalid interface source digest'),
+        'interface-render-claim': (lambda r: r.update(local_render_verified=True), 'interface unsupported claim: local_render_verified'),
+        'interface-execution-claim': (lambda r: r.update(upstream_executed=True), 'interface unsupported claim: upstream_executed'),
+        'interface-missing-limit': (lambda r: r.pop('limitations'), 'interface missing field: limitations'),
+        'interface-image-misattribution': (lambda r: r.update(image_methods_origin='upstream-photography'), 'interface image attribution drift'),
+        'interface-license-scope': (lambda r: r['license'].pop('scope'), 'interface missing license scope'),
+    }
+    for name, (change, expected) in changes.items():
+        with tempfile.TemporaryDirectory(prefix='design-pack-test-') as tmp:
+            p = Path(tmp)/'pack'
+            shutil.copytree(ROOT, p, ignore=shutil.ignore_patterns('__pycache__'))
+            record = json.loads((p/interface_path).read_text())
+            change(record)
+            (p/interface_path).write_text(json.dumps(record))
+            if expected not in check(p):
+                raise RuntimeError(f'negative test missed expected reason: {name}')
+            print(f'PASS reject {name}')
+    route_cases = [
+        ('skills/design-pack/SKILL.md', '../mockup-image/SKILL.md', 'unrouted image skill'),
+        ('skills/mockup-image/SKILL.md', '../design-pack/references/first-pass.md', 'unrouted image dependency: ../design-pack/references/first-pass.md'),
+        ('skills/mockup-image/SKILL.md', 'references/image-production.md', 'unrouted image dependency: references/image-production.md'),
+        ('skills/mockup-image/SKILL.md', 'templates/image-brief.md', 'unrouted image dependency: templates/image-brief.md'),
+        ('skills/design-pack/SKILL.md', 'references/interface-craft.md', 'unrouted reference: interface-craft'),
+        ('skills/design-pack/SKILL.md', 'references/interface-source-notes.md', 'unrouted reference: interface-source-notes'),
+    ]
+    for path, link, expected in route_cases:
+        with tempfile.TemporaryDirectory(prefix='design-pack-test-') as tmp:
+            p = Path(tmp)/'pack'
+            shutil.copytree(ROOT, p, ignore=shutil.ignore_patterns('__pycache__'))
+            target = p/path
+            target.write_text(target.read_text().replace(link, '#removed-route'))
+            if expected not in check(p):
+                raise RuntimeError(f'negative route test missed expected reason: {link}')
+            print(f'PASS reject route {link}')
+
     # Positive coverage is explicit: reported snapshots, partial/failed access,
     # and source text must all coexist without being flattened to local renders.
     records = json.loads((ROOT/'skills/design-pack/references/aesthetic-source-records.json').read_text())
@@ -275,7 +394,7 @@ def main():
     if errors:
         for error in errors: print('FAIL',error)
         return 1
-    print(f'PASS {len(EXPECTED)} files, manifests, routes, links, 18 repository, 7 original public and 15 focused evidence records')
+    print(f'PASS {len(EXPECTED)} files, manifests, routes, links, 18 repository, 7 original public and 15 focused evidence records and 9 pinned interface skill sources')
     if args.self_test: self_test()
     return 0
 

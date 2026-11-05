@@ -56,3 +56,7 @@ Reviewed 2026-11-05 from primary page text and supplied independent reviewer not
 ## Focused additions in 0.3.0
 
 See [preview-evidence.md](preview-evidence.md) and [aesthetic-source-records.json](aesthetic-source-records.json) for reported Lovable snapshots, failed/partial access, selected source rereadings and font metadata. This addition preserves the original 18 repository and seven-site records unchanged. It does not claim all sources were freshly visually inspected. The aesthetic construction and typography chapters are independently authored synthesis, not copied source code, assets or substantial prose. Original illustrative values are not upstream measurements or defaults. Rights for third-party preview assets remain unknown.
+
+## Focused additions in 0.4.0
+
+[Interface source notes](interface-source-notes.md) and [structured records](interface-source-records.json) cover nine inspected skills from the pinned jakubkrehel/skills repository. The original18/7/15 records remain unchanged. [Mockup Image](../../mockup-image/SKILL.md) is original image-production synthesis; the UI source is not credited with photography-generation instruction. No private image references, generated examples, source assets or provider integrations are distributed.

@@ -1,11 +1,15 @@
-# Design Pack 0.3.0
+# Design Pack 0.4.0
 
 A self-contained, independently authored design workflow intended for possible future distribution alongside Exitbind. It consolidates useful methods from 18 reference repositories and seven original public visual references, with focused preview and typography evidence, into **one pack**, rather than connecting or installing those repositories.
 
-Start at [the skill](skills/design-pack/SKILL.md). It routes work across client briefing, research, strategy, art direction, digital products/services, brand, graphic/print/editorial, diagrams, industrial products, spaces, fashion, motion, sound and 3D. The workflow covers discovery through maintenance, with compact on-demand references and editable templates.
+Start at [the core skill](skills/design-pack/SKILL.md). It routes work across client briefing, research, strategy, art direction, digital products/services, brand, graphic/print/editorial, diagrams, industrial products, spaces, fashion, motion, sound and 3D. The workflow covers discovery through maintenance, with compact on-demand references and editable templates.
+
+Use [Mockup Image](skills/mockup-image/SKILL.md) for image assets, scene direction, reference-aware prompts and image/UI placement review. Its core brief and critique need no external app; actual image generation needs an available authorized host capability. The pack does not generate an image merely because it is installed or updated.
 
 ## What this delivers
 
+- A dedicated image workflow with a project-local reference/use ledger, scene/light/material/crop decisions and paired image/UI review.
+- Focused interface state/fixture methods grounded in nine inspected skills from an additional pinned repository.
 - A designer's method for turning vague requests into concrete intent, alternatives, decisions and acceptance checks.
 - Actual-reference comparison and purposeful-copy checks before choosing or revising visual direction.
 - Coupled aesthetic construction across composition, type, color, form, imagery and material, with five contextual direction hypotheses.
@@ -31,7 +35,7 @@ For a small edit, it should proceed with a short interpretation. For a new or co
 
 The archive includes root, Claude and Codex plugin manifests modeled on Exitbind's inspected 0.31.26 skills-only layout. It is a source-only candidate, **not released or installed**; provider discovery/installation has not been exercised.
 
-To try a skill-only local installation, use the host's documented skill import mechanism to copy the complete `skills/design-pack/` directory into an approved skill location. Preserve its `references/` and `templates/` directories. Resolve any name collision before copying; do not overwrite an existing skill. Reload the host as required and explicitly invoke the skill, then confirm that it read the entrypoint and a relevant reference. This is a procedure, not a tested provider CLI command.
+To try a skill-only local installation, use the host's documented skill import mechanism to copy both complete `skills/design-pack/` and `skills/mockup-image/` directories as siblings into an approved skill location. Preserve their `references/` and `templates/` directories and sibling links. Resolve any name collision before copying; do not overwrite an existing skill. Reload the host as required and explicitly invoke the skill, then confirm that it read the entrypoint and a relevant reference. This is a procedure, not a tested provider CLI command.
 
 For a host supporting local plugin imports, select this complete package root using that host's current documentation. Confirm metadata parsing and skill discovery before making compatibility claims. Do not register it in an Exitbind marketplace without a separate reviewed integration change. Exitbind's existing distribution checker is specific to its own plugin and is not this pack's validator.
 
@@ -44,7 +48,7 @@ Python 3.10+ standard library only. Run from this package root:
 ```sh
 python3 scripts/check_pack.py
 python3 scripts/check_pack.py --self-test
-python3 scripts/package.py --output ../design-pack-0.3.0.zip
+python3 scripts/package.py --output ../design-pack-0.4.0.zip
 ```
 
 The checker validates the exact file inventory, local links, metadata consistency, source coverage and absence of symlinks/unexpected private material. Focused evidence records distinguish reported snapshots, partial/failed access, primary text and claims; no rendered output quality improvement is asserted. Its positive and negative tests exercise broken links, manifest drift, missing original and public sources, missing observation limits, unrouted methods, unexpected files and symlinks. Packaging revalidates and uses only the declared files. A successful check proves package properties, not design quality or provider compatibility.

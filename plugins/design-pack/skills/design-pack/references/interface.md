@@ -33,3 +33,5 @@ For service design, deliver a journey and service blueprint: user actions, visib
 ## Maintenance
 
 Name the source of truth for tokens, copy and component behavior. Record deprecated variants and migration effects. When a new request changes scope, update the brief and state inventory, then rerun affected task checks. Maintain known accessibility and device gaps rather than declaring them fixed by redesign alone.
+
+For a bounded state workbench, difficult-input fixture or image-overlay investigation, read [interface-craft.md](interface-craft.md). For generating or selecting the image itself, route to [Mockup Image](../../mockup-image/SKILL.md). A static fixture is not evidence of live transitions or backend behavior.
