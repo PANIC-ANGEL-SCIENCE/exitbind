@@ -1,0 +1,1902 @@
+{
+  "version": 1,
+  "updated": "2026-11-05",
+  "purpose": "Navigation, never completed maker inspection or a closed style menu. Resolve current source state before use.",
+  "entries": [
+    {
+      "id": "Leonxlnx/taste-skill",
+      "primary_urls": [
+        "https://github.com/Leonxlnx/taste-skill",
+        "https://github.com/Leonxlnx/taste-skill#readme",
+        "https://github.com/Leonxlnx/taste-skill/blob/main/README.md",
+        "https://github.com/Leonxlnx/taste-skill/tree/main/assets",
+        "https://github.com/Leonxlnx/taste-skill/tree/main/examples",
+        "https://github.com/Leonxlnx/taste-skill/tree/main/skills",
+        "https://github.com/Leonxlnx/taste-skill/blob/main/skills/taste-skill/SKILL.md",
+        "https://github.com/Leonxlnx/taste-skill/blob/main/examples/v2/CREDITS.md",
+        "https://github.com/Leonxlnx/taste-skill/blob/main/examples/v2/coffee-questions.webp",
+        "https://github.com/Leonxlnx/taste-skill/blob/main/examples/v2/coffee-roast.webp",
+        "https://github.com/Leonxlnx/taste-skill/blob/main/examples/v2/coffee-storefront.webp",
+        "https://github.com/Leonxlnx/taste-skill/blob/main/examples/v2/night-dates.webp",
+        "https://github.com/Leonxlnx/taste-skill/blob/main/skills/taste-skill/library/palettes.json"
+      ],
+      "medium": "interface",
+      "selection_question": "How can task and brand alter the organizing idea?",
+      "inspect_path": "Open examples/v2/coffee-storefront.webp and night-dates.webp with an authorized image-capable connector/viewer; direct URLs below. Compare large condensed title/storefront/right navigation with image-tiled event dates. Source screenshots are not native Korean app evidence. Read examples/v2/CREDITS.md before reuse; no assets bundled. Method: skills/taste-skill/SKILL.md; do not inherit house bans, tools or random style selection. Additional exact route: https://github.com/Leonxlnx/taste-skill/blob/main/skills/taste-skill/library/palettes.json. Read palette/style specimen in context and compare actual content; source values are not house defaults.",
+      "provenance": "source-records.json: Leonxlnx/taste-skill",
+      "historical_evidence": "README and license text; additional skill excerpts when recorded. No code execution, audiovisual playback, or performance verification.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "GitHub connector metadata/base64 plus image viewer; separate web/direct-http attempts",
+        "result": "Root directory listing succeeded via authorized connector (reported coordinator evidence); no render or full repository review. GitHub API tree request failed: proxy403; web README not rechecked Worker connector resolved skills/taste-skill/SKILL.md (text); no visual inspection. Worker viewed coffee-storefront.webp and night-dates.webp at displayed1200x696 image size; source viewport/interactions unknown. First: condensed white title, dark storefront, lime action/right rail. Second: cyan image-tile grid with black date panels. Limited pack-verification observations, not the next maker inspection."
+      },
+      "maker_visual_inspection": false,
+      "alternative": "taste-web",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No current maker visual inspection; open actual media before transferring appearance.",
+      "resolved_routes": [
+        {
+          "url": "https://github.com/Leonxlnx/taste-skill/blob/main/README.md",
+          "path": "README.md",
+          "sha": "644953022e17067aadf635e41b60bdc22d8cd06c",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/Leonxlnx/taste-skill/tree/main/assets",
+          "path": "assets",
+          "sha": "8bf1518fffe8df482e9a4dd59d76551507a924f8",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/Leonxlnx/taste-skill/tree/main/examples",
+          "path": "examples",
+          "sha": "7604e8465ec6be886909cf920d88eb69c5cea773",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/Leonxlnx/taste-skill/tree/main/skills",
+          "path": "skills",
+          "sha": "7a5b4d2648ac85b611d27d7c7686d5abb4fc1b12",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/Leonxlnx/taste-skill/blob/main/skills/taste-skill/SKILL.md",
+          "path": "skills/taste-skill/SKILL.md",
+          "evidence_type": "current-text-fetch; not full semantic review",
+          "sha": null
+        },
+        {
+          "url": "https://github.com/Leonxlnx/taste-skill/blob/main/examples/v2/CREDITS.md",
+          "path": "examples/v2/CREDITS.md",
+          "sha": "a31747d6056a80fb53e19ea92005602be879119c",
+          "evidence_type": "current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/Leonxlnx/taste-skill/blob/main/examples/v2/coffee-questions.webp",
+          "path": "examples/v2/coffee-questions.webp",
+          "sha": "3146bb097de91e35fd91afa3c27212702af971ca",
+          "evidence_type": "current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/Leonxlnx/taste-skill/blob/main/examples/v2/coffee-roast.webp",
+          "path": "examples/v2/coffee-roast.webp",
+          "sha": "4189800b0e1a63b5501c6a16176a03e068e8e2b1",
+          "evidence_type": "current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/Leonxlnx/taste-skill/blob/main/examples/v2/coffee-storefront.webp",
+          "path": "examples/v2/coffee-storefront.webp",
+          "sha": "ab0d6abcf888d4feb30be3a7369f5398cb65c68f",
+          "evidence_type": "current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/Leonxlnx/taste-skill/blob/main/examples/v2/night-dates.webp",
+          "path": "examples/v2/night-dates.webp",
+          "sha": "2f0d60f9a63bb06d947a1b4d65d2d3439fd63afa",
+          "evidence_type": "current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/Leonxlnx/taste-skill/blob/main/skills/taste-skill/library/palettes.json",
+          "path": "color.md:69",
+          "sha": null,
+          "evidence_type": "existing pack prose citation; not newly fetched or viewed"
+        }
+      ]
+    },
+    {
+      "id": "emilkowalski/skills",
+      "primary_urls": [
+        "https://github.com/emilkowalski/skills",
+        "https://github.com/emilkowalski/skills#readme",
+        "https://github.com/emilkowalski/skills/blob/main/README.md",
+        "https://github.com/emilkowalski/skills/tree/main/skills",
+        "https://github.com/emilkowalski/skills/blob/main/skills/emil-design-eng/SKILL.md"
+      ],
+      "medium": "interface",
+      "selection_question": "Which optical or interaction relationship needs examination?",
+      "inspect_path": "Repository README → skills/emil-design-eng/SKILL.md and ui-cheatsheet.md; follow linked visual examples. Retain exact resolved media/file URL, version and state; text is not visual evidence.",
+      "provenance": "source-records.json: emilkowalski/skills",
+      "historical_evidence": "README and license text; additional skill excerpts when recorded. No code execution, audiovisual playback, or performance verification.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "GitHub connector directory metadata; separate web-text/direct-http attempts",
+        "result": "Root directory listing succeeded via authorized connector (reported coordinator evidence); no render or full repository review. GitHub API tree request failed: proxy403; web README not rechecked Worker connector resolved skills/emil-design-eng/SKILL.md (text); no visual inspection."
+      },
+      "maker_visual_inspection": false,
+      "alternative": "jakubkrehel",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No current maker visual inspection; open actual media before transferring appearance.",
+      "resolved_routes": [
+        {
+          "url": "https://github.com/emilkowalski/skills/blob/main/README.md",
+          "path": "README.md",
+          "sha": "e77e3dbb87c3349e323cbebd46d91fd7dbdc5b1b",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/emilkowalski/skills/tree/main/skills",
+          "path": "skills",
+          "sha": "ba282066a6c54fec086d966079090347aeed38e3",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/emilkowalski/skills/blob/main/skills/emil-design-eng/SKILL.md",
+          "path": "skills/emil-design-eng/SKILL.md",
+          "evidence_type": "current-text-fetch; not full semantic review",
+          "sha": null
+        }
+      ]
+    },
+    {
+      "id": "pbakaus/impeccable",
+      "primary_urls": [
+        "https://github.com/pbakaus/impeccable",
+        "https://github.com/pbakaus/impeccable#readme",
+        "https://github.com/pbakaus/impeccable/blob/main/README.md",
+        "https://github.com/pbakaus/impeccable/tree/main/docs",
+        "https://github.com/pbakaus/impeccable/blob/main/.agents/skills/impeccable/reference/bolder.md",
+        "https://github.com/pbakaus/impeccable/blob/main/.agents/skills/impeccable/reference/typeset.md"
+      ],
+      "medium": "interface",
+      "selection_question": "Which expressive relationship is weak?",
+      "inspect_path": "Repository README → .agents/skills/impeccable/reference/typeset.md and bolder.md; actual images at impeccable.style/gallery/. Retain exact resolved media/file URL, version and state; text is not visual evidence.",
+      "provenance": "source-records.json: pbakaus/impeccable",
+      "historical_evidence": "README and license text; additional skill excerpts when recorded. No code execution, audiovisual playback, or performance verification.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "GitHub connector directory metadata; separate web-text/direct-http attempts",
+        "result": "Root directory listing succeeded via authorized connector (reported coordinator evidence); no render or full repository review. GitHub API tree request failed: proxy403; web README not rechecked Worker connector resolved .agents/skills/impeccable/reference (directory); no visual inspection."
+      },
+      "maker_visual_inspection": false,
+      "alternative": "impeccable-gallery",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No current maker visual inspection; open actual media before transferring appearance.",
+      "resolved_routes": [
+        {
+          "url": "https://github.com/pbakaus/impeccable/blob/main/README.md",
+          "path": "README.md",
+          "sha": "555fd9a67de957c750950e62bf1baad167f61b00",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/pbakaus/impeccable/tree/main/docs",
+          "path": "docs",
+          "sha": "997dd695402e656441358ff9d08677a9a6259988",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/pbakaus/impeccable/blob/main/.agents/skills/impeccable/reference/bolder.md",
+          "path": ".agents/skills/impeccable/reference/bolder.md",
+          "sha": "c11a146b502cb46f6d5ad3f11ba0f6ff75c0e4d7",
+          "evidence_type": "current-directory-metadata; content/media not inspected"
+        },
+        {
+          "url": "https://github.com/pbakaus/impeccable/blob/main/.agents/skills/impeccable/reference/typeset.md",
+          "path": ".agents/skills/impeccable/reference/typeset.md",
+          "sha": "683175632928ab5566e517ad6128a07166e095e8",
+          "evidence_type": "current-directory-metadata; content/media not inspected"
+        }
+      ]
+    },
+    {
+      "id": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "primary_urls": [
+        "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+        "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill#readme",
+        "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/blob/main/README.md",
+        "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/tree/main/docs",
+        "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/tree/main/.claude/skills/design-system",
+        "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/tree/main/.claude/skills/ui-ux-pro-max"
+      ],
+      "medium": "interface",
+      "selection_question": "Which system choices fit this task instead of an industry label?",
+      "inspect_path": "README → .claude/skills/design-system or .claude/skills/ui-ux-pro-max (current directory links below) → relevant method and linked examples. Database labels are discovery hints, not visual evidence or automatic industry styling.",
+      "provenance": "source-records.json: nextlevelbuilder/ui-ux-pro-max-skill",
+      "historical_evidence": "README and license text; additional skill excerpts when recorded. No code execution, audiovisual playback, or performance verification.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "GitHub connector directory metadata; separate web-text/direct-http attempts",
+        "result": "Root directory listing succeeded via authorized connector (reported coordinator evidence); no render or full repository review. GitHub API tree request failed: proxy403; web README not rechecked Worker connector resolved .claude/skills (directory); no visual inspection."
+      },
+      "maker_visual_inspection": false,
+      "alternative": "jakubkrehel",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No current maker visual inspection; open actual media before transferring appearance.",
+      "resolved_routes": [
+        {
+          "url": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/blob/main/README.md",
+          "path": "README.md",
+          "sha": "705bfc629ee80e294286dd7786e40b7f83afad51",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/tree/main/docs",
+          "path": "docs",
+          "sha": "ac1fa97270189768ee0d280d0490c52fc97e0922",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/tree/main/.claude/skills/design-system",
+          "path": ".claude/skills/design-system",
+          "sha": "4b60947279d885f917ba7baae9154f75ed3d3c1b",
+          "evidence_type": "current-directory-metadata; content/media not inspected"
+        },
+        {
+          "url": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/tree/main/.claude/skills/ui-ux-pro-max",
+          "path": ".claude/skills/ui-ux-pro-max",
+          "sha": "039881fb83556dfeb60b3cce276392ed47eb491b",
+          "evidence_type": "current-directory-metadata; content/media not inspected"
+        }
+      ]
+    },
+    {
+      "id": "cathrynlavery/diagram-design",
+      "primary_urls": [
+        "https://github.com/cathrynlavery/diagram-design",
+        "https://github.com/cathrynlavery/diagram-design#readme",
+        "https://github.com/cathrynlavery/diagram-design/blob/main/README.md",
+        "https://github.com/cathrynlavery/diagram-design/tree/main/assets",
+        "https://github.com/cathrynlavery/diagram-design/tree/main/docs",
+        "https://github.com/cathrynlavery/diagram-design/tree/main/skills",
+        "https://github.com/cathrynlavery/diagram-design/blob/main/skills/diagram-design/references/type-flowchart.md",
+        "https://github.com/cathrynlavery/diagram-design/blob/main/skills/diagram-design/references/style-guide.md"
+      ],
+      "medium": "diagram",
+      "selection_question": "What relationship must the diagram explain?",
+      "inspect_path": "Repository README → skills/diagram-design/SKILL.md and references/type-flowchart.md or relevant type; inspect displayed diagrams. Retain exact resolved media/file URL, version and state; text is not visual evidence. Additional exact route: https://github.com/cathrynlavery/diagram-design/blob/main/skills/diagram-design/references/style-guide.md. Read palette/style specimen in context and compare actual content; source values are not house defaults.",
+      "provenance": "source-records.json: cathrynlavery/diagram-design",
+      "historical_evidence": "README and license text; additional skill excerpts when recorded. No code execution, audiovisual playback, or performance verification.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "GitHub connector directory metadata; separate web-text/direct-http attempts",
+        "result": "Root directory listing succeeded via authorized connector (reported coordinator evidence); no render or full repository review. README/navigation text opened; media not viewed Worker connector resolved skills/diagram-design/references (directory); no visual inspection."
+      },
+      "maker_visual_inspection": false,
+      "alternative": "penpot/penpot",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No current maker visual inspection; open actual media before transferring appearance.",
+      "resolved_routes": [
+        {
+          "url": "https://github.com/cathrynlavery/diagram-design/blob/main/README.md",
+          "path": "README.md",
+          "sha": "2660309a3d05c5ddae1b298bc043b08c3798315a",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/cathrynlavery/diagram-design/tree/main/assets",
+          "path": "assets",
+          "sha": "776dfaa2460bd59d32fb4333f12fd453da9ae5fb",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/cathrynlavery/diagram-design/tree/main/docs",
+          "path": "docs",
+          "sha": "8a6ea7c53780d5e927cdc1246425b747acc183b5",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/cathrynlavery/diagram-design/tree/main/skills",
+          "path": "skills",
+          "sha": "07a915bf496875b853d8ecf1919feb2471dba92d",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/cathrynlavery/diagram-design/blob/main/skills/diagram-design/references/type-flowchart.md",
+          "path": "skills/diagram-design/references/type-flowchart.md",
+          "sha": "1042be73817e1196da5106b5ff41766c132ba817",
+          "evidence_type": "current-directory-metadata; content/media not inspected"
+        },
+        {
+          "url": "https://github.com/cathrynlavery/diagram-design/blob/main/skills/diagram-design/references/style-guide.md",
+          "path": "color.md:70",
+          "sha": null,
+          "evidence_type": "existing pack prose citation; not newly fetched or viewed"
+        }
+      ]
+    },
+    {
+      "id": "Caho1/open-claude-ui",
+      "primary_urls": [
+        "https://github.com/Caho1/open-claude-ui",
+        "https://github.com/Caho1/open-claude-ui#readme",
+        "https://github.com/Caho1/open-claude-ui/blob/main/README.md",
+        "https://github.com/Caho1/open-claude-ui/tree/main/assets",
+        "https://github.com/Caho1/open-claude-ui/tree/main/docs",
+        "https://github.com/Caho1/open-claude-ui/blob/main/docs/claude-components-storybook.html"
+      ],
+      "medium": "interface",
+      "selection_question": "How do input and streaming states preserve hierarchy?",
+      "inspect_path": "Repository README → docs/claude-components-storybook.html documented path; resolve current tree; public site openclaudeui.com linked in README. Retain exact resolved media/file URL, version and state; text is not visual evidence.",
+      "provenance": "source-records.json: Caho1/open-claude-ui",
+      "historical_evidence": "README and license text; additional skill excerpts when recorded. No code execution, audiovisual playback, or performance verification.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "GitHub connector directory metadata; separate web-text/direct-http attempts",
+        "result": "Root directory listing succeeded via authorized connector (reported coordinator evidence); no render or full repository review. README/navigation text opened; media not viewed Worker connector resolved docs (directory); no visual inspection."
+      },
+      "maker_visual_inspection": false,
+      "alternative": "jakubkrehel",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No current maker visual inspection; open actual media before transferring appearance.",
+      "resolved_routes": [
+        {
+          "url": "https://github.com/Caho1/open-claude-ui/blob/main/README.md",
+          "path": "README.md",
+          "sha": "3d3cde14ac6dd02e36c03bfd0b922dbccdff8cb1",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/Caho1/open-claude-ui/tree/main/assets",
+          "path": "assets",
+          "sha": "ca2316348d588b73828da53443bd56ba608a2e00",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/Caho1/open-claude-ui/tree/main/docs",
+          "path": "docs",
+          "sha": "1bb64e23cd3c80f398df4d7c7c6070f17a242200",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/Caho1/open-claude-ui/blob/main/docs/claude-components-storybook.html",
+          "path": "docs/claude-components-storybook.html",
+          "sha": "1c16a90853acc2235d82df2d4a4d6bd60ae801f7",
+          "evidence_type": "current-directory-metadata; content/media not inspected"
+        }
+      ]
+    },
+    {
+      "id": "storytold/craft-anything",
+      "primary_urls": [
+        "https://github.com/storytold/craft-anything",
+        "https://github.com/storytold/craft-anything#readme",
+        "https://github.com/storytold/craft-anything/blob/main/README.md",
+        "https://github.com/storytold/craft-anything/tree/main/assets",
+        "https://github.com/storytold/craft-anything/tree/main/docs",
+        "https://github.com/storytold/craft-anything/tree/main/examples"
+      ],
+      "medium": "interface",
+      "selection_question": "Which behavior is observed versus inferred?",
+      "inspect_path": "Repository README → linked observation/specification workflow and public examples; no extraction-tool execution. Retain exact resolved media/file URL, version and state; text is not visual evidence.",
+      "provenance": "source-records.json: storytold/craft-anything",
+      "historical_evidence": "README and license text; additional skill excerpts when recorded. No code execution, audiovisual playback, or performance verification.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "GitHub connector directory metadata; separate web-text/direct-http attempts",
+        "result": "Root directory listing succeeded via authorized connector (reported coordinator evidence); no render or full repository review. README/navigation text opened; media not viewed"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "Caho1/open-claude-ui",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No current maker visual inspection; open actual media before transferring appearance.",
+      "resolved_routes": [
+        {
+          "url": "https://github.com/storytold/craft-anything/blob/main/README.md",
+          "path": "README.md",
+          "sha": "3df4d9ce8aa4b3076191ddf4276f9d15d9b8c268",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/storytold/craft-anything/tree/main/assets",
+          "path": "assets",
+          "sha": "0509ff9a7f4dd801e58174d56e051efc533b552c",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/storytold/craft-anything/tree/main/docs",
+          "path": "docs",
+          "sha": "e0b04871d93fc0f64bfec8e8917d47879ad208c8",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/storytold/craft-anything/tree/main/examples",
+          "path": "examples",
+          "sha": "835505fd54a8012e1bb4fcd877d8ab936b113430",
+          "evidence_type": "reported-current-directory-metadata"
+        }
+      ]
+    },
+    {
+      "id": "penpot/penpot",
+      "primary_urls": [
+        "https://github.com/penpot/penpot",
+        "https://github.com/penpot/penpot#readme",
+        "https://github.com/penpot/penpot/blob/develop/README.md",
+        "https://github.com/penpot/penpot/tree/develop/docs"
+      ],
+      "medium": "system",
+      "selection_question": "How should identity propagate through variants and tokens?",
+      "inspect_path": "Repository README → linked design-system/component documentation and examples; inspect anatomy/variants. Retain exact resolved media/file URL, version and state; text is not visual evidence.",
+      "provenance": "source-records.json: penpot/penpot",
+      "historical_evidence": "README and license text; additional skill excerpts when recorded. No code execution, audiovisual playback, or performance verification.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "GitHub connector directory metadata; separate web-text/direct-http attempts",
+        "result": "Root directory listing succeeded via authorized connector (reported coordinator evidence); no render or full repository review. GitHub API tree request failed: proxy403; web README not rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "base-web-history",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No current maker visual inspection; open actual media before transferring appearance.",
+      "resolved_routes": [
+        {
+          "url": "https://github.com/penpot/penpot/blob/develop/README.md",
+          "path": "README.md",
+          "sha": "ffd702aa315a90be43c7d6846b0702148f94d551",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/penpot/penpot/tree/develop/docs",
+          "path": "docs",
+          "sha": "53a12284592690e8db1ef58abd0b392664469349",
+          "evidence_type": "reported-current-directory-metadata"
+        }
+      ]
+    },
+    {
+      "id": "heygen-com/hyperframes",
+      "primary_urls": [
+        "https://github.com/heygen-com/hyperframes",
+        "https://github.com/heygen-com/hyperframes#readme",
+        "https://github.com/heygen-com/hyperframes/blob/main/README.md",
+        "https://github.com/heygen-com/hyperframes/tree/main/assets",
+        "https://github.com/heygen-com/hyperframes/tree/main/docs",
+        "https://github.com/heygen-com/hyperframes/tree/main/examples",
+        "https://github.com/heygen-com/hyperframes/tree/main/skills"
+      ],
+      "medium": "motion",
+      "selection_question": "How do time and composition reinforce a message?",
+      "inspect_path": "Repository README → examples/ and Documentation → Showcase/Examples; play public film and record timestamps. Retain exact resolved media/file URL, version and state; text is not visual evidence.",
+      "provenance": "source-records.json: heygen-com/hyperframes",
+      "historical_evidence": "README and license text; additional skill excerpts when recorded. No code execution, audiovisual playback, or performance verification.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "GitHub connector directory metadata; separate web-text/direct-http attempts",
+        "result": "Root directory listing succeeded via authorized connector (reported coordinator evidence); no render or full repository review. README/navigation text opened; media not viewed"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "remotion-dev/remotion",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No current maker visual inspection; open actual media before transferring appearance.",
+      "resolved_routes": [
+        {
+          "url": "https://github.com/heygen-com/hyperframes/blob/main/README.md",
+          "path": "README.md",
+          "sha": "e4fc97da5da64cc1071f8fbfc1c5c2f68e4010af",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/heygen-com/hyperframes/tree/main/assets",
+          "path": "assets",
+          "sha": "7b95e20aee3a4b523f1803884c1c03e12efcf4b0",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/heygen-com/hyperframes/tree/main/docs",
+          "path": "docs",
+          "sha": "41bd13f4c373a3cb283f27cf20484b1031f53cb4",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/heygen-com/hyperframes/tree/main/examples",
+          "path": "examples",
+          "sha": "782cdee6eb0dcb8eb3c440daca175c1166ff4682",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/heygen-com/hyperframes/tree/main/skills",
+          "path": "skills",
+          "sha": "3fe114ff0737b97af02402b2415ce069f42cba16",
+          "evidence_type": "reported-current-directory-metadata"
+        }
+      ]
+    },
+    {
+      "id": "remotion-dev/remotion",
+      "primary_urls": [
+        "https://github.com/remotion-dev/remotion",
+        "https://github.com/remotion-dev/remotion#readme",
+        "https://github.com/remotion-dev/remotion/blob/main/README.md"
+      ],
+      "medium": "motion",
+      "selection_question": "Which timeline relationships need repeatable production?",
+      "inspect_path": "Repository README → official documentation/examples linked by README; play beginning/transition/end. Retain exact resolved media/file URL, version and state; text is not visual evidence.",
+      "provenance": "source-records.json: remotion-dev/remotion",
+      "historical_evidence": "README and license text; additional skill excerpts when recorded. No code execution, audiovisual playback, or performance verification.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "GitHub connector directory metadata; separate web-text/direct-http attempts",
+        "result": "Root directory listing succeeded via authorized connector (reported coordinator evidence); no render or full repository review. GitHub API tree request failed: proxy403; web README not rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "heygen-com/hyperframes",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No current maker visual inspection; open actual media before transferring appearance.",
+      "resolved_routes": [
+        {
+          "url": "https://github.com/remotion-dev/remotion/blob/main/README.md",
+          "path": "README.md",
+          "sha": "fd2e741074e6ea53f62eaf511c0c1a030c264b78",
+          "evidence_type": "reported-current-directory-metadata"
+        }
+      ]
+    },
+    {
+      "id": "howseen-ai/claude-motion-design",
+      "primary_urls": [
+        "https://github.com/howseen-ai/claude-motion-design",
+        "https://github.com/howseen-ai/claude-motion-design#readme",
+        "https://github.com/howseen-ai/claude-motion-design/blob/main/README.md",
+        "https://github.com/howseen-ai/claude-motion-design/tree/main/examples",
+        "https://github.com/howseen-ai/claude-motion-design/blob/main/skill/motion-design/SKILL.md"
+      ],
+      "medium": "motion",
+      "selection_question": "How should a seekable sequence retain hierarchy across cuts?",
+      "inspect_path": "Repository README → skill/motion-design/ and examples/howseen-launch/; public preview if available; do not run fetch_assets.py. Retain exact resolved media/file URL, version and state; text is not visual evidence.",
+      "provenance": "source-records.json: howseen-ai/claude-motion-design",
+      "historical_evidence": "README and license text; additional skill excerpts when recorded. No code execution, audiovisual playback, or performance verification.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "GitHub connector directory metadata; separate web-text/direct-http attempts",
+        "result": "Root directory listing succeeded via authorized connector (reported coordinator evidence); no render or full repository review. README/navigation text opened; media not viewed Worker connector resolved skill/motion-design (directory); no visual inspection."
+      },
+      "maker_visual_inspection": false,
+      "alternative": "Leonxlnx/cinetic",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No current maker visual inspection; open actual media before transferring appearance.",
+      "resolved_routes": [
+        {
+          "url": "https://github.com/howseen-ai/claude-motion-design/blob/main/README.md",
+          "path": "README.md",
+          "sha": "e46b8ac2f6359ac1590dd26870642b4f15b9e0cf",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/howseen-ai/claude-motion-design/tree/main/examples",
+          "path": "examples",
+          "sha": "d5f10d0dffe7bf3e305f35c25b0c6117e3bbe51c",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/howseen-ai/claude-motion-design/blob/main/skill/motion-design/SKILL.md",
+          "path": "skill/motion-design/SKILL.md",
+          "sha": "623ce4a863b18cc44c4476e346e5cf819401d532",
+          "evidence_type": "current-directory-metadata; content/media not inspected"
+        }
+      ]
+    },
+    {
+      "id": "Leonxlnx/cinetic",
+      "primary_urls": [
+        "https://github.com/Leonxlnx/cinetic",
+        "https://github.com/Leonxlnx/cinetic#readme",
+        "https://github.com/Leonxlnx/cinetic/blob/main/README.md",
+        "https://github.com/Leonxlnx/cinetic/tree/main/docs",
+        "https://github.com/Leonxlnx/cinetic/tree/main/skills",
+        "https://github.com/Leonxlnx/cinetic/blob/main/skills/cinetic/SKILL.md"
+      ],
+      "medium": "motion",
+      "selection_question": "What story and shot sequence fit the message?",
+      "inspect_path": "Repository README → skills/cinetic/ and linked film examples; record timestamps and audio status. Retain exact resolved media/file URL, version and state; text is not visual evidence.",
+      "provenance": "source-records.json: Leonxlnx/cinetic",
+      "historical_evidence": "README and license text; additional skill excerpts when recorded. No code execution, audiovisual playback, or performance verification.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "GitHub connector directory metadata; separate web-text/direct-http attempts",
+        "result": "Root directory listing succeeded via authorized connector (reported coordinator evidence); no render or full repository review. README/navigation text opened; media not viewed Worker connector resolved skills/cinetic (directory); no visual inspection."
+      },
+      "maker_visual_inspection": false,
+      "alternative": "Vincentwei1021/video-shotcraft",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No current maker visual inspection; open actual media before transferring appearance.",
+      "resolved_routes": [
+        {
+          "url": "https://github.com/Leonxlnx/cinetic/blob/main/README.md",
+          "path": "README.md",
+          "sha": "4cb26c74f2cb3b754e719af72ab0b5d7ce3b77ba",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/Leonxlnx/cinetic/tree/main/docs",
+          "path": "docs",
+          "sha": "959f0ea09c24bbf69c3a357cdded2ae5035f06ca",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/Leonxlnx/cinetic/tree/main/skills",
+          "path": "skills",
+          "sha": "940ee56d555f81de38c38da8e1d3bd6873c77822",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/Leonxlnx/cinetic/blob/main/skills/cinetic/SKILL.md",
+          "path": "skills/cinetic/SKILL.md",
+          "sha": "fcd64123c7e1cb338a0ed490f96a50fe678a38ce",
+          "evidence_type": "current-directory-metadata; content/media not inspected"
+        }
+      ]
+    },
+    {
+      "id": "Vincentwei1021/video-shotcraft",
+      "primary_urls": [
+        "https://github.com/Vincentwei1021/video-shotcraft",
+        "https://github.com/Vincentwei1021/video-shotcraft#readme",
+        "https://github.com/Vincentwei1021/video-shotcraft/blob/main/README.md",
+        "https://github.com/Vincentwei1021/video-shotcraft/blob/main/SKILL.md",
+        "https://github.com/Vincentwei1021/video-shotcraft/tree/main/assets",
+        "https://github.com/Vincentwei1021/video-shotcraft/tree/main/workbench",
+        "https://github.com/Vincentwei1021/video-shotcraft/tree/main/references/shots",
+        "https://github.com/Vincentwei1021/video-shotcraft/blob/main/template/src/themes/palettes.json"
+      ],
+      "medium": "motion",
+      "selection_question": "Which shot transition carries meaning?",
+      "inspect_path": "Repository README → SKILL.md → references/shots/ and workbench/; linked public motion previews. Retain exact resolved media/file URL, version and state; text is not visual evidence. Additional exact route: https://github.com/Vincentwei1021/video-shotcraft/blob/main/template/src/themes/palettes.json. Read palette/style specimen in context and compare actual content; source values are not house defaults.",
+      "provenance": "source-records.json: Vincentwei1021/video-shotcraft",
+      "historical_evidence": "README and license text; additional skill excerpts when recorded. No code execution, audiovisual playback, or performance verification.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "GitHub connector directory metadata; separate web-text/direct-http attempts",
+        "result": "Root directory listing succeeded via authorized connector (reported coordinator evidence); no render or full repository review. README/navigation text opened; media not viewed Worker connector resolved references (directory); no visual inspection."
+      },
+      "maker_visual_inspection": false,
+      "alternative": "lemomo-ai/lemo-opuscar",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No current maker visual inspection; open actual media before transferring appearance.",
+      "resolved_routes": [
+        {
+          "url": "https://github.com/Vincentwei1021/video-shotcraft/blob/main/README.md",
+          "path": "README.md",
+          "sha": "22a32d07eae8b1f4c27c3e7f6307275f9a4a47f2",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/Vincentwei1021/video-shotcraft/blob/main/SKILL.md",
+          "path": "SKILL.md",
+          "sha": "5e474675e53aac4fa9449f242241f92cc8b6f7bb",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/Vincentwei1021/video-shotcraft/tree/main/assets",
+          "path": "assets",
+          "sha": "f2351404c9ffdb9e110994bd57d4a3c3f459b2d6",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/Vincentwei1021/video-shotcraft/tree/main/workbench",
+          "path": "workbench",
+          "sha": "ea47f4d538e5858507cd19d82a1abb23c91d8e19",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/Vincentwei1021/video-shotcraft/tree/main/references/shots",
+          "path": "references/shots",
+          "sha": "081cdc3b56c6e4a2c0924f84c7aee9af57123efd",
+          "evidence_type": "current-directory-metadata; content/media not inspected"
+        },
+        {
+          "url": "https://github.com/Vincentwei1021/video-shotcraft/blob/main/template/src/themes/palettes.json",
+          "path": "color.md:71",
+          "sha": null,
+          "evidence_type": "existing pack prose citation; not newly fetched or viewed"
+        }
+      ]
+    },
+    {
+      "id": "lemomo-ai/lemo-opuscar",
+      "primary_urls": [
+        "https://github.com/lemomo-ai/lemo-opuscar",
+        "https://github.com/lemomo-ai/lemo-opuscar#readme",
+        "https://github.com/lemomo-ai/lemo-opuscar/blob/main/README.md",
+        "https://github.com/lemomo-ai/lemo-opuscar/tree/main/docs"
+      ],
+      "medium": "motion",
+      "selection_question": "Which visual language fits subject and material?",
+      "inspect_path": "Repository README → The styles → actual frame → STYLE.md; watch linked demo film. Retain exact resolved media/file URL, version and state; text is not visual evidence.",
+      "provenance": "source-records.json: lemomo-ai/lemo-opuscar",
+      "historical_evidence": "README and license text; additional skill excerpts when recorded. No code execution, audiovisual playback, or performance verification.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "GitHub connector directory metadata; separate web-text/direct-http attempts",
+        "result": "Root directory listing succeeded via authorized connector (reported coordinator evidence); no render or full repository review. README/navigation text opened; media not viewed"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "yihui-dev/awesome-opus5-5-videos",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No current maker visual inspection; open actual media before transferring appearance.",
+      "resolved_routes": [
+        {
+          "url": "https://github.com/lemomo-ai/lemo-opuscar/blob/main/README.md",
+          "path": "README.md",
+          "sha": "18795ca8fec718e70c154755be136c55be3b457c",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/lemomo-ai/lemo-opuscar/tree/main/docs",
+          "path": "docs",
+          "sha": "cbafb46dfed544b73b4814ce0cb788ac87b659ef",
+          "evidence_type": "reported-current-directory-metadata"
+        }
+      ]
+    },
+    {
+      "id": "yihui-dev/awesome-opus5-5-videos",
+      "primary_urls": [
+        "https://github.com/yihui-dev/awesome-opus5-5-videos",
+        "https://github.com/yihui-dev/awesome-opus5-5-videos#readme",
+        "https://github.com/yihui-dev/awesome-opus5-5-videos/blob/main/README.md"
+      ],
+      "medium": "motion",
+      "selection_question": "Does the visible result support the prompt claim?",
+      "inspect_path": "Repository README → selected original video and paired remake/prompt link; retain exact selected timestamp. Retain exact resolved media/file URL, version and state; text is not visual evidence.",
+      "provenance": "source-records.json: yihui-dev/awesome-opus5-5-videos",
+      "historical_evidence": "README and license text; additional skill excerpts when recorded. No code execution, audiovisual playback, or performance verification.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "GitHub connector directory metadata; separate web-text/direct-http attempts",
+        "result": "Root directory listing succeeded via authorized connector (reported coordinator evidence); no render or full repository review. README/navigation text opened; media not viewed"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "lemomo-ai/lemo-opuscar",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No current maker visual inspection; open actual media before transferring appearance.",
+      "resolved_routes": [
+        {
+          "url": "https://github.com/yihui-dev/awesome-opus5-5-videos/blob/main/README.md",
+          "path": "README.md",
+          "sha": "d6a22a120bc2e3b1b4ec9bc549f98c8af4655eb6",
+          "evidence_type": "reported-current-directory-metadata"
+        }
+      ]
+    },
+    {
+      "id": "Leonxlnx/earshot",
+      "primary_urls": [
+        "https://github.com/Leonxlnx/earshot",
+        "https://github.com/Leonxlnx/earshot#readme",
+        "https://github.com/Leonxlnx/earshot/blob/main/README.md",
+        "https://github.com/Leonxlnx/earshot/tree/main/docs",
+        "https://github.com/Leonxlnx/earshot/tree/main/skills",
+        "https://github.com/Leonxlnx/earshot/tree/main/skills/earshot",
+        "https://github.com/Leonxlnx/earshot/tree/main/skills/real-sound"
+      ],
+      "medium": "sound",
+      "selection_question": "What audible event, timbre and timing fit the experience?",
+      "inspect_path": "Repository README → skills/earshot/, skills/real-sound/ and docs/LIMITS; public listening examples; analysis is not listening. Retain exact resolved media/file URL, version and state; text is not visual evidence.",
+      "provenance": "source-records.json: Leonxlnx/earshot",
+      "historical_evidence": "README and license text; additional skill excerpts when recorded. No code execution, audiovisual playback, or performance verification.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "GitHub connector directory metadata; separate web-text/direct-http attempts",
+        "result": "Root directory listing succeeded via authorized connector (reported coordinator evidence); no render or full repository review. README/navigation text opened; media not viewed Worker connector resolved skills (directory); no visual inspection."
+      },
+      "maker_visual_inspection": false,
+      "alternative": "Leonxlnx/cinetic",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No current maker visual inspection; open actual media before transferring appearance.",
+      "resolved_routes": [
+        {
+          "url": "https://github.com/Leonxlnx/earshot/blob/main/README.md",
+          "path": "README.md",
+          "sha": "daf4cc8492f7e8d4c43a30834e1666a01546b4bf",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/Leonxlnx/earshot/tree/main/docs",
+          "path": "docs",
+          "sha": "5eca0d156dcea3c98a3b6bb2e606f981f32a1610",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/Leonxlnx/earshot/tree/main/skills",
+          "path": "skills",
+          "sha": "95155457f2b82dff9b8ba9f158323a58a9056ada",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/Leonxlnx/earshot/tree/main/skills/earshot",
+          "path": "skills/earshot",
+          "sha": "9e961cb962393598553f490a330c7cdfc1e18fb3",
+          "evidence_type": "current-directory-metadata; content/media not inspected"
+        },
+        {
+          "url": "https://github.com/Leonxlnx/earshot/tree/main/skills/real-sound",
+          "path": "skills/real-sound",
+          "sha": "1e9da216572e938d8766ff1d81f9b8c4faaaca43",
+          "evidence_type": "current-directory-metadata; content/media not inspected"
+        }
+      ]
+    },
+    {
+      "id": "ahujasid/mcp-for-blender",
+      "primary_urls": [
+        "https://github.com/ahujasid/mcp-for-blender",
+        "https://github.com/ahujasid/mcp-for-blender#readme",
+        "https://github.com/ahujasid/mcp-for-blender/blob/main/README.md",
+        "https://github.com/ahujasid/mcp-for-blender/tree/main/assets"
+      ],
+      "medium": "spatial",
+      "selection_question": "Which shape/material is established and which surface is unknown?",
+      "inspect_path": "Repository README → linked scene/demo media; inspect camera, silhouette and hidden geometry separately. Retain exact resolved media/file URL, version and state; text is not visual evidence.",
+      "provenance": "source-records.json: ahujasid/mcp-for-blender",
+      "historical_evidence": "README and license text; additional skill excerpts when recorded. No code execution, audiovisual playback, or performance verification.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "GitHub connector directory metadata; separate web-text/direct-http attempts",
+        "result": "Root directory listing succeeded via authorized connector (reported coordinator evidence); no render or full repository review. GitHub API tree request failed: proxy403; web README not rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "img2threejs/img2threejs",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No current maker visual inspection; open actual media before transferring appearance.",
+      "resolved_routes": [
+        {
+          "url": "https://github.com/ahujasid/mcp-for-blender/blob/main/README.md",
+          "path": "README.md",
+          "sha": "9ccb948da205946c6ed0dfbd5964c0ea26d0bc0d",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/ahujasid/mcp-for-blender/tree/main/assets",
+          "path": "assets",
+          "sha": "580140fb8421780f38ade0da9b9fdb86758c277d",
+          "evidence_type": "reported-current-directory-metadata"
+        }
+      ]
+    },
+    {
+      "id": "img2threejs/img2threejs",
+      "primary_urls": [
+        "https://github.com/img2threejs/img2threejs",
+        "https://github.com/img2threejs/img2threejs#readme",
+        "https://github.com/img2threejs/img2threejs/blob/main/README.md",
+        "https://github.com/img2threejs/img2threejs/blob/main/SKILL.md",
+        "https://github.com/img2threejs/img2threejs/tree/main/assets",
+        "https://github.com/img2threejs/img2threejs/tree/main/docs",
+        "https://github.com/img2threejs/img2threejs/tree/main/skills"
+      ],
+      "medium": "spatial",
+      "selection_question": "How much geometry is supported by the input view?",
+      "inspect_path": "Repository README → paired input/output examples at matching camera; hidden geometry remains inference. Retain exact resolved media/file URL, version and state; text is not visual evidence.",
+      "provenance": "source-records.json: img2threejs/img2threejs",
+      "historical_evidence": "README and license text; additional skill excerpts when recorded. No code execution, audiovisual playback, or performance verification.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "GitHub connector directory metadata; separate web-text/direct-http attempts",
+        "result": "Root directory listing succeeded via authorized connector (reported coordinator evidence); no render or full repository review. GitHub API tree request failed: proxy403; web README not rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "ahujasid/mcp-for-blender",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No current maker visual inspection; open actual media before transferring appearance.",
+      "resolved_routes": [
+        {
+          "url": "https://github.com/img2threejs/img2threejs/blob/main/README.md",
+          "path": "README.md",
+          "sha": "ee4a6243a423bd85408d74b66950b150e9a16c3c",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/img2threejs/img2threejs/blob/main/SKILL.md",
+          "path": "SKILL.md",
+          "sha": "dfec522d39446ea825429c6ad1d4716bb6cd979f",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/img2threejs/img2threejs/tree/main/assets",
+          "path": "assets",
+          "sha": "2c7fd70e4b36264bd408eaa9547836053126cbe2",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/img2threejs/img2threejs/tree/main/docs",
+          "path": "docs",
+          "sha": "bf1e9d5fa94d8352a5feaf4056194632f87e500d",
+          "evidence_type": "reported-current-directory-metadata"
+        },
+        {
+          "url": "https://github.com/img2threejs/img2threejs/tree/main/skills",
+          "path": "skills",
+          "sha": "1635d1672f8b767ab3c1e46802985e631dbe3311",
+          "evidence_type": "reported-current-directory-metadata"
+        }
+      ]
+    },
+    {
+      "id": "dark",
+      "primary_urls": [
+        "https://www.dark.design/"
+      ],
+      "medium": "interface",
+      "selection_question": "Does dark hierarchy fit the content?",
+      "inspect_path": "Category → concrete thumbnail → original site; retain page/state and surface hierarchy",
+      "provenance": "web-source-records.json: dark",
+      "historical_evidence": "primary-text-extraction; Local rendered inspection failed with ERR_TUNNEL_CONNECTION_FAILED; no output-quality, effectiveness or runtime claim.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "none",
+        "result": "not-rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "impeccable-gallery",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No current maker visual inspection; open actual media before transferring appearance."
+    },
+    {
+      "id": "variant",
+      "primary_urls": [
+        "https://variant.com/"
+      ],
+      "medium": "interface",
+      "selection_question": "Are organizing ideas materially different?",
+      "inspect_path": "Public gallery → visible example if available; no signup/generation; blank gallery is no evidence",
+      "provenance": "web-source-records.json: variant",
+      "historical_evidence": "primary-text-extraction; Local rendered inspection failed with ERR_TUNNEL_CONNECTION_FAILED; no output-quality, effectiveness or runtime claim.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "none",
+        "result": "not-rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "impeccable-gallery",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No current maker visual inspection; open actual media before transferring appearance."
+    },
+    {
+      "id": "happy-hues",
+      "primary_urls": [
+        "https://www.happyhues.co/"
+      ],
+      "medium": "color",
+      "selection_question": "How do roles share attention?",
+      "inspect_path": "Select palette → full contextual illustration, paragraph and button regions at one viewport",
+      "provenance": "web-source-records.json: happy-hues",
+      "historical_evidence": "primary-text-extraction; Local rendered inspection failed with ERR_TUNNEL_CONNECTION_FAILED; no output-quality, effectiveness or runtime claim.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "none",
+        "result": "not-rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "dark",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No current maker visual inspection; open actual media before transferring appearance."
+    },
+    {
+      "id": "haikei",
+      "primary_urls": [
+        "https://haikei.app/"
+      ],
+      "medium": "shape",
+      "selection_question": "How can geometry shape composition?",
+      "inspect_path": "Public generator preview → shape family → canvas ratio, density, repetition and clear zones; no export",
+      "provenance": "web-source-records.json: haikei",
+      "historical_evidence": "primary-text-extraction; Local rendered inspection failed with ERR_TUNNEL_CONNECTION_FAILED; no output-quality, effectiveness or runtime claim.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "none",
+        "result": "not-rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "grainient",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No current maker visual inspection; open actual media before transferring appearance."
+    },
+    {
+      "id": "shadergradient",
+      "primary_urls": [
+        "https://shadergradient.co/",
+        "https://github.com/ruucm/shadergradient"
+      ],
+      "medium": "material-motion",
+      "selection_question": "How do light, form and motion support atmosphere?",
+      "inspect_path": "Public canvas → full cycle/static frame → shape/light/noise controls; unreadable canvas is no evidence Additional exact route: https://github.com/ruucm/shadergradient. Read its applicable source/rights/version context; documentation is not visual inspection.",
+      "provenance": "web-source-records.json: shadergradient",
+      "historical_evidence": "primary-text-extraction; Local rendered inspection failed with ERR_TUNNEL_CONNECTION_FAILED; no output-quality, effectiveness or runtime claim.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "none",
+        "result": "not-rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "haikei",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No current maker visual inspection; open actual media before transferring appearance.",
+      "resolved_routes": [
+        {
+          "url": "https://github.com/ruucm/shadergradient",
+          "path": "sources.md:50",
+          "sha": null,
+          "evidence_type": "existing pack prose citation; not newly fetched or viewed"
+        }
+      ]
+    },
+    {
+      "id": "grainient",
+      "primary_urls": [
+        "https://grainient.supply/"
+      ],
+      "medium": "material",
+      "selection_question": "Which texture scale supports content?",
+      "inspect_path": "Public collection preview → inspect grain at intended scale and behind type; no purchase",
+      "provenance": "web-source-records.json: grainient",
+      "historical_evidence": "primary-text-extraction; Local rendered inspection failed with ERR_TUNNEL_CONNECTION_FAILED; no output-quality, effectiveness or runtime claim.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "none",
+        "result": "not-rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "haikei",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No current maker visual inspection; open actual media before transferring appearance."
+    },
+    {
+      "id": "react-bits",
+      "primary_urls": [
+        "https://reactbits.dev/",
+        "https://github.com/DavidHDev/react-bits"
+      ],
+      "medium": "interaction",
+      "selection_question": "Which movement communicates state or expression?",
+      "inspect_path": "Docs sidebar → Text Animations/Components/Backgrounds → live preview → trigger, stable state and fallback Additional exact route: https://github.com/DavidHDev/react-bits. Read its applicable source/rights/version context; documentation is not visual inspection.",
+      "provenance": "web-source-records.json: react-bits",
+      "historical_evidence": "primary-text-extraction; Local rendered inspection failed with ERR_TUNNEL_CONNECTION_FAILED; no output-quality, effectiveness or runtime claim.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "none",
+        "result": "not-rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "emilkowalski/skills",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No current maker visual inspection; open actual media before transferring appearance.",
+      "resolved_routes": [
+        {
+          "url": "https://github.com/DavidHDev/react-bits",
+          "path": "sources.md:52",
+          "sha": null,
+          "evidence_type": "existing pack prose citation; not newly fetched or viewed"
+        }
+      ]
+    },
+    {
+      "id": "foundry",
+      "primary_urls": [
+        "https://cms-font-discovery-41302026.lovable.app/",
+        "https://lovable.dev/templates/apps/saas/font-discovery-with-cms"
+      ],
+      "medium": "typography",
+      "selection_question": "Which type contrasts hold with identical content?",
+      "inspect_path": "Live preview → specimen cards; compare text/role size/optical mass; names alone do not count",
+      "provenance": "aesthetic-source-records.json: foundry",
+      "historical_evidence": "reported-rendered / snapshot",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "none",
+        "result": "not-rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "font-metadata",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "Viewport, exact fonts and CMS behavior not supplied/tested. No new maker inspection."
+    },
+    {
+      "id": "maison",
+      "primary_urls": [
+        "https://scandi-haven-shop.lovable.app/product/arc-pendant-light",
+        "https://lovable.dev/templates/websites/ecommerce/maison-artisan-home-lifestyle-store-template"
+      ],
+      "medium": "commerce",
+      "selection_question": "How do image/type/decision roles cohere?",
+      "inspect_path": "Exact /product/arc-pendant-light → image/title/material/dimensions/controls; measure image-to-type ratio",
+      "provenance": "aesthetic-source-records.json: maison",
+      "historical_evidence": "reported-rendered / snapshot",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "none",
+        "result": "not-rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "void",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No backend, checkout, accessibility or complete journey verification. No new maker inspection."
+    },
+    {
+      "id": "prompt-frame",
+      "primary_urls": [
+        "https://lovable-prompt-frame.lovable.app/work",
+        "https://lovable.dev/templates/websites/portfolio/prompt-frame-portfolio"
+      ],
+      "medium": "portfolio",
+      "selection_question": "How does large type relate to repeated rows?",
+      "inspect_path": "Exact /work → heading and two project rows; baseline, metadata and crop; do not substitute another Jordan site",
+      "provenance": "aesthetic-source-records.json: prompt-frame",
+      "historical_evidence": "reported-rendered / snapshot",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "none",
+        "result": "not-rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "impeccable-gallery",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "Not the similarly named jordan-studio/rachel-jordan-echo template; viewport unknown. No new maker inspection."
+    },
+    {
+      "id": "void",
+      "primary_urls": [
+        "https://void-storefront-design.lovable.app/product/oversize-shirt",
+        "https://lovable.dev/templates/websites/ecommerce/void-brutalist-shopify-storefront-template"
+      ],
+      "medium": "commerce",
+      "selection_question": "Does contrast support product decisions?",
+      "inspect_path": "Exact /product/oversize-shirt → initial region modal; inspect accessible areas only; ordinary dismissal if available",
+      "provenance": "aesthetic-source-records.json: void",
+      "historical_evidence": "reported-rendered / partial",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "none",
+        "result": "not-rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "maison",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "Underlying full product composition and interaction quality unobserved. No new maker inspection."
+    },
+    {
+      "id": "expense",
+      "primary_urls": [
+        "https://expense-it.lovable.app/login"
+      ],
+      "medium": "interface",
+      "selection_question": "What does public sign-in expose?",
+      "inspect_path": "Exact /login → accessible authentication surface only; no credentials or inferred dashboard",
+      "provenance": "aesthetic-source-records.json: expense",
+      "historical_evidence": "reported-access-failure / failed",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "none",
+        "result": "not-rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "uber-redesign",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No usable UI evidence. No new maker inspection."
+    },
+    {
+      "id": "local-preview-failures",
+      "primary_urls": [
+        "https://graphic-designer-05.lovable.app/",
+        "https://scandi-haven-shop.lovable.app/",
+        "https://budget-pulse-zen.lovable.app/"
+      ],
+      "medium": "interface",
+      "selection_question": "Can previews render here now?",
+      "inspect_path": "Choose task-relevant direct preview URL → record loading/failure; portfolio, shop and budget app differ",
+      "provenance": "aesthetic-source-records.json: local-preview-failures",
+      "historical_evidence": "reported-access-failure / failed",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "none",
+        "result": "not-rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "prompt-frame",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "Requested viewport belongs only to failed local attempts, not independent snapshots. No new maker inspection."
+    },
+    {
+      "id": "landing-claims",
+      "primary_urls": [
+        "https://lovable.dev/templates/websites/portfolio/graphic-designer-5",
+        "https://lovable.dev/templates/websites/ecommerce/maison-artisan-home-lifestyle-store-template",
+        "https://lovable.dev/templates/apps/internal-tools/budget-pulse-budget-vs-actual-dashboard-template"
+      ],
+      "medium": "metadata",
+      "selection_question": "Which advertised state needs inspection?",
+      "inspect_path": "Template description → public Preview link → actual page; description cannot count as visual evidence",
+      "provenance": "aesthetic-source-records.json: landing-claims",
+      "historical_evidence": "reported-primary-text / text-only",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "none",
+        "result": "not-rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "local-preview-failures",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "Descriptions are not interaction, visual or accessibility proof; commerce/backend claims are not verified. No new maker inspection."
+    },
+    {
+      "id": "taste-type",
+      "primary_urls": [
+        "https://github.com/Leonxlnx/taste-skill/blob/main/skills/taste-skill/library/type.json"
+      ],
+      "medium": "typography",
+      "selection_question": "Which width/weight/role candidate merits comparison?",
+      "inspect_path": "Exact type.json entry → real font rights → actual-content specimen in ordinary iteration",
+      "provenance": "aesthetic-source-records.json: taste-type",
+      "historical_evidence": "reported-primary-text / text-only",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "none",
+        "result": "not-rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "font-metadata",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "Not every recommendation inspected or tested; author mood mappings are heuristics. No new maker inspection."
+    },
+    {
+      "id": "emil-type",
+      "primary_urls": [
+        "https://github.com/emilkowalski/skills/blob/main/ui-cheatsheet.md"
+      ],
+      "medium": "typography",
+      "selection_question": "Which optical relationship needs testing?",
+      "inspect_path": "ui-cheatsheet.md type/number sections → actual Hangul/Latin comparison; no universal tracking",
+      "provenance": "aesthetic-source-records.json: emil-type",
+      "historical_evidence": "reported-primary-text / text-only",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "none",
+        "result": "not-rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "font-metadata",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No rendered testing; numerical advice is not universal Korean guidance. No new maker inspection."
+    },
+    {
+      "id": "impeccable-methods",
+      "primary_urls": [
+        "https://github.com/pbakaus/impeccable/blob/main/.agents/skills/impeccable/reference/typeset.md",
+        "https://github.com/pbakaus/impeccable/blob/main/.agents/skills/impeccable/reference/bolder.md"
+      ],
+      "medium": "typography",
+      "selection_question": "How could expression improve?",
+      "inspect_path": "typeset.md and bolder.md → relationship to test against actual content/gallery pixels",
+      "provenance": "aesthetic-source-records.json: impeccable-methods",
+      "historical_evidence": "reported-primary-text / text-only",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "none",
+        "result": "not-rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "impeccable-gallery",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No copied prose; source guidance is not proven output quality. No new maker inspection."
+    },
+    {
+      "id": "impeccable-gallery",
+      "primary_urls": [
+        "https://impeccable.style/gallery/"
+      ],
+      "medium": "interface",
+      "selection_question": "Which subject-specific system offers useful contrast?",
+      "inspect_path": "Gallery → concrete project → full image at readable size; retain project/image URL and Build versus Design-first condition",
+      "provenance": "aesthetic-source-records.json: impeccable-gallery",
+      "historical_evidence": "reported-rendered / snapshot",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "none",
+        "result": "not-rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "prompt-frame",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "Exact experiment/model selection unknown; Build and Design first differ in human selection/imagegen/restarts. No new maker inspection."
+    },
+    {
+      "id": "taste-web",
+      "primary_urls": [
+        "https://www.tasteskill.dev/",
+        "https://www.tasteskill.dev/guide"
+      ],
+      "medium": "interface",
+      "selection_question": "How do app and editorial compositions differ?",
+      "inspect_path": "Homepage and /guide → exact pictured example/section; inspect task hierarchy at readable scale",
+      "provenance": "aesthetic-source-records.json: taste-web",
+      "historical_evidence": "reported-rendered / snapshot",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "none",
+        "result": "not-rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "impeccable-gallery",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "Not locally rendered or measured; no quality comparison. No new maker inspection."
+    },
+    {
+      "id": "seven-site-revisit",
+      "primary_urls": [
+        "https://www.happyhues.co/",
+        "https://haikei.app/"
+      ],
+      "medium": "color-shape",
+      "selection_question": "Which role/shape control merits inspection?",
+      "inspect_path": "Follow Happy Hues and Haikei entries; historical revisit adds no current maker inspection",
+      "provenance": "aesthetic-source-records.json: seven-site-revisit",
+      "historical_evidence": "reported-primary-text / text-only",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "none",
+        "result": "not-rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "happy-hues",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "Original seven records/access limits preserved; not all seven freshly visually inspected. No new maker inspection."
+    },
+    {
+      "id": "typography-drafts",
+      "primary_urls": [
+        "https://www.w3.org/TR/klreq/",
+        "https://www.w3.org/TR/css-fonts-4/"
+      ],
+      "medium": "typography",
+      "selection_question": "Which script/font behavior constrains choice?",
+      "inspect_path": "Relevant Korean layout or CSS font-matching section; record current draft status; text is not specimen",
+      "provenance": "aesthetic-source-records.json: typography-drafts",
+      "historical_evidence": "reported-primary-text / text-only",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "none",
+        "result": "not-rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "font-metadata",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "Drafts, not endorsed final standards; consult relevant section for specific claims. No new maker inspection."
+    },
+    {
+      "id": "font-metadata",
+      "primary_urls": [
+        "https://github.com/google/fonts/blob/main/ofl/notosanskr/METADATA.pb",
+        "https://github.com/google/fonts/blob/main/ofl/notoserifkr/METADATA.pb",
+        "https://github.com/google/fonts/blob/main/ofl/ibmplexsanskr/METADATA.pb",
+        "https://github.com/google/fonts/blob/main/ofl/blackhansans/METADATA.pb",
+        "https://github.com/google/fonts/blob/main/ofl/dohyeon/METADATA.pb",
+        "https://github.com/google/fonts/blob/main/ofl/gowunbatang/METADATA.pb",
+        "https://github.com/google/fonts/blob/main/ofl/fraunces/METADATA.pb"
+      ],
+      "medium": "typography",
+      "selection_question": "Which available real faces cover content?",
+      "inspect_path": "Each shortlisted METADATA.pb and sibling license → weights/scripts/axes → actual rendered content",
+      "provenance": "aesthetic-source-records.json: font-metadata",
+      "historical_evidence": "reported-primary-text / text-only",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "none",
+        "result": "not-rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "foundry",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No font files downloaded, rendered pairing tested or exhaustive glyph/license audit performed. No new maker inspection."
+    },
+    {
+      "id": "jakubkrehel",
+      "primary_urls": [
+        "https://github.com/jakubkrehel/skills",
+        "https://github.com/jakubkrehel/skills/blob/60bf140e43c98b248e6594487384ec967e89d98a/skills/better-colors/SKILL.md",
+        "https://github.com/jakubkrehel/skills/blob/60bf140e43c98b248e6594487384ec967e89d98a/skills/better-interface/SKILL.md",
+        "https://github.com/jakubkrehel/skills/blob/60bf140e43c98b248e6594487384ec967e89d98a/skills/better-layout/SKILL.md",
+        "https://github.com/jakubkrehel/skills/blob/60bf140e43c98b248e6594487384ec967e89d98a/skills/better-typography/SKILL.md",
+        "https://github.com/jakubkrehel/skills/blob/60bf140e43c98b248e6594487384ec967e89d98a/skills/better-ui/SKILL.md",
+        "https://github.com/jakubkrehel/skills/blob/60bf140e43c98b248e6594487384ec967e89d98a/skills/better-writing/SKILL.md",
+        "https://github.com/jakubkrehel/skills/blob/60bf140e43c98b248e6594487384ec967e89d98a/skills/break/SKILL.md",
+        "https://github.com/jakubkrehel/skills/blob/60bf140e43c98b248e6594487384ec967e89d98a/skills/build-design/SKILL.md",
+        "https://github.com/jakubkrehel/skills/blob/60bf140e43c98b248e6594487384ec967e89d98a/skills/state-machine/SKILL.md",
+        "https://github.com/jakubkrehel/skills/blob/60bf140e43c98b248e6594487384ec967e89d98a/README.md",
+        "https://github.com/jakubkrehel/skills/blob/60bf140e43c98b248e6594487384ec967e89d98a/LICENSE"
+      ],
+      "medium": "interface",
+      "selection_question": "Which type/layout/component state needs examination before production?",
+      "inspect_path": "Pinned better-layout, better-typography, better-interface; build-design, break and state-machine for real fixtures. Nine method texts are not rendered examples; pair with visual source. Additional exact route: https://github.com/jakubkrehel/skills/blob/60bf140e43c98b248e6594487384ec967e89d98a/README.md. Read its applicable source/rights/version context; documentation is not visual inspection. Additional exact route: https://github.com/jakubkrehel/skills/blob/60bf140e43c98b248e6594487384ec967e89d98a/LICENSE. Read its applicable source/rights/version context; documentation is not visual inspection.",
+      "provenance": "interface-source-records.json",
+      "historical_evidence": "reported-primary-text; nine of fourteen listed skills",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "none",
+        "result": "not-rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "emilkowalski/skills",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No current maker visual inspection; open actual media before transferring appearance.",
+      "resolved_routes": [
+        {
+          "url": "https://github.com/jakubkrehel/skills/blob/60bf140e43c98b248e6594487384ec967e89d98a/README.md",
+          "path": "interface-source-notes.md:17",
+          "sha": null,
+          "evidence_type": "existing pack prose citation; not newly fetched or viewed"
+        },
+        {
+          "url": "https://github.com/jakubkrehel/skills/blob/60bf140e43c98b248e6594487384ec967e89d98a/LICENSE",
+          "path": "interface-source-notes.md:17",
+          "sha": null,
+          "evidence_type": "existing pack prose citation; not newly fetched or viewed"
+        }
+      ]
+    },
+    {
+      "id": "uber-redesign",
+      "primary_urls": [
+        "https://www.uber.com/us/en/u/redesigned-uber-app/"
+      ],
+      "medium": "interface",
+      "selection_question": "How does primary-action hierarchy fit repeated mobile tasks?",
+      "inspect_path": "Historical2023 app images → exact phone frame → title/action/row proportions, grouping, nested controls; separate promo framing",
+      "provenance": "brand-system-source-records.json: uber-redesign",
+      "historical_evidence": "reported-rendered / 2023",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "none",
+        "result": "not-rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "drip-ai",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No current locale/device interaction test, viewport or exact values supplied."
+    },
+    {
+      "id": "uber-newsroom",
+      "primary_urls": [
+        "https://www.uber.com/us/en/newsroom/were-redesigning-the-uber-app-just-for-you/"
+      ],
+      "medium": "interface",
+      "selection_question": "What is revealed after the primary action?",
+      "inspect_path": "2023 article → illustrated app states/sequence; distinguish claims, pixels and current runtime",
+      "provenance": "brand-system-source-records.json: uber-newsroom",
+      "historical_evidence": "reported-text-and-rendered / 2023-02-22",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "none",
+        "result": "not-rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "uber-redesign",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "Not current runtime or independently measured usability."
+    },
+    {
+      "id": "mckl-uber",
+      "primary_urls": [
+        "https://www.mckltype.com/custom/uber"
+      ],
+      "medium": "typography",
+      "selection_question": "How do display/reading roles differ optically?",
+      "inspect_path": "Foundry case study → visible letterform specimens and text/display roles; no font license grant",
+      "provenance": "brand-system-source-records.json: mckl-uber",
+      "historical_evidence": "reported-primary-text / undated-project-description",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "none",
+        "result": "not-rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "font-metadata",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "No asset download, rendering, license grant, exact tracking or current app-font audit."
+    },
+    {
+      "id": "base-web-history",
+      "primary_urls": [
+        "https://www.uber.com/us/en/blog/introducing-base-web/"
+      ],
+      "medium": "system",
+      "selection_question": "How do shared roles reach components/tests?",
+      "inspect_path": "2019 article and figures → semantic roles; no invented current tokens/API",
+      "provenance": "brand-system-source-records.json: base-web-history",
+      "historical_evidence": "reported-primary-text / 2019-04-16",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "none",
+        "result": "not-rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "jakubkrehel",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "Not a current API/version audit or independent execution/test result."
+    },
+    {
+      "id": "base-typography-extraction",
+      "primary_urls": [
+        "https://base.uber.com/6d2425e9f/p/976582-typography"
+      ],
+      "medium": "typography",
+      "selection_question": "Can current primary documentation be read?",
+      "inspect_path": "Exact documentation page → if unreadable use narrower foundry/historical evidence; no snippet-derived tokens",
+      "provenance": "brand-system-source-records.json: base-typography-extraction",
+      "historical_evidence": "reported-extraction-failure / unknown",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "none",
+        "result": "not-rechecked"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "mckl-uber",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "Extraction failure only; not unavailability everywhere. No tokens/APIs/type rules verified."
+    },
+    {
+      "id": "drip-ai",
+      "primary_urls": [
+        "https://www.behance.net/gallery/226476075/Drip-AI-%28%29-"
+      ],
+      "medium": "korean-interface",
+      "selection_question": "How do Korean type, sentence selection and contextual controls cooperate?",
+      "inspect_path": "Case study → actual app-screen sequence and style-guide panel; separate oversized presentation titles/tilted phones from UI. Inspect selected sentence/highlight/contextual control state. Retain exact panel image URL or video timestamp and screenshot crop.",
+      "provenance": "new-source-evidence.json: drip-ai",
+      "historical_evidence": "Parent reported visual observations only; worker visual inspection absent",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "web-text",
+        "result": "web-text403; no usable visual"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "uber-redesign",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "Reported white/gray surfaces, orange selection, black controls; style labels Pretendard and Latin DS Sans. Verify labels/faces; never silently rename or universalize."
+    },
+    {
+      "id": "hig-layout",
+      "primary_urls": [
+        "https://developer.apple.com/design/human-interface-guidelines/layout",
+        "https://developer.apple.com/design/human-interface-guidelines/layout.md"
+      ],
+      "medium": "platform-guidance",
+      "selection_question": "How do hierarchy and grouping adapt?",
+      "inspect_path": "Hierarchy/grouping/platform sections and relevant illustrations at actual scale",
+      "provenance": "new-source-evidence.json: hig-layout",
+      "historical_evidence": "Parent reported primary guidance; worker obtained JS-shell only",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "web-text",
+        "result": "HTML JS-shell; official Markdown link found; reader rejects text/markdown"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "jakubkrehel",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "Text guidance is not maker visual inspection. No Apple fonts/assets bundled."
+    },
+    {
+      "id": "hig-buttons",
+      "primary_urls": [
+        "https://developer.apple.com/design/human-interface-guidelines/buttons",
+        "https://developer.apple.com/design/human-interface-guidelines/buttons.md"
+      ],
+      "medium": "platform-guidance",
+      "selection_question": "Which action deserves prominence?",
+      "inspect_path": "Styling/prominence/platform sections and button examples/states",
+      "provenance": "new-source-evidence.json: hig-buttons",
+      "historical_evidence": "Parent reported primary guidance; worker obtained JS-shell only",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "web-text",
+        "result": "HTML JS-shell; official Markdown link found; reader rejects text/markdown"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "jakubkrehel",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "Text guidance is not maker visual inspection. No Apple fonts/assets bundled."
+    },
+    {
+      "id": "hig-typography",
+      "primary_urls": [
+        "https://developer.apple.com/design/human-interface-guidelines/typography",
+        "https://developer.apple.com/design/human-interface-guidelines/typography.md"
+      ],
+      "medium": "platform-guidance",
+      "selection_question": "How does scalable type retain hierarchy?",
+      "inspect_path": "Legibility/text styles/Dynamic Type and illustrated examples; SF Pro does not establish Korean coverage",
+      "provenance": "new-source-evidence.json: hig-typography",
+      "historical_evidence": "Parent reported primary guidance; worker obtained JS-shell only",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "web-text",
+        "result": "HTML JS-shell; official Markdown link found; reader rejects text/markdown"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "jakubkrehel",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "Text guidance is not maker visual inspection. No Apple fonts/assets bundled."
+    },
+    {
+      "id": "hig-accessibility",
+      "primary_urls": [
+        "https://developer.apple.com/design/human-interface-guidelines/accessibility",
+        "https://developer.apple.com/design/human-interface-guidelines/accessibility.md"
+      ],
+      "medium": "platform-guidance",
+      "selection_question": "How does the design support differing access needs?",
+      "inspect_path": "Relevant vision/text/interaction guidance and examples; read platform target guidance in context, not44pt as universal minimum",
+      "provenance": "new-source-evidence.json: hig-accessibility",
+      "historical_evidence": "Parent reported primary guidance; worker obtained JS-shell only",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "web-text",
+        "result": "HTML JS-shell; official Markdown link found; reader rejects text/markdown"
+      },
+      "maker_visual_inspection": false,
+      "alternative": "jakubkrehel",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse.",
+      "limitations": "Text guidance is not maker visual inspection. No Apple fonts/assets bundled."
+    },
+    {
+      "id": "66girls",
+      "primary_urls": [
+        "https://66girls.co.kr/"
+      ],
+      "medium": "commerce-editorial",
+      "selection_question": "How do image consistency, information order and editorial context support this task?",
+      "inspect_path": "Open public homepage → select a relevant listing/detail or editorial story → inspect actual images, title/metadata/price hierarchy and navigation at recorded viewport. Compare with common-unique using the same dimensions; no mobile app inference.",
+      "provenance": "new-source-evidence.json: 66girls",
+      "historical_evidence": "Reported coordinator desktop observations across a small convenience sample: varied seller imagery and brand/item/price order versus coherent lifestyle imagery versus editorial/cultural context. Not source-by-source measurements or current mobile/runtime verification.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "reported coordinator web-text",
+        "result": "Primary text read: categories and promotions. Worker has not viewed current source pixels."
+      },
+      "maker_visual_inspection": false,
+      "alternative": "common-unique",
+      "rights": "Links and original comparison questions only; no images, assets or code bundled. Exact reuse rights require checking.",
+      "limitations": "Text-only current evidence; earlier reported sample does not prove broad audience preference, prevalence, causation or current rendered behavior."
+    },
+    {
+      "id": "common-unique",
+      "primary_urls": [
+        "https://common-unique.com/"
+      ],
+      "medium": "commerce-editorial",
+      "selection_question": "How do image consistency, information order and editorial context support this task?",
+      "inspect_path": "Open public homepage → select a relevant listing/detail or editorial story → inspect actual images, title/metadata/price hierarchy and navigation at recorded viewport. Compare with 66girls using the same dimensions; no mobile app inference.",
+      "provenance": "new-source-evidence.json: common-unique",
+      "historical_evidence": "Reported coordinator desktop observations across a small convenience sample: varied seller imagery and brand/item/price order versus coherent lifestyle imagery versus editorial/cultural context. Not source-by-source measurements or current mobile/runtime verification.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "reported coordinator web-text",
+        "result": "Primary text read: promotion strips and product listings. Worker has not viewed current source pixels."
+      },
+      "maker_visual_inspection": false,
+      "alternative": "66girls",
+      "rights": "Links and original comparison questions only; no images, assets or code bundled. Exact reuse rights require checking.",
+      "limitations": "Text-only current evidence; earlier reported sample does not prove broad audience preference, prevalence, causation or current rendered behavior."
+    },
+    {
+      "id": "fruitsfamily",
+      "primary_urls": [
+        "https://fruitsfamily.com/"
+      ],
+      "medium": "commerce-editorial",
+      "selection_question": "How do image consistency, information order and editorial context support this task?",
+      "inspect_path": "Open public homepage → select a relevant listing/detail or editorial story → inspect actual images, title/metadata/price hierarchy and navigation at recorded viewport. Compare with ssense using the same dimensions; no mobile app inference.",
+      "provenance": "new-source-evidence.json: fruitsfamily",
+      "historical_evidence": "Reported coordinator desktop observations across a small convenience sample: varied seller imagery and brand/item/price order versus coherent lifestyle imagery versus editorial/cultural context. Not source-by-source measurements or current mobile/runtime verification.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "reported coordinator web-text",
+        "result": "Primary text read: brand, item and price records. Worker has not viewed current source pixels."
+      },
+      "maker_visual_inspection": false,
+      "alternative": "ssense",
+      "rights": "Links and original comparison questions only; no images, assets or code bundled. Exact reuse rights require checking.",
+      "limitations": "Text-only current evidence; earlier reported sample does not prove broad audience preference, prevalence, causation or current rendered behavior."
+    },
+    {
+      "id": "ssense",
+      "primary_urls": [
+        "https://www.ssense.com/en-us",
+        "https://www.ssense.com/en-gb/editorial/fashion"
+      ],
+      "medium": "commerce-editorial",
+      "selection_question": "How do image consistency, information order and editorial context support this task?",
+      "inspect_path": "Open public homepage → select a relevant listing/detail or editorial story → inspect actual images, title/metadata/price hierarchy and navigation at recorded viewport. Compare with fruitsfamily using the same dimensions; no mobile app inference. Additional exact route: https://www.ssense.com/en-gb/editorial/fashion. Read its applicable source/rights/version context; documentation is not visual inspection.",
+      "provenance": "new-source-evidence.json: ssense",
+      "historical_evidence": "Reported coordinator desktop observations across a small convenience sample: varied seller imagery and brand/item/price order versus coherent lifestyle imagery versus editorial/cultural context. Not source-by-source measurements or current mobile/runtime verification.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "reported coordinator web-text",
+        "result": "Primary text read: editorial story links. Worker has not viewed current source pixels."
+      },
+      "maker_visual_inspection": false,
+      "alternative": "fruitsfamily",
+      "rights": "Links and original comparison questions only; no images, assets or code bundled. Exact reuse rights require checking.",
+      "limitations": "Text-only current evidence; earlier reported sample does not prove broad audience preference, prevalence, causation or current rendered behavior.",
+      "resolved_routes": [
+        {
+          "url": "https://www.ssense.com/en-gb/editorial/fashion",
+          "path": "reference-analysis.md:44",
+          "sha": null,
+          "evidence_type": "existing pack prose citation; not newly fetched or viewed"
+        }
+      ]
+    },
+    {
+      "id": "29cm",
+      "primary_urls": [
+        "https://www.29cm.co.kr/"
+      ],
+      "medium": "commerce-editorial",
+      "selection_question": "How do campaign imagery and browsing hierarchy relate?",
+      "inspect_path": "Homepage → publicly accessible campaign → exact product/editorial state; view imagery/type/navigation and record viewport. Compare task fit with other retail surfaces.",
+      "provenance": "reference-analysis.md:44",
+      "historical_evidence": "Historical complementary primary-text extraction of campaigns reported; no current maker visual observation.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "existing packaged prose citation read",
+        "result": "Exact link and context recovered during coverage repair; endpoint not newly fetched."
+      },
+      "maker_visual_inspection": false,
+      "alternative": "ssense",
+      "rights": "Navigation and independently authored questions only. No source assets/code/fonts/prose bundled; verify applicable exact-use rights.",
+      "limitations": "Supporting text/navigation is not maker visual inspection, artifact verification or permission. Source may change; open current primary material before dependent claims."
+    },
+    {
+      "id": "double-diamond",
+      "primary_urls": [
+        "https://www.designcouncil.org.uk/resources/the-double-diamond/"
+      ],
+      "medium": "methodology",
+      "selection_question": "Which exploration/convergence stage does this task need?",
+      "inspect_path": "Read official Double Diamond process explanation; use for method framing, not a visual style or mandatory workshop.",
+      "provenance": "sources.md:32; lifecycle.md:3",
+      "historical_evidence": "Existing attributed methodology reference; no current fetch or visual claim.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "existing packaged prose citation read",
+        "result": "Exact link and context recovered during coverage repair; endpoint not newly fetched."
+      },
+      "maker_visual_inspection": false,
+      "alternative": "jakubkrehel",
+      "rights": "Navigation and independently authored questions only. No source assets/code/fonts/prose bundled; verify applicable exact-use rights.",
+      "limitations": "Supporting text/navigation is not maker visual inspection, artifact verification or permission. Source may change; open current primary material before dependent claims."
+    },
+    {
+      "id": "wcag-quickref",
+      "primary_urls": [
+        "https://www.w3.org/WAI/WCAG22/quickref/"
+      ],
+      "medium": "accessibility",
+      "selection_question": "Which accessibility criteria apply to this artifact?",
+      "inspect_path": "Open quick reference → relevant criterion and techniques; verify applicability/version. This supports checks, not conformance certification or visual taste.",
+      "provenance": "sources.md:33; validation.md:20",
+      "historical_evidence": "Existing accessibility reference; no current conformance audit.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "existing packaged prose citation read",
+        "result": "Exact link and context recovered during coverage repair; endpoint not newly fetched."
+      },
+      "maker_visual_inspection": false,
+      "alternative": "w3c-page-structure",
+      "rights": "Navigation and independently authored questions only. No source assets/code/fonts/prose bundled; verify applicable exact-use rights.",
+      "limitations": "Supporting text/navigation is not maker visual inspection, artifact verification or permission. Source may change; open current primary material before dependent claims."
+    },
+    {
+      "id": "w3c-page-structure",
+      "primary_urls": [
+        "https://www.w3.org/WAI/tutorials/page-structure/"
+      ],
+      "medium": "accessibility",
+      "selection_question": "How should semantic page regions support navigation?",
+      "inspect_path": "Read headings/regions guidance for the actual structure; inspect the produced semantic tree separately.",
+      "provenance": "sources.md:33; validation.md:24",
+      "historical_evidence": "Existing semantic-structure reference; no current artifact verification.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "existing packaged prose citation read",
+        "result": "Exact link and context recovered during coverage repair; endpoint not newly fetched."
+      },
+      "maker_visual_inspection": false,
+      "alternative": "wcag-quickref",
+      "rights": "Navigation and independently authored questions only. No source assets/code/fonts/prose bundled; verify applicable exact-use rights.",
+      "limitations": "Supporting text/navigation is not maker visual inspection, artifact verification or permission. Source may change; open current primary material before dependent claims."
+    },
+    {
+      "id": "exitbind-package-layout",
+      "primary_urls": [
+        "https://github.com/PANIC-ANGEL-SCIENCE/exitbind/tree/main/plugins/exitbind"
+      ],
+      "medium": "governance",
+      "selection_question": "What package layout was used as a procedural reference?",
+      "inspect_path": "Read manifest/skill layout at the relevant version; documentation grants no install, execution or acceptance authority.",
+      "provenance": "sources.md:34",
+      "historical_evidence": "Historical package-layout inspection recorded in sources.md; current tree may change.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "existing packaged prose citation read",
+        "result": "Exact link and context recovered during coverage repair; endpoint not newly fetched."
+      },
+      "maker_visual_inspection": false,
+      "alternative": "exitbind-owned-agents",
+      "rights": "Navigation and independently authored questions only. No source assets/code/fonts/prose bundled; verify applicable exact-use rights.",
+      "limitations": "Supporting text/navigation is not maker visual inspection, artifact verification or permission. Source may change; open current primary material before dependent claims."
+    },
+    {
+      "id": "exitbind-owned-agents",
+      "primary_urls": [
+        "https://github.com/PANIC-ANGEL-SCIENCE/exitbind/blob/main/docs/user-owned-agents.md"
+      ],
+      "medium": "governance",
+      "selection_question": "Who owns configured roles and their authority?",
+      "inspect_path": "Read project-owned agent documentation; retain actual host/user scope and current governed assignment. Not visual inspiration.",
+      "provenance": "sources.md:34; exitbind.md:15",
+      "historical_evidence": "Existing procedural reference; no current execution or authority grant.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "existing packaged prose citation read",
+        "result": "Exact link and context recovered during coverage repair; endpoint not newly fetched."
+      },
+      "maker_visual_inspection": false,
+      "alternative": "exitbind-package-layout",
+      "rights": "Navigation and independently authored questions only. No source assets/code/fonts/prose bundled; verify applicable exact-use rights.",
+      "limitations": "Supporting text/navigation is not maker visual inspection, artifact verification or permission. Source may change; open current primary material before dependent claims."
+    },
+    {
+      "id": "lovable-terms",
+      "primary_urls": [
+        "https://lovable.dev/terms"
+      ],
+      "medium": "rights",
+      "selection_question": "What terms apply to the exact intended preview/material use?",
+      "inspect_path": "Read current applicable terms before reuse and separately check third-party image/font rights; access to a preview is not redistribution permission.",
+      "provenance": "preview-evidence.md:17",
+      "historical_evidence": "Existing rights-navigation citation; no legal conclusion or current terms verification.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "existing packaged prose citation read",
+        "result": "Exact link and context recovered during coverage repair; endpoint not newly fetched."
+      },
+      "maker_visual_inspection": false,
+      "alternative": "landing-claims",
+      "rights": "Navigation and independently authored questions only. No source assets/code/fonts/prose bundled; verify applicable exact-use rights.",
+      "limitations": "Supporting text/navigation is not maker visual inspection, artifact verification or permission. Source may change; open current primary material before dependent claims."
+    }
+  ],
+  "fallback_policy": {
+    "order": [
+      "same-task-platform-state-primary-search",
+      "adjacent-task-explicit-limit",
+      "secondary-style-contrast",
+      "provisional-if-task-evidence-missing"
+    ],
+    "query_pattern": "medium/platform + user action + target state + screenshot/example",
+    "primary_hosts": [
+      "product-maker official support/user guide",
+      "official product demonstration/case study",
+      "publisher-controlled app listing"
+    ],
+    "relevance_checks": [
+      "core task",
+      "platform/form factor",
+      "visible state",
+      "content/script difference",
+      "source date/version"
+    ],
+    "evidence_rule": "Search results, thumbnails and text are navigation; open and view exact primary media. Unrelated accessible pixels cannot establish task readiness.",
+    "bounded_search": "Try two targeted queries and promising primary pages; retain missing evidence and provisional outcome if no adequate viewed analogue."
+  }
+}

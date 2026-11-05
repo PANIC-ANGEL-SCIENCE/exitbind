@@ -12,7 +12,7 @@ Begin body text at the real reading distance and medium. Compose the title as a 
 
 ## Shortlist with actual assets in mind
 
-Inventory scripts, content length, numerals, punctuation, symbols, emphasis and deployment constraints. Compare a small shortlist using identical text and intended role sizes: first equal declared size, then optical compensation with the difference recorded. Equal CSS size is not equal perceived size. Keep content and layout comparable; better words or shorter titles can bias selection.
+Before direction/production, inventory scripts, content length, numerals, punctuation, symbols, emphasis and deployment constraints. For Korean work, retain a real Hangul/Latin/numeral shortlist with family, actual weight and role size. Ordinary work renders comparable specimens before selection; explicit first-pass plans before its single build and inspects the frozen result. A system stack is a deliberate candidate, not evidence of brand expression by itself. Compare a small shortlist using identical text and intended role sizes: first equal declared size, then optical compensation with the difference recorded. Equal CSS size is not equal perceived size. Keep content and layout comparable; better words or shorter titles can bias selection.
 
 Possible paths, never defaults:
 

@@ -45,11 +45,11 @@ Specify the image's job: show the actual product, communicate evidence, establis
 
 Choose crop, camera/viewpoint, scale, focal point, light, texture, background and treatment together. Protect essential information under text overlays and responsive crops. Inspect missing-image behavior. Illustration style should support content and scale, not substitute ornament for a clear story.
 
-For a concrete parameter, budget, fallback and rejection sheet, use [visual-methods.md](visual-methods.md). Choose assets/effects only after the composition and content roles are clear.
+For a concrete parameter, budget, fallback and rejection sheet, use [visual-methods.md](visual-methods.md). Develop assets, effects, content roles and composition together. An image, material, typeface or effect may lead a concept; test its relationship to hierarchy and meaning before committing production effort.
 
 ## Material, surface, light and depth
 
-For digital surfaces, use elevation or shadow to communicate hierarchy, layering or interaction where useful. Avoid an arbitrary shadow on every object. Consider contrast and compositing across backgrounds.
+Elevation or shadow can express atmosphere, material and identity as well as hierarchy or interaction. Choose placement and softness with the concept; test contrast and compositing rather than applying or banning shadows mechanically.
 
 For 3D/physical work, specify material intent separately from lighting: reflectance/roughness, texture scale, translucency, finish, joining and wear. A glossy render does not establish the material's real feel or durability. Use samples and tests for physical claims. Decorative “grain” or depth should remain subordinate to legibility and the concept.
 

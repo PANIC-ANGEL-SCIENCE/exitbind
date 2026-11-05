@@ -1,0 +1,145 @@
+{
+  "date": "2026-11-05",
+  "scope": "Public Drip AI, Apple HIG and four public commerce/editorial comparison sources; no private associations",
+  "records": [
+    {
+      "id": "drip-ai",
+      "primary_urls": [
+        "https://www.behance.net/gallery/226476075/Drip-AI-%28%29-"
+      ],
+      "historical_evidence": "Parent reported visual observations only; worker visual inspection absent",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "web-text",
+        "result": "web-text403; no usable visual"
+      },
+      "maker_visual_inspection": false,
+      "limitations": "Reported white/gray surfaces, orange selection, black controls; style labels Pretendard and Latin DS Sans. Verify labels/faces; never silently rename or universalize.",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse."
+    },
+    {
+      "id": "hig-layout",
+      "primary_urls": [
+        "https://developer.apple.com/design/human-interface-guidelines/layout",
+        "https://developer.apple.com/design/human-interface-guidelines/layout.md"
+      ],
+      "historical_evidence": "Parent reported primary guidance; worker obtained JS-shell only",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "web-text",
+        "result": "HTML JS-shell; official Markdown link found; reader rejects text/markdown"
+      },
+      "maker_visual_inspection": false,
+      "limitations": "Text guidance is not maker visual inspection. No Apple fonts/assets bundled.",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse."
+    },
+    {
+      "id": "hig-buttons",
+      "primary_urls": [
+        "https://developer.apple.com/design/human-interface-guidelines/buttons",
+        "https://developer.apple.com/design/human-interface-guidelines/buttons.md"
+      ],
+      "historical_evidence": "Parent reported primary guidance; worker obtained JS-shell only",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "web-text",
+        "result": "HTML JS-shell; official Markdown link found; reader rejects text/markdown"
+      },
+      "maker_visual_inspection": false,
+      "limitations": "Text guidance is not maker visual inspection. No Apple fonts/assets bundled.",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse."
+    },
+    {
+      "id": "hig-typography",
+      "primary_urls": [
+        "https://developer.apple.com/design/human-interface-guidelines/typography",
+        "https://developer.apple.com/design/human-interface-guidelines/typography.md"
+      ],
+      "historical_evidence": "Parent reported primary guidance; worker obtained JS-shell only",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "web-text",
+        "result": "HTML JS-shell; official Markdown link found; reader rejects text/markdown"
+      },
+      "maker_visual_inspection": false,
+      "limitations": "Text guidance is not maker visual inspection. No Apple fonts/assets bundled.",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse."
+    },
+    {
+      "id": "hig-accessibility",
+      "primary_urls": [
+        "https://developer.apple.com/design/human-interface-guidelines/accessibility",
+        "https://developer.apple.com/design/human-interface-guidelines/accessibility.md"
+      ],
+      "historical_evidence": "Parent reported primary guidance; worker obtained JS-shell only",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "web-text",
+        "result": "HTML JS-shell; official Markdown link found; reader rejects text/markdown"
+      },
+      "maker_visual_inspection": false,
+      "limitations": "Text guidance is not maker visual inspection. No Apple fonts/assets bundled.",
+      "rights": "Links and original analysis only. No code/fonts/images/audio/video bundled. Verify exact asset/version rights before reuse."
+    },
+    {
+      "id": "66girls",
+      "primary_urls": [
+        "https://66girls.co.kr/"
+      ],
+      "historical_evidence": "Reported coordinator desktop observations across a small convenience sample: varied seller imagery and brand/item/price order versus coherent lifestyle imagery versus editorial/cultural context. Not source-by-source measurements or current mobile/runtime verification.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "reported coordinator web-text",
+        "result": "Primary text read: categories and promotions. Worker has not viewed current source pixels."
+      },
+      "maker_visual_inspection": false,
+      "limitations": "Text-only current evidence; earlier reported sample does not prove broad audience preference, prevalence, causation or current rendered behavior.",
+      "rights": "Links and original comparison questions only; no images, assets or code bundled. Exact reuse rights require checking."
+    },
+    {
+      "id": "common-unique",
+      "primary_urls": [
+        "https://common-unique.com/"
+      ],
+      "historical_evidence": "Reported coordinator desktop observations across a small convenience sample: varied seller imagery and brand/item/price order versus coherent lifestyle imagery versus editorial/cultural context. Not source-by-source measurements or current mobile/runtime verification.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "reported coordinator web-text",
+        "result": "Primary text read: promotion strips and product listings. Worker has not viewed current source pixels."
+      },
+      "maker_visual_inspection": false,
+      "limitations": "Text-only current evidence; earlier reported sample does not prove broad audience preference, prevalence, causation or current rendered behavior.",
+      "rights": "Links and original comparison questions only; no images, assets or code bundled. Exact reuse rights require checking."
+    },
+    {
+      "id": "fruitsfamily",
+      "primary_urls": [
+        "https://fruitsfamily.com/"
+      ],
+      "historical_evidence": "Reported coordinator desktop observations across a small convenience sample: varied seller imagery and brand/item/price order versus coherent lifestyle imagery versus editorial/cultural context. Not source-by-source measurements or current mobile/runtime verification.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "reported coordinator web-text",
+        "result": "Primary text read: brand, item and price records. Worker has not viewed current source pixels."
+      },
+      "maker_visual_inspection": false,
+      "limitations": "Text-only current evidence; earlier reported sample does not prove broad audience preference, prevalence, causation or current rendered behavior.",
+      "rights": "Links and original comparison questions only; no images, assets or code bundled. Exact reuse rights require checking."
+    },
+    {
+      "id": "ssense",
+      "primary_urls": [
+        "https://www.ssense.com/en-us"
+      ],
+      "historical_evidence": "Reported coordinator desktop observations across a small convenience sample: varied seller imagery and brand/item/price order versus coherent lifestyle imagery versus editorial/cultural context. Not source-by-source measurements or current mobile/runtime verification.",
+      "current_access": {
+        "date": "2026-11-05",
+        "method": "reported coordinator web-text",
+        "result": "Primary text read: editorial story links. Worker has not viewed current source pixels."
+      },
+      "maker_visual_inspection": false,
+      "limitations": "Text-only current evidence; earlier reported sample does not prove broad audience preference, prevalence, causation or current rendered behavior.",
+      "rights": "Links and original comparison questions only; no images, assets or code bundled. Exact reuse rights require checking."
+    }
+  ]
+}

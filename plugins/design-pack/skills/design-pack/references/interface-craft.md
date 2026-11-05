@@ -1,6 +1,6 @@
 # Interface craft in real states
 
-Use for a concrete refinement or state/fixture investigation alongside [interface.md](interface.md). These methods extend existing visual guidance with a more explicit evidence boundary. They are independently written synthesis from the bounded [source review](interface-source-notes.md); source-specific numerical and tooling prescriptions are not pack defaults.
+Load before interface direction and production, then use for refinement or state/fixture investigation alongside [interface.md](interface.md). These methods extend existing visual guidance with a more explicit evidence boundary. They are independently written synthesis from the bounded [source review](interface-source-notes.md); source-specific numerical and tooling prescriptions are not pack defaults.
 
 ## Choose the operation
 

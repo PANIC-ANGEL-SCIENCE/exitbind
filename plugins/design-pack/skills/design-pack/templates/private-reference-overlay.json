@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "visibility": "project-private",
+  "owner_authorization": null,
+  "allowed_recipients": [],
+  "board_locator": null,
+  "board_access": "unresolved",
+  "items": [],
+  "item_shape": {
+    "id": null,
+    "primary_url_or_local_path": null,
+    "source_state_or_frame": null,
+    "access_status": "unresolved",
+    "capture_locator": null,
+    "observed_by": null,
+    "observed_at": null,
+    "viewport_or_scale": null,
+    "evidence_type": "uninspected",
+    "observation": null,
+    "rights": "unknown",
+    "allowed_recipients": []
+  }
+}

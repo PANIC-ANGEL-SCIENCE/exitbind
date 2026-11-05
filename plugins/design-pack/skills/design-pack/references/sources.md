@@ -64,3 +64,8 @@ See [preview-evidence.md](preview-evidence.md) and [aesthetic-source-records.jso
 ## Bounded additions in 0.5.0
 
 [Brand/system evidence](brand-system-evidence.md) and [public records](brand-system-source-records.json) distinguish reported historical Uber imagery/text, foundry description and failed Base documentation extraction. No current tokens, app behavior, font rights or proprietary assets are inferred. [Brand to system](brand-system.md), its template and fictional worked chain are original synthesis. Earlier evidence ledgers remain unchanged; no private reference associations or preferences are distributed.
+
+
+## Autonomous navigation in 0.6.0
+
+The [catalog](reference-catalog.md) and [structured routes](reference-catalog.json) retain all earlier source identities/URLs and add public Drip AI, Apple HIG and four commerce/editorial comparison routes. [New evidence](new-source-evidence.json) separates reported source observations from current tool-specific access. All prior machine-readable ledgers remain unchanged. Current connector listings validate selected paths; two listed Taste screenshots were viewed as bounded examples, not as native Korean app or interaction evidence. No current worker observation is inherited as a future maker's own inspection. Use [discovery.md](discovery.md) to obtain the actual selected materials before deciding direction.

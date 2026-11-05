@@ -8,12 +8,16 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REFS = ('briefing roles lifecycle brand-system brand-system-evidence direction reference-analysis visual-methods aesthetic-construction typography preview-evidence first-pass elements color interface interface-craft interface-source-notes diagrams communication-design '
+REFS = ('discovery reference-catalog briefing roles lifecycle brand-system brand-system-evidence direction reference-analysis visual-methods aesthetic-construction typography preview-evidence first-pass elements color interface interface-craft interface-source-notes diagrams communication-design '
         'physical-design motion-sound spatial validation memory exitbind sources').split()
 EXPECTED = {
     'README.md', 'LICENSE', 'VALIDATION.md', 'EVALUATION.md', 'plugin.json',
     '.claude-plugin/plugin.json', '.codex-plugin/plugin.json',
     'scripts/check_pack.py', 'scripts/package.py',
+    'skills/design-pack/references/reference-catalog.json',
+    'skills/design-pack/references/new-source-evidence.json',
+    'skills/design-pack/templates/private-reference-overlay.json',
+    'skills/design-pack/templates/reference-session.md',
     'skills/design-pack/SKILL.md',
     'skills/design-pack/references/source-records.json',
     'skills/design-pack/references/web-source-records.json',
@@ -207,6 +211,292 @@ def check_brand_records(records, notes):
             errors.append('brand source without lineage note')
     return errors
 
+def markdown_public_urls(markdown):
+    """Parse this pack's inline/image, definition and autolink destinations.
+
+    Skip code/comments; balance literal parentheses, consume Markdown escapes,
+    and preserve percent escapes verbatim. Titles are not URL characters.
+    This is a destination parser, not a general Markdown renderer.
+    """
+    import html
+    lines = []
+    fence = None
+    for line in markdown.splitlines():
+        marker = re.match(r'^ {0,3}(`{3,}|~{3,})', line)
+        if marker:
+            token = marker.group(1)
+            if fence is None:
+                fence = token
+            elif token[0] == fence[0] and len(token) >= len(fence):
+                fence = None
+            lines.append('')
+            continue
+        if fence is None:
+            lines.append(line)
+    text = re.sub(r'<!--.*?-->', '', '\n'.join(lines), flags=re.S)
+    # Code spans use the same exact backtick-run length on both sides.
+    masked = list(text)
+    pos = 0
+    while pos < len(text):
+        if text[pos] != '`':
+            pos += 1
+            continue
+        end = pos
+        while end < len(text) and text[end] == '`':
+            end += 1
+        run = text[pos:end]
+        close = text.find(run, end)
+        while close >= 0 and ((close and text[close-1] == '`') or
+                              (close+len(run) < len(text) and text[close+len(run)] == '`')):
+            close = text.find(run, close+len(run))
+        if close < 0:
+            pos = end
+            continue
+        masked[pos:close+len(run)] = ' ' * (close+len(run)-pos)
+        pos = close+len(run)
+    text = ''.join(masked)
+
+    def destination(start):
+        while start < len(text) and text[start].isspace():
+            start += 1
+        angle = start < len(text) and text[start] == '<'
+        if angle:
+            start += 1
+        value = []
+        depth = 0
+        i = start
+        while i < len(text):
+            ch = text[i]
+            if ch == '\\' and i+1 < len(text):
+                value.append(text[i+1]);i += 2;continue
+            if angle:
+                if ch == '>':
+                    return html.unescape(''.join(value))
+                if ch in '\r\n':
+                    return None
+            else:
+                if ch == '(':
+                    depth += 1
+                elif ch == ')':
+                    if depth == 0:
+                        break
+                    depth -= 1
+                elif ch.isspace():
+                    break
+            value.append(ch);i += 1
+        if angle or depth:
+            return None
+        return html.unescape(''.join(value))
+
+    found = set()
+    starts = [m.end() for m in re.finditer(r'(?<!\\)\]\(', text)]
+    starts += [m.end() for m in re.finditer(r'^ {0,3}\[[^\]\n]+\]:', text, re.M)]
+    for start in starts:
+        url = destination(start)
+        if url and url.startswith('https://'):
+            found.add(url)
+    for match in re.finditer(r'<(https://[^<>\s]+)>', text):
+        found.add(html.unescape(match.group(1)))
+    return found
+
+
+def check_catalog(root):
+    """Coverage/provenance safeguards; never evidence of aesthetic success."""
+    errors = []
+    ref = root/'skills/design-pack/references'
+    catalog = json.loads((ref/'reference-catalog.json').read_text())
+    entries = catalog['entries']
+    fallback = catalog.get('fallback_policy', {})
+    order = fallback.get('order', [])
+    if (not order or order[0] != 'same-task-platform-state-primary-search'
+            or 'provisional-if-task-evidence-missing' not in order):
+        errors.append('catalog fallback must prioritize task evidence')
+    for field in ('query_pattern','primary_hosts','relevance_checks','evidence_rule','bounded_search'):
+        if not fallback.get(field):
+            errors.append('catalog fallback missing field: '+field)
+    expected_ids = set(REPOS) | set(AESTHETIC_SOURCES) | {'jakubkrehel', 'drip-ai'}
+    expected_ids |= {'hig-'+n for n in ('layout','buttons','typography','accessibility')}
+    expected_ids |= {'29cm','double-diamond','wcag-quickref','w3c-page-structure',
+                     'exitbind-package-layout','exitbind-owned-agents','lovable-terms'}
+    expected_urls = set()
+    for name in ('source-records','web-source-records','aesthetic-source-records','brand-system-source-records'):
+        for record in json.loads((ref/(name+'.json')).read_text()):
+            expected_ids.add(record.get('id', record.get('repository')))
+            expected_urls.update(record.get('source_urls', [record.get('url')]))
+    interface = json.loads((ref/'interface-source-records.json').read_text())
+    expected_urls.add(interface['url'])
+    expected_urls.update(s['url'] for s in interface['inspected_skills'])
+    new = json.loads((ref/'new-source-evidence.json').read_text())['records']
+    new_ids = {'drip-ai','66girls','common-unique','fruitsfamily','ssense'} | {'hig-'+n for n in ('layout','buttons','typography','accessibility')}
+    if len(new) != 9 or {e['id'] for e in new} != new_ids:
+        errors.append('new source coverage mismatch')
+    expected_ids |= new_ids
+    for e in new:
+        expected_urls.update(e['primary_urls'])
+        if e.get('maker_visual_inspection') is not False:
+            errors.append('new evidence promoted to maker inspection')
+    ids = [e.get('id') for e in entries]
+    if len(ids) != len(set(ids)) or set(ids) != expected_ids:
+        errors.append('catalog source coverage mismatch')
+    urls = set()
+    allowed = {'id','primary_urls','medium','selection_question','inspect_path','provenance',
+               'historical_evidence','current_access','maker_visual_inspection','alternative',
+               'rights','limitations','resolved_routes'}
+    for e in entries:
+        if set(e)-allowed:
+            errors.append('unexpected catalog fields')
+        for field in ('medium','selection_question','inspect_path','provenance',
+                      'historical_evidence','alternative','rights','limitations'):
+            if not isinstance(e.get(field),str) or not e[field].strip():
+                errors.append('catalog missing field: '+field)
+        if e.get('maker_visual_inspection') is not False:
+            errors.append('catalog promoted to maker inspection')
+        if e.get('alternative') not in ids:
+            errors.append('catalog unresolved alternative')
+        access = e.get('current_access', {})
+        if set(access) != {'date','method','result'} or not all(isinstance(v,str) and v for v in access.values()):
+            errors.append('catalog missing current access')
+        if not isinstance(e.get('primary_urls'),list) or not e['primary_urls']:
+            errors.append('catalog missing primary URLs')
+            continue
+        for url in e['primary_urls']:
+            if not isinstance(url,str) or not url.startswith('https://'):
+                errors.append('catalog invalid public URL')
+            else:
+                urls.add(url)
+    if not expected_urls <= urls:
+        errors.append('catalog URL coverage mismatch')
+    for chapter in sorted((root/'skills').glob('*/references/*.md')):
+        for url in sorted(markdown_public_urls(chapter.read_text()) - urls):
+            errors.append('catalog missing prose URL: '+url)
+    by_id = {e['id']:e for e in entries}
+    drip = 'https://www.behance.net/gallery/226476075/Drip-AI-%28%29-'
+    if by_id.get('drip-ai',{}).get('primary_urls') != [drip]:
+        errors.append('public Drip identity drift')
+    for topic in ('layout','buttons','typography','accessibility'):
+        base = 'https://developer.apple.com/design/human-interface-guidelines/'+topic
+        if by_id.get('hig-'+topic,{}).get('primary_urls') != [base,base+'.md']:
+            errors.append('HIG identity drift')
+    overlay = json.loads((root/'skills/design-pack/templates/private-reference-overlay.json').read_text())
+    blank = {'schema_version':1,'visibility':'project-private','owner_authorization':None,
+             'allowed_recipients':[],'board_locator':None,'board_access':'unresolved','items':[],
+             'item_shape':{'id':None,'primary_url_or_local_path':None,'source_state_or_frame':None,
+                           'access_status':'unresolved','capture_locator':None,'observed_by':None,
+                           'observed_at':None,'viewport_or_scale':None,'evidence_type':'uninspected',
+                           'observation':None,'rights':'unknown','allowed_recipients':[]}}
+    if overlay != blank:
+        errors.append('public private-overlay template must remain blank')
+    routes = {
+        'skills/design-pack/references/discovery.md': ['reference-catalog.json','../templates/reference-session.md',
+                                                       '../templates/private-reference-overlay.json','interface-craft.md','typography.md'],
+        'skills/design-pack/references/first-pass.md':['discovery.md'],
+        'skills/mockup-image/SKILL.md':['../design-pack/references/discovery.md'],
+        'skills/design-pack/references/reference-catalog.md':['reference-catalog.json'],
+    }
+    for path, links in routes.items():
+        content = (root/path).read_text()
+        for link in links:
+            if f']({link})' not in content:
+                errors.append('missing discovery route: '+link)
+    skill = (root/'skills/design-pack/SKILL.md').read_text()
+    if skill.find('references/discovery.md') < 0 or skill.find('references/discovery.md') > skill.find('## One coherent process'):
+        errors.append('discovery must precede design process')
+    return errors
+
+
+def catalog_self_test():
+    fixture = r'''
+[encoded](https://example.test/Drip-%28%29-)
+[balanced](https://example.test/a_(b(c)) "Title (not URL)")
+[escaped](https://example.test/a_\(b\))
+[angle](<https://example.test/angle(a)> 'A title')
+[reference][guide]
+[guide]: https://example.test/guide_(v2) "Guide title"
+<https://example.test/auto?a=1&amp;b=2>
+`[ignored](https://example.test/inline-code)`
+<!-- [ignored](https://example.test/comment) -->
+```markdown
+[ignored](https://example.test/fenced-code)
+```
+'''
+    expected = {'https://example.test/Drip-%28%29-', 'https://example.test/a_(b(c))',
+                'https://example.test/a_(b)', 'https://example.test/angle(a)',
+                'https://example.test/guide_(v2)', 'https://example.test/auto?a=1&b=2'}
+    if markdown_public_urls(fixture) != expected:
+        raise RuntimeError('Markdown destination parsing lost exact identity or included code/title')
+    print('PASS Markdown percent escapes, balanced/escaped parentheses, titles, definitions, autolinks and code exclusions')
+    removed_routes = {
+        '29cm': 'https://www.29cm.co.kr/',
+        'exact-ssense': 'https://www.ssense.com/en-gb/editorial/fashion',
+        'exact-palette': 'https://github.com/Leonxlnx/taste-skill/blob/main/skills/taste-skill/library/palettes.json',
+        'procedural': 'https://www.w3.org/WAI/WCAG22/quickref/',
+    }
+    for name,url in removed_routes.items():
+        with tempfile.TemporaryDirectory(prefix='design-pack-test-') as tmp:
+            p=Path(tmp)/'pack';shutil.copytree(ROOT,p,ignore=shutil.ignore_patterns('__pycache__'))
+            f=p/'skills/design-pack/references/reference-catalog.json'
+            d=json.loads(f.read_text())
+            for entry in d['entries']:
+                entry['primary_urls']=[u for u in entry['primary_urls'] if u != url]
+            f.write_text(json.dumps(d))
+            if 'catalog missing prose URL: '+url not in check(p):
+                raise RuntimeError('prose coverage negative missed: '+name)
+            print('PASS reject prose route '+name)
+    with tempfile.TemporaryDirectory(prefix='design-pack-test-') as tmp:
+        p=Path(tmp)/'pack';shutil.copytree(ROOT,p,ignore=shutil.ignore_patterns('__pycache__'))
+        f=p/'skills/design-pack/references/color.md'
+        url='https://example.test/new_(palette)%28v2%29'
+        f.write_text(f.read_text()+'\n[New public source]('+url+' "Context")\n')
+        if 'catalog missing prose URL: '+url not in check(p):
+            raise RuntimeError('future balanced/encoded prose route omitted')
+        print('PASS reject uncataloged future prose source')
+    def mutate(p, fn):
+        path=p/'skills/design-pack/references/reference-catalog.json'
+        d=json.loads(path.read_text());fn(d['entries']);path.write_text(json.dumps(d))
+    mutations = [
+        ('missing-entry', lambda p:mutate(p,lambda e:e.pop()),'catalog source coverage mismatch'),
+        ('missing-url', lambda p:mutate(p,lambda e:e[0].update(primary_urls=[])),'catalog URL coverage mismatch'),
+        ('summary-as-inspected', lambda p:mutate(p,lambda e:e[0].update(maker_visual_inspection=True)),'catalog promoted to maker inspection'),
+        ('missing-state-path',lambda p:mutate(p,lambda e:e[0].pop('inspect_path')),'catalog missing field: inspect_path'),
+        ('stale-access',lambda p:mutate(p,lambda e:e[0].pop('current_access')),'catalog missing current access'),
+        ('missing-rights',lambda p:mutate(p,lambda e:e[0].pop('rights')),'catalog missing field: rights'),
+        ('private-membership',lambda p:mutate(p,lambda e:e[0].update(private_board='synthetic-private-placeholder')),'unexpected catalog fields'),
+        ('dead-alternative',lambda p:mutate(p,lambda e:e[0].update(alternative='absent')),'catalog unresolved alternative'),
+    ]
+    for name,change,expected in mutations:
+        with tempfile.TemporaryDirectory(prefix='design-pack-test-') as tmp:
+            p=Path(tmp)/'pack';shutil.copytree(ROOT,p,ignore=shutil.ignore_patterns('__pycache__'))
+            change(p)
+            if expected not in check(p):raise RuntimeError('catalog negative missed: '+name)
+            print('PASS reject catalog '+name)
+    for path,link in [('skills/design-pack/references/first-pass.md','discovery.md'),
+                      ('skills/design-pack/references/discovery.md','../templates/reference-session.md'),
+                      ('skills/mockup-image/SKILL.md','../design-pack/references/discovery.md')]:
+        with tempfile.TemporaryDirectory(prefix='design-pack-test-') as tmp:
+            p=Path(tmp)/'pack';shutil.copytree(ROOT,p,ignore=shutil.ignore_patterns('__pycache__'))
+            f=p/path;f.write_text(f.read_text().replace(']('+link+')','](#removed)'))
+            if 'missing discovery route: '+link not in check(p):raise RuntimeError('discovery route missed')
+            print('PASS reject discovery route '+link)
+    with tempfile.TemporaryDirectory(prefix='design-pack-test-') as tmp:
+        p=Path(tmp)/'pack';shutil.copytree(ROOT,p,ignore=shutil.ignore_patterns('__pycache__'))
+        f=p/'skills/design-pack/templates/private-reference-overlay.json'
+        d=json.loads(f.read_text());d['board_locator']='https://example.invalid/private';f.write_text(json.dumps(d))
+        if 'public private-overlay template must remain blank' not in check(p):raise RuntimeError('private overlay leak missed')
+        print('PASS reject populated private overlay')
+    for name, change, expected in [
+        ('style-before-task', lambda d:d['fallback_policy'].update(order=['secondary-style-contrast']),
+         'catalog fallback must prioritize task evidence'),
+        ('missing-relevance', lambda d:d['fallback_policy'].pop('relevance_checks'),
+         'catalog fallback missing field: relevance_checks'),
+    ]:
+        with tempfile.TemporaryDirectory(prefix='design-pack-test-') as tmp:
+            p=Path(tmp)/'pack';shutil.copytree(ROOT,p,ignore=shutil.ignore_patterns('__pycache__'))
+            f=p/'skills/design-pack/references/reference-catalog.json'
+            d=json.loads(f.read_text());change(d);f.write_text(json.dumps(d))
+            if expected not in check(p):raise RuntimeError('fallback negative missed: '+name)
+            print('PASS reject fallback '+name)
+    print('PASS catalog mixed access statuses and blank unresolved private overlay')
+
 def check(root):
     errors = []
     files = set()
@@ -244,7 +534,7 @@ def check(root):
         for key in ('name', 'version', 'description', 'author', 'license', 'keywords'):
             if any(m.get(key) != manifests[0].get(key) for m in manifests[1:]):
                 errors.append(f'manifest mismatch: {key}')
-        if manifests[0]['name'] != 'design-pack' or manifests[0]['version'] != '0.5.0':
+        if manifests[0]['name'] != 'design-pack' or manifests[0]['version'] != '0.6.0':
             errors.append('unexpected identity/version')
         for m in manifests:
             if any(k in m for k in ('hooks','mcpServers','commands','agents','apps')):
@@ -284,6 +574,7 @@ def check(root):
             errors.append('unrouted brand template')
         if '](first-pass.md)' not in brand_method:
             errors.append('unrouted brand first-pass')
+        errors.extend(check_catalog(root))
         records = json.loads((root/'skills/design-pack/references/source-records.json').read_text())
         if len(records) != 18 or {r['repository'] for r in records} != REPOS:
             errors.append('source coverage mismatch')
@@ -304,6 +595,7 @@ def check(root):
     return errors
 
 def self_test():
+    catalog_self_test()
     brand_path = 'skills/design-pack/references/brand-system-source-records.json'
     brand_records = json.loads((ROOT/brand_path).read_text())
     brand_notes = (ROOT/'skills/design-pack/references/brand-system-evidence.md').read_text()
@@ -487,7 +779,7 @@ def main():
     if errors:
         for error in errors: print('FAIL',error)
         return 1
-    print(f'PASS {len(EXPECTED)} files, manifests, routes, links, 18 repository, 7 original public and 15 focused evidence records and 9 pinned interface skill sources and 5 bounded brand sources')
+    print(f'PASS {len(EXPECTED)} files, manifests, routes, links, 18 repository, 7 original public and 15 focused evidence records and 9 pinned interface skill sources and 5 bounded brand sources; 62 catalog entries and 9 new public evidence records')
     if args.self_test: self_test()
     return 0
 

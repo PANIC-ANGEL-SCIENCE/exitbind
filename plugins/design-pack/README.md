@@ -1,4 +1,4 @@
-# Design Pack 0.5.0
+# Design Pack 0.6.0
 
 A self-contained, independently authored design workflow intended for possible future distribution alongside Exitbind. It consolidates useful methods from 18 reference repositories and seven original public visual references, with focused preview and typography evidence, into **one pack**, rather than connecting or installing those repositories.
 
@@ -7,6 +7,8 @@ Start at [the core skill](skills/design-pack/SKILL.md). It routes work across cl
 Use [Mockup Image](skills/mockup-image/SKILL.md) for image assets, scene direction, reference-aware prompts and image/UI placement review. Its core brief and critique need no external app; actual image generation needs an available authorized host capability. The pack does not generate an image merely because it is installed or updated.
 
 For a new identity or reusable system, [Brand to system](skills/design-pack/references/brand-system.md) connects positioning, expression, tokens, components, states and change ownership. Its [editable chain template](skills/design-pack/templates/brand-system.md) scales down to one affected role for local work.
+
+For short design requests, start with [autonomous discovery](skills/design-pack/references/discovery.md) and the [public catalog](skills/design-pack/references/reference-catalog.md). Open selected actual visual materials before direction; project-local evidence and private-overlay templates preserve provenance.
 
 ## What this delivers
 
@@ -51,7 +53,7 @@ Python 3.10+ standard library only. Run from this package root:
 ```sh
 python3 scripts/check_pack.py
 python3 scripts/check_pack.py --self-test
-python3 scripts/package.py --output ../design-pack-0.5.0.zip
+python3 scripts/package.py --output ../design-pack-0.6.0.zip
 ```
 
 The checker validates the exact file inventory, local links, metadata consistency, source coverage and absence of symlinks/unexpected private material. Focused evidence records distinguish reported snapshots, partial/failed access, primary text and claims; no rendered output quality improvement is asserted. Its positive and negative tests exercise broken links, manifest drift, missing original and public sources, missing observation limits, unrouted methods, unexpected files and symlinks. Packaging revalidates and uses only the declared files. A successful check proves package properties, not design quality or provider compatibility.

@@ -1,6 +1,6 @@
 # From reference to composed artifact
 
-Use after [reference-analysis.md](reference-analysis.md) and before production. This is an independently authored decision method, not a style library. The public sources and their observation limits are in [sources.md](sources.md). Everything below can be specified in text without visiting a service or importing a dependency.
+Use after [reference-analysis.md](reference-analysis.md) and before production. This is an independently authored decision method, not a style library. The public sources and their observation limits are in [sources.md](sources.md). A provisional contract can be written in text without dependencies. Source-grounded appearance claims require actual viewed materials through [discovery.md](discovery.md); production quality requires inspecting the result.
 
 ## Make a direction executable
 
@@ -23,7 +23,7 @@ Test the same composition as a small silhouette/blur for mass, at reading size f
 
 ## Asset and effect decision sheet
 
-For each proposed asset or effect, record **purpose → parameters → placement → cost budget → fallback → rejection test**. Choosing none is a complete decision. Use the sheet for imagery and materials as well as animation.
+For each consequential asset/effect, record **expressive or functional purpose → parameters → placement → relevant constraints → fallback → rejection test**. Scale documentation to impact: a static texture need not receive a runtime budget. Choosing an effect or none both require contextual reasoning, without presuming restraint superior.
 
 | Family | Controls to specify | Useful test and reason to reject |
 | --- | --- | --- |
@@ -33,7 +33,7 @@ For each proposed asset or effect, record **purpose → parameters → placement
 | Motion / shader | Trigger, shape, light, speed, amplitude, loop behavior, interruption and stable state | Inspect full cycle and reduced motion; reject distraction from the task, missing keyboard access or a blank fallback |
 | Interactive component | Semantic role, input methods, focus, state feedback and recovery | Test keyboard, touch and errors; reject an effect that conceals state, invents an action or breaks native semantics |
 
-Set budgets from the target environment before making the effect: maximum simultaneous attention signals, occupied area near critical text, transfer size and acceptable frame/load cost if digital; ink/material tolerances if physical. Values belong to the project. Do not fill them with arbitrary universal numbers. If runtime measurement is unavailable, retain a static option and mark performance untested. Keep labels and actions usable when imagery fails, motion is reduced, rendering support is absent or an optional effect is disabled. Do not require an external generator to achieve the method.
+Where motion, loading, competing attention or physical production makes a budget relevant, derive it from the environment while developing the effect: maximum simultaneous attention signals, occupied area near critical text, transfer size and acceptable frame/load cost if digital; ink/material tolerances if physical. Values belong to the project. Do not fill them with arbitrary universal numbers. If runtime measurement is unavailable, retain a static option and mark performance untested. Keep labels and actions usable when imagery fails, motion is reduced, rendering support is absent or an optional effect is disabled. Do not require an external generator to achieve the method.
 
 ## Worked example A: community repair timetable
 
@@ -70,7 +70,7 @@ Set brief-specific thresholds before inspection. Use visible observations rather
 - **Concept unsupported:** the signature depends on invented facts, a mood label or an asset that cannot be used; removing it leaves no subject-specific organizing idea.
 - **State unreadable:** palette roles collapse in selected, error, focus, image or moving-background conditions; function depends only on color or motion.
 - **Craft breakdown:** unintended crop, collision, tangent, orphan or optical imbalance interrupts the intended hierarchy at real size.
-- **Effect without benefit:** removing an effect preserves the intended communication and improves clarity or reliability. Keep it only if a commissioned expressive purpose still justifies the cost.
+- **Effect conflicts with intent:** removal may improve clarity but lose atmosphere, pleasure or recognizable character. Compare both consequences against the brief, including expression within delegated design authority. Reject a relationship that fails its purpose or relevant constraints; no separate commission for each expressive mark is required.
 
 A rejection identifies artifact/version, location/state, observation, consequence and next test. It is a finding, not permission to revise a frozen first pass or override a client's deliberate choice.
 

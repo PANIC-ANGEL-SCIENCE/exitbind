@@ -11,19 +11,20 @@ Operate as a design partner: understand the intended experience, make defensible
 
 1. Read the current request and relevant project guidance, existing design system, approved decisions and available artifacts. Confirm the scope from evidence; do not import another client's visual identity.
 2. Record **loaded guidance** by path/version, the active project profile and its scope, and any missing evidence. Installed files alone do not demonstrate use. Read only the references needed below.
-3. Decide the work route: small local refinement, new direction, product flow, diagram, motion/audio, or 3D. A small reversible refinement needs a one-line interpretation and direct work; do not demand a full discovery workshop.
-4. For vague or consequential requests, read [briefing.md](references/briefing.md). Separate user facts, observations, hypotheses, proposals and confirmed choices. Clarify only what changes the design or would cause costly rework. Existing authorization persists.
-5. Use [roles.md](references/roles.md) to select the perspectives needed. These are thinking responsibilities, not automatic subagents. Do not manufacture independent review by changing persona.
+3. For a short request implying new design, read [discovery.md](references/discovery.md) and the [reference catalog](references/reference-catalog.md) now. Select a small justified set, open actual visual materials and retain state/viewport/capture evidence before direction or production. Use authorized project-private overlays; summaries never replace maker inspection. If access fails, try alternatives or explicitly limit the outcome to a provisional direction.
+4. Decide the work route: small local refinement, new direction, product flow, diagram, motion/audio, or 3D. A small reversible refinement needs a one-line interpretation and direct work; do not demand a full discovery workshop.
+5. For vague or consequential requests, read [briefing.md](references/briefing.md). Separate user facts, observations, hypotheses, proposals and confirmed choices. Clarify only what changes the design or would cause costly rework. Existing authorization persists.
+6. Use [roles.md](references/roles.md) to select the perspectives needed. These are thinking responsibilities, not automatic subagents. Do not manufacture independent review by changing persona.
 
 ## One coherent process
 
 **Understand → frame → explore → make → inspect → refine → hand off.**
 
-For an explicit one-shot or fresh-first-attempt request, use [first-pass.md](references/first-pass.md): alternatives stay in planning; freeze one concept before read-only verification. Its no-redesign boundary overrides the iterative make/refine steps below.
+For an explicit one-shot or fresh-first-attempt request, use [first-pass.md](references/first-pass.md): inspect selected external references before direction; candidate alternatives stay in planning; freeze one produced concept before read-only verification. Its no-redesign boundary overrides the iterative make/refine steps below.
 
 - **Understand:** Who is doing what, in which situation, and why is the current experience insufficient? For redesigns, inspect the actual artifact and representative states before proposing changes.
 - **Frame:** Write a short brief with outcome, audience, primary action, constraints, preservation requirements, unknowns, and observable acceptance criteria. Use [brief.md](templates/brief.md) for substantial work; otherwise keep these in the task note.
-- **Explore:** For a new or rejected direction, inspect relevant real examples using [reference-analysis.md](references/reference-analysis.md) before choosing a visual language. When direction is genuinely undecided, propose two or three materially different approaches. Explain the conceptual idea, content hierarchy, composition, interaction, tradeoffs, and what would invalidate each. Do not produce three recolors. Recommend one. Where the user delegates direction, select and record it; where their answer is required, wait only on dependent work.
+- **Explore:** For a new or rejected direction, complete maker inspection through discovery, then compare relevant real examples using [reference-analysis.md](references/reference-analysis.md) before choosing a visual language. When direction is genuinely undecided, propose two or three materially different approaches. Explain the conceptual idea, content hierarchy, composition, interaction, tradeoffs, and what would invalidate each. Do not produce three recolors. Recommend one. Where the user delegates direction, select and record it; where their answer is required, wait only on dependent work.
 - **Make:** Produce the smallest representative artifact that tests the riskiest assumption: a content-first wireframe, one component with states, a styleframe, a storyboard, or a geometry blockout. Use real or clearly marked example content. Expand after the important uncertainty is resolved.
 - **Inspect:** Examine the built artifact, not only its source or a tool's success code. Check relevant states, devices and access needs with [validation.md](references/validation.md). If only a specification is possible, deliver it as a specification and list production checks still needed.
 - **Refine:** Prioritize failures that prevent the intended task, then coherence and expression. Preserve deliberate character when correcting usability. Each change has a reason; do not sand every design into the same neutral template.
@@ -33,6 +34,7 @@ For an explicit one-shot or fresh-first-attempt request, use [first-pass.md](ref
 
 | Work | Read |
 | --- | --- |
+| Autonomous discovery, public sources and private overlays | [discovery.md](references/discovery.md), [reference-catalog.md](references/reference-catalog.md) |
 | Ambiguous client request, feedback, stakeholder disagreement | [briefing.md](references/briefing.md) |
 | Whole-project plan, stage evidence, scope change and maintenance | [lifecycle.md](references/lifecycle.md) |
 | Roles, responsibilities, capability selection | [roles.md](references/roles.md) |
@@ -66,7 +68,7 @@ For an unfamiliar specialty, use the common lifecycle, identify its medium-speci
 - User decisions outrank aesthetic heuristics. A font, color, radius, duration or motif is never universally forbidden because it appears in generic AI output. Judge its purpose and execution.
 - Never treat options you found as preferences the client selected. Silence is not a decision. Do not invent testimonials, product capabilities, user research, measurements or conversion gains.
 - No reference is permission to copy protected assets, fonts, logos, voices or identities. Keep attribution and allowed-use records at asset level.
-- Core work requires only reasoning and editable text. No external repository, model, paid account, renderer or MCP server is required to use this pack. Production tools may be selected from the user's available environment; their output still needs verification.
+- Briefing, planning and specifications can use reasoning and editable text alone. Source-grounded aesthetic decisions require actual visual inspection; produced artifacts need medium-appropriate review. Use available authorized tools, or declare a provisional/specification-only outcome and missing checks. No particular external model, paid account, renderer or MCP server is required.
 - Do not install tools, enable hooks, loosen host permissions, publish, purchase assets or contact clients just because a reference does so. Follow the actual task's authorization.
 - No claim of browser, assistive-technology, audio or render verification without that observation. State whether evidence came from inspection, measurement, playback or inference.
 

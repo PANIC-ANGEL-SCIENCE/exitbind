@@ -10,7 +10,7 @@ For a fresh trial, provide the creator with the current brief and reusable pack 
 
 ## Plan, choose, build once
 
-1. Read the relevant methods and record loaded paths/version. Convert evidence into decisions using [visual-methods.md](visual-methods.md).
+1. Read [discovery.md](discovery.md), personally inspect selected external visual materials and retain exact source/state/viewport/capture evidence before direction. This is research, not a competing produced concept. Load craft/type methods before planning and record paths/version; failed visual access retains a provisional limit. Convert evidence into decisions using [visual-methods.md](visual-methods.md).
 2. Compare organizing ideas in internal text planning only. Choose one within delegated authority. Do not render competing mockups, run image-generation batches, seek feedback on variants or silently select a later result as the first.
 3. Record the selected composition, semantic roles, assets, interaction assumptions, fallback and rejection criteria. Resolve available facts before production; mark unknowns instead of borrowing details from the old work.
 4. Build the selected concept once. Pre-output source composition is part of making it. Do not use a preview-and-polish loop to improve the supposed first attempt. If a tool automatically returns alternatives, preserve that fact and identify the first output rather than cherry-picking.
