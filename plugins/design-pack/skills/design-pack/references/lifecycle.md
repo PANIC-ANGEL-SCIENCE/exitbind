@@ -23,6 +23,8 @@ This is a selectable path, not a mandatory paperwork sequence. Small work can co
 - **New concept:** brief → small research set → distinct directions → representative prototype → refine → delivery.
 - **Production project:** use all relevant stages, with an acceptance matrix and discipline-specific handoffs. Agree only consequential checkpoints; do not create permission barriers for already authorized routine work.
 
+- **Explicit first-pass trial:** brief → planning-only alternatives → one selected artifact → freeze → read-only inspection → honest handoff. Use [first-pass.md](first-pass.md); the normal prototype/refine loop is suspended until a further pass is authorized.
+
 ## Research without pretending
 
 Define a question and evidence that could change the decision. Choose artifact inspection, comparative analysis, interviews, observation, prototype tasks or existing analytics according to the uncertainty. Record sample, context, limitations and consent where participant work occurs. A desk review cannot establish behavior or demand. Synthetic scenarios are test inputs, not real participants.

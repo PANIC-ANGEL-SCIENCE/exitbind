@@ -45,6 +45,8 @@ Specify the image's job: show the actual product, communicate evidence, establis
 
 Choose crop, camera/viewpoint, scale, focal point, light, texture, background and treatment together. Protect essential information under text overlays and responsive crops. Inspect missing-image behavior. Illustration style should support content and scale, not substitute ornament for a clear story.
 
+For a concrete parameter, budget, fallback and rejection sheet, use [visual-methods.md](visual-methods.md). Choose assets/effects only after the composition and content roles are clear.
+
 ## Material, surface, light and depth
 
 For digital surfaces, use elevation or shadow to communicate hierarchy, layering or interaction where useful. Avoid an arbitrary shadow on every object. Consider contrast and compositing across backgrounds.

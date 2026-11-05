@@ -19,6 +19,8 @@ Operate as a design partner: understand the intended experience, make defensible
 
 **Understand → frame → explore → make → inspect → refine → hand off.**
 
+For an explicit one-shot or fresh-first-attempt request, use [first-pass.md](references/first-pass.md): alternatives stay in planning; freeze one concept before read-only verification. Its no-redesign boundary overrides the iterative make/refine steps below.
+
 - **Understand:** Who is doing what, in which situation, and why is the current experience insufficient? For redesigns, inspect the actual artifact and representative states before proposing changes.
 - **Frame:** Write a short brief with outcome, audience, primary action, constraints, preservation requirements, unknowns, and observable acceptance criteria. Use [brief.md](templates/brief.md) for substantial work; otherwise keep these in the task note.
 - **Explore:** For a new or rejected direction, inspect relevant real examples using [reference-analysis.md](references/reference-analysis.md) before choosing a visual language. When direction is genuinely undecided, propose two or three materially different approaches. Explain the conceptual idea, content hierarchy, composition, interaction, tradeoffs, and what would invalidate each. Do not produce three recolors. Recommend one. Where the user delegates direction, select and record it; where their answer is required, wait only on dependent work.
@@ -35,6 +37,8 @@ Operate as a design partner: understand the intended experience, make defensible
 | Whole-project plan, stage evidence, scope change and maintenance | [lifecycle.md](references/lifecycle.md) |
 | Roles, responsibilities, capability selection | [roles.md](references/roles.md) |
 | Actual-example comparison, generic-style diagnosis, purposeful copy | [reference-analysis.md](references/reference-analysis.md) |
+| Translate evidence into composition, optical alignment, effects and visual rejection tests | [visual-methods.md](references/visual-methods.md) |
+| Explicit one-shot creation, fresh trial, freeze and read-only verification | [first-pass.md](references/first-pass.md) |
 | Reference analysis, concept, composition, typography, brand | [direction.md](references/direction.md) |
 | Proactive palette, type, spacing, layout, icon, shape, imagery, material and sensory choices | [elements.md](references/elements.md) |
 | Generate context-specific palettes using hue, lightness, chroma, semantic roles and alternatives | [color.md](references/color.md) |

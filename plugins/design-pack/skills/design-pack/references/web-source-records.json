@@ -1,0 +1,79 @@
+[
+  {
+    "id": "dark",
+    "url": "https://www.dark.design/",
+    "inspected_on": "2026-11-05",
+    "evidence_type": "primary-text-extraction",
+    "observation": "Categorized dark-interface gallery.",
+    "transfer": "Test hierarchy and surface lightness, not mandatory dark styling.",
+    "rights": "Gallery assets and site content have separate rights; none copied.",
+    "limitations": "Local rendered inspection failed with ERR_TUNNEL_CONNECTION_FAILED; no output-quality, effectiveness or runtime claim.",
+    "local_render_verified": false
+  },
+  {
+    "id": "variant",
+    "url": "https://variant.com/",
+    "inspected_on": "2026-11-05",
+    "evidence_type": "primary-text-extraction",
+    "observation": "Official description offers alternative designs; generated outputs were not observed.",
+    "transfer": "Compare different organizing ideas in planning, not claimed output quality.",
+    "rights": "Service access and generated-output terms need exact-use review; no dependency.",
+    "limitations": "Local rendered inspection failed with ERR_TUNNEL_CONNECTION_FAILED; no output-quality, effectiveness or runtime claim.",
+    "local_render_verified": false
+  },
+  {
+    "id": "happy-hues",
+    "url": "https://www.happyhues.co/",
+    "inspected_on": "2026-11-05",
+    "evidence_type": "primary-text-extraction",
+    "observation": "Palettes shown with background, text, button and illustration roles.",
+    "transfer": "Test foreground/background roles inside the actual composition; no categorical psychology claims.",
+    "rights": "No palette corpus or examples copied; check exact asset rights before reuse.",
+    "limitations": "Local rendered inspection failed with ERR_TUNNEL_CONNECTION_FAILED; no output-quality, effectiveness or runtime claim.",
+    "local_render_verified": false
+  },
+  {
+    "id": "haikei",
+    "url": "https://haikei.app/",
+    "inspected_on": "2026-11-05",
+    "evidence_type": "primary-text-extraction",
+    "observation": "Configurable SVG geometry, canvas controls and SVG/PNG export described.",
+    "transfer": "Specify geometry parameters, crop and clear zones; independently create any shapes.",
+    "rights": "No exported assets bundled; inspect terms for any later export.",
+    "limitations": "Local rendered inspection failed with ERR_TUNNEL_CONNECTION_FAILED; no output-quality, effectiveness or runtime claim.",
+    "local_render_verified": false
+  },
+  {
+    "id": "shadergradient",
+    "url": "https://shadergradient.co/",
+    "inspected_on": "2026-11-05",
+    "evidence_type": "primary-text-extraction",
+    "observation": "Official site and project describe moving 3D gradients with shape, color, noise, speed and lighting controls.",
+    "transfer": "Set motion/material budgets and static fallback; canvas appearance not verified.",
+    "rights": "Code and media rights must be checked at the exact version before reuse; none imported.",
+    "limitations": "Local rendered inspection failed with ERR_TUNNEL_CONNECTION_FAILED; no output-quality, effectiveness or runtime claim.",
+    "local_render_verified": false
+  },
+  {
+    "id": "grainient",
+    "url": "https://grainient.supply/",
+    "inspected_on": "2026-11-05",
+    "evidence_type": "primary-text-extraction",
+    "observation": "Catalog of noisy, smooth, animated and AI backgrounds, including paid collections.",
+    "transfer": "Distinguish grain/dither/gradient controls and test legibility at output size.",
+    "rights": "Paid-use and asset terms need review; no download or license entitlement assumed.",
+    "limitations": "Local rendered inspection failed with ERR_TUNNEL_CONNECTION_FAILED; no output-quality, effectiveness or runtime claim.",
+    "local_render_verified": false
+  },
+  {
+    "id": "react-bits",
+    "url": "https://reactbits.dev/",
+    "inspected_on": "2026-11-05",
+    "evidence_type": "primary-text-extraction",
+    "observation": "Official site and project describe animated text, components, backgrounds and interactions.",
+    "transfer": "Choose by semantic purpose and verify keyboard, focus, motion and fallback.",
+    "rights": "Check exact component version and media licenses before reuse; no code copied.",
+    "limitations": "Local rendered inspection failed with ERR_TUNNEL_CONNECTION_FAILED; no output-quality, effectiveness or runtime claim.",
+    "local_render_verified": false
+  }
+]

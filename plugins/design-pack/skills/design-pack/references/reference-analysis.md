@@ -13,6 +13,8 @@ Use this route for a new visual direction, a consequential aesthetic decision, o
 
 Use a compact evidence row: **example/state → observed combination → likely effect (hypothesis) → fit to this brief → transfer decision → validation needed**. Do not claim prevalence from a small convenience sample. Do not infer success, conversion or audience preference from a polished screenshot.
 
+Convert the transfer decision into a concrete composition contract with [visual-methods.md](visual-methods.md). For new public gallery/tool observations and their limits, see [sources.md](sources.md).
+
 ## Select, then test the combination
 
 Compare different organizing ideas using the same content at actual size. For a discovery interface, one direction may prioritize the contributor and context, another precise object metadata, and another an intentional editorial story. Choose from the actual brief; none is the default for an industry.

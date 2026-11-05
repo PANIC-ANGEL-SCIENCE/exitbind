@@ -36,3 +36,19 @@ Additional inspected excerpts: taste-skill `skills/taste-skill/SKILL.md`, Emil `
 - General lessons from prior user work are incorporated only as anonymized methods: reference proportion analysis, context adaptation, identity preservation, coherent visual language, evidence honesty and actual loading of saved guidance. Private project choices and raw history are excluded. This package does not claim that all previous private archives were inspected or migrated.
 
 These are inspirations and attribution, not a tool registry or integration layer. Reading the pack does not fetch or execute them.
+
+## Public visual references added in 0.2.0
+
+Reviewed 2026-11-05 from primary page text and supplied independent reviewer notes. Machine-readable observations are in [web-source-records.json](web-source-records.json); the original 18 repository records remain unchanged. Local browser rendering failed for all seven with `ERR_TUNNEL_CONNECTION_FAILED`. Independent notes reported dark-surface hierarchy, contextual color roles, controllable geometry, grain/dither distinctions and keyboard-oriented interaction examples. Those are reported observations, not local verification. Variant's gallery was largely blank to the reviewer and ShaderGradient's canvas was not visually verified. No comparative design-quality or causal effectiveness result is established.
+
+| Reference | Evidence and transfer | Rights / limit |
+| --- | --- | --- |
+| [Dark](https://www.dark.design/) | Categorized dark UI gallery; test surface lightness and hierarchy | Gallery assets not bundled; dark is optional |
+| [Variant](https://variant.com/) | Describes alternatives; transfer comparison of organizing ideas | Generated quality unobserved; no service dependency |
+| [Happy Hues](https://www.happyhues.co/) | Role-based palette presentation; test color in context | No palette corpus copied or psychological/gender claims adopted |
+| [Haikei](https://haikei.app/) | Configurable geometry and SVG/PNG export; transfer parameter grammar | Independently authored shapes only; later exports require terms review |
+| [ShaderGradient](https://shadergradient.co/) and [official project](https://github.com/ruucm/shadergradient) | Shape, light, color, noise and speed controls; transfer budgets and static fallback | No imported code, dependency or verified canvas-performance claim |
+| [Grainient](https://grainient.supply/) | Catalog distinguishes noisy/smooth/animated backgrounds; test texture at output size | Some paid content; no bundled asset or reuse entitlement |
+| [React Bits](https://reactbits.dev/) and [official project](https://github.com/DavidHDev/react-bits) | Text/component/background/interaction families; transfer semantic selection and state checks | No imported implementation; exact future code/media rights remain separate |
+
+[Visual methods](visual-methods.md), contextual color checks and the [first-pass protocol](first-pass.md) are original synthesis. Sources suggest controls and questions; none prescribes this pack's composition, hue, effect, typography or default aesthetic. The synthetic repair timetable and geology exhibition are teaching examples, not commissioned outputs or rendered trials. No old private screen, implementation or feedback is included in those examples. Asset purchases, service use, installation and publication require their own task authorization.

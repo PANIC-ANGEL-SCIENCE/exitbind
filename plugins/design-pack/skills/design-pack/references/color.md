@@ -32,11 +32,13 @@ These are hypotheses to test, not presets or universal service rules.
 | Expressive event/cultural identity | Consider a strong hue or contrasting pair tied to the actual program/material | Distinct display hierarchy with a quieter reading/control layer | Poor print gamut, long reading, mixed imagery, language and accessibility constraints |
 | Outdoor/mobile wayfinding | Hue distinguishes categories only with shape/labels; select against environment | High legibility and stable contrast under glare; avoid subtle surface distinctions | Physical testing, ambient light, material finish and local signage requirements |
 
-## Worked example A: outfit discovery
+## Worked example A: library wayfinding
 
-Task: inspect clothing photographs and reveal item links. Hypothesis: colorful interface chrome would compete with varied garments. Choose a low-chroma warm canvas, dark neutral text and a subdued green action family. Example project tokens: canvas `#F6F5F1`, ink `#242824`, action `#334C3E` with white foreground. These are this example's choices, not a global fashion palette.
+Synthetic task: help visitors locate floors and service points on a printed wall map and mobile guide. Compare a light field with dark route labels against a dark field with light labels under the library's actual lighting. Neither is selected by the institution type. Assign floor categories separate from action, focus and emergency roles; pair category color with a number and name. A colorful floor key can be useful even when the navigation controls stay quiet.
 
-Compare an achromatic alternative and a warmer brown action family with the same photographs. Check whether the accent looks like status, whether white image tags remain visible over bright clothing, and whether focus remains distinct. A surface behind labels is more reliable than assuming every photograph will be dark. Dark mode would need independently selected dark canvas/surface and a lighter accent, followed by measurement; these light values are not a dark-mode recipe.
+Build a context strip for each candidate: the busiest floor map, a selected destination, an unavailable lift notice, a focused mobile control and a monochrome print. Record each foreground/background pair including selection under focus. If two adjacent floors become indistinguishable, change lightness, labels or pattern before adding saturation. If the mobile choice fails on the wall substrate, specify separate physical values and proof them; do not promise a match from a screen hex code.
+
+A palette is selected only after the relevant context checks, or marked provisional if proofing is unavailable. This scenario specifies a decision process rather than a preferred hue family. Its checks are illustrative, not observed results.
 
 ## Worked example B: operational scheduling
 
@@ -49,6 +51,12 @@ Make two full state matrices: normal, selected, pending, conflict, disabled and 
 Task: establish a distinctive identity while keeping a long program readable in print and mobile. Generate a saturated display color from the program's actual imagery or concept, then pair it with a quieter reading surface and strong text. Compare a complementary accent with a single-hue system using different lightness/chroma.
 
 Prototype a poster, a dense schedule and a mobile detail page. If the poster succeeds but small schedule text fails, split expressive display roles from functional information roles; do not discard the entire direction or force display colors into body text. Check the actual print process: a vivid screen color may require a different physical specification, and a proof is needed before promising a match.
+
+## Inspect color in the composition
+
+Put each candidate into the same real-content frame, not just a row of swatches. Record the area occupied by expressive color, the quiet region behind reading, adjacent image colors and the brightest/darkest background behind every label. Check default, selected, focus, unavailable, error and loading states as relevant. For gradients or motion, test the worst region and time; an average background color is insufficient. A static backing surface or relocated text may solve an unstable pair more coherently than changing the entire palette. Repeat under the target theme, gamut and output conditions.
+
+Use a role sheet: **role → value → foreground/background pair → area/location → state → measured result or not tested → visual observation → decision**. Measured contrast and perceived balance answer different questions. Neither establishes audience preference. Happy Hues illustrates the idea of showing palette roles in context; this process is independent synthesis, not copied palettes or color-psychology claims. See [sources.md](sources.md).
 
 ## Deliver the reasoning and verification
 

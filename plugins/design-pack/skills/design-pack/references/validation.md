@@ -37,11 +37,13 @@ Choose a finite set based on the brief and risk. Do not invent a universal devic
 
 Compare the rendered work with the brief and the observed reference relationships. Identify unsupported combinations, generic substitutions and decorative content that competes with the task. Apply the line-by-line copy role, deletion and swap tests in [reference-analysis.md](reference-analysis.md). Verify that counts, labels and promises reflect real content or clearly marked samples. Keep task behavior, directional fit and client acceptance as separate results; a passed browser test is not aesthetic approval.
 
+Use the visual rejection criteria in [visual-methods.md](visual-methods.md) to locate lost priority, broken relationships, unsupported concepts, unreadable states, craft defects and effects without benefit. Record a visible counterexample at the actual size; functional passes alone cannot settle these findings. For an explicit [first-pass trial](first-pass.md), verification is read-only: report the frozen artifact's failures without repair or reselection.
+
 ## Findings that lead to repair
 
 Each finding includes location/state, observation, consequence for this audience, severity, confidence, proposed change and how to verify it. Rank: blocking task/safety/access failure; major comprehension/coherence failure; local usability defect; craft refinement. Explain context rather than assigning numerical “taste” scores without a rubric.
 
-After repair, inspect the affected context again. Stop when agreed criteria are met or remaining gaps are explicit and correctly owned. If repeated refinements do not improve the result, revisit the brief or concept instead of endlessly adjusting pixels.
+When revision is authorized, after repair, inspect the affected context again. Stop when agreed criteria are met or remaining gaps are explicit and correctly owned. If repeated refinements do not improve the result, revisit the brief or concept instead of endlessly adjusting pixels.
 
 ## Delivery review
 

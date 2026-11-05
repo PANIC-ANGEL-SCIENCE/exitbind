@@ -12,6 +12,8 @@
 - Remaining specialist/tool/physical checks and owner:
 - Maintenance owner, update triggers and known debts:
 
+- First-pass trial if selected: freeze identity/order, input exclusions, read-only evidence and deviations:
+
 ## Findings
 
 | Location/state | Observation | Consequence | Severity/confidence | Repair | Verification |

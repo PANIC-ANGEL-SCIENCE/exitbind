@@ -25,6 +25,8 @@ Separate editorial/marketing work from working interfaces. Storytelling may supp
 
 Avoid universal aesthetic prohibitions. Gradients, cards, shadows, pixels, conventional fonts, asymmetry or restraint can all be appropriate. Repeated generic choices become a problem when no decision is grounded in the subject. Cohesion does not require turning every element into the same motif.
 
+Before rendering, turn the chosen direction into the decision contract in [visual-methods.md](visual-methods.md): composition proportions and crop anchors, type rhythm, functional color roles, one distinctive relationship and visible rejection conditions. A direction name alone is insufficient.
+
 ## Build the system
 
 Define semantic roles before exact values: background, surface, text, muted text, primary action, selection, status, border; body, title, label, numeric and caption; spacing, density, shape and motion. Specify hierarchy and behavior first, then choose values per project and test them in context.

@@ -16,6 +16,9 @@
 - Collaboration mode and decision owner:
 - Loaded guidance and active private profile:
 
+- Trial mode (iterative / explicit one-shot), first-artifact definition and allowed inputs:
+- Composition proportions/crop anchors/type rhythm, signature relationship and rejection criteria:
+
 ## Direction decision
 
 | Option | Organizing idea | Evidence / fit | Tradeoff / change cost | Test |

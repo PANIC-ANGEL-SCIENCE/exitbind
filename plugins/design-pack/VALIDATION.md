@@ -1,5 +1,15 @@
 # Validation record
 
+## 0.2.0 method update
+
+Date: 2026-11-05. Scope: 34 allowlisted files; three consistent manifests; compact entrypoint and all routed references; local links; original 18 repository records plus seven public source records with observation and rights limits. No external dependency, demo or private project artifact added.
+
+Run `python3 scripts/check_pack.py --self-test` from the package root. The update adds negative cases for a missing/duplicate public source, missing evidence limits, an unsupported rendered-evidence claim and an unrouted first-pass method, alongside the original five cases. These establish package integrity and provenance-field constraints, not semantic quality of prose or design outcomes. Actual execution is reported with the worker delivery; no new archive, provider installation or rendered design trial is claimed here.
+
+The new teaching examples and first-pass workflow received the author walkthrough in [EVALUATION.md](EVALUATION.md). Independent review and the governing final check remain separate from that walkthrough. Browser access limitations for public references are recorded in [source notes](skills/design-pack/references/sources.md).
+
+## Historical 0.1.0 record
+
 Package: Design Pack 0.1.0. Date: 2026-11-04.
 
 Scope: self-contained package structure, declared metadata, local links, source coverage and archive integrity. No upstream programs, renderers or provider plugins were installed. This candidate changes pack sources and their documentation; no host settings or runtime behavior are modified.

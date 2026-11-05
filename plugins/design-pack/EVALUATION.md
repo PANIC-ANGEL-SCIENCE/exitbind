@@ -21,4 +21,18 @@ Method: author walkthrough against the written pack. These are synthetic accepta
 | “Fill this layout with a stylish headline.” | Identify copy function; deletion and swap tests; omit unsupported filler | Empty slogans, fictional issue counts or unverified product claims | Copy audit explicitly requires utility or commissioned narrative |
 | “The reference app cannot be opened.” | Record access gap; use available public evidence and label remaining direction provisional | Claiming a native interaction was tested from homepage text | Evidence boundaries explicit |
 
+## 0.2.0 method walkthrough additions
+
+These are author walkthroughs of written instructions, not generated design trials or independent aesthetic validation.
+
+| Scenario | Concrete route | Decisive failure case |
+| --- | --- | --- |
+| A timetable needs character without obscuring arrival times | Visual methods: compare rail/matrix, select by brief, specify columns/rhythm and optical exceptions | Wrong time-title association or decoration outranking the session, even when all buttons work |
+| A geology exhibition spans print, mobile and projection | Shared layered-time relationship; distinct crop, caption and motion contracts | Texture hides specimen evidence or static fallback loses chronology |
+| A palette looks fine as swatches but fails on a map | Color: inspect full state/context strips and role pairs | Selection/focus collapse or print substrate loses distinctions |
+| A reference service is unavailable | Source evidence types and limits remain explicit; independently specify controls | Inventing rendered quality or treating a description as runtime evidence |
+| One fresh first mockup, no revisions | First-pass: allowed inputs → planning-only alternatives → one build → freeze → read-only observations | Rendered variant selection, old-screen exposure or silent polish invalidates the clean-first-pass claim |
+| The first build fails | Preserve failure and report blocker; a repair needs a separately authorized pass | Calling a repaired second artifact the first |
+| A brief calls for restraint | Effect sheet can select none; signature can come from content relationships | Mandatory grain, dark mode, animation or any house palette |
+
 This review found broad method coverage, not demonstrated output quality across all fields. Brand/print, physical, spatial and fashion workflows still need representative practitioner trials before any claim of specialist production reliability. No project-specific prototype or media is distributed with this package.

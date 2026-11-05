@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REFS = ('briefing roles lifecycle direction reference-analysis elements color interface diagrams communication-design '
+REFS = ('briefing roles lifecycle direction reference-analysis visual-methods first-pass elements color interface diagrams communication-design '
         'physical-design motion-sound spatial validation memory exitbind sources').split()
 EXPECTED = {
     'README.md', 'LICENSE', 'VALIDATION.md', 'EVALUATION.md', 'plugin.json',
@@ -16,6 +16,7 @@ EXPECTED = {
     'scripts/check_pack.py', 'scripts/package.py',
     'skills/design-pack/SKILL.md',
     'skills/design-pack/references/source-records.json',
+    'skills/design-pack/references/web-source-records.json',
     *(f'skills/design-pack/references/{name}.md' for name in REFS),
     *(f'skills/design-pack/templates/{name}.md' for name in ('brief', 'project-profile', 'handoff')),
 }
@@ -25,6 +26,35 @@ REPOS = set('Leonxlnx/taste-skill emilkowalski/skills pbakaus/impeccable '
     'howseen-ai/claude-motion-design Leonxlnx/cinetic Vincentwei1021/video-shotcraft '
     'lemomo-ai/lemo-opuscar yihui-dev/awesome-opus5-5-videos Leonxlnx/earshot '
     'ahujasid/mcp-for-blender img2threejs/img2threejs'.split())
+
+WEB_URLS = set(('https://www.dark.design/ https://variant.com/ https://www.happyhues.co/ '
+                'https://haikei.app/ https://shadergradient.co/ https://grainient.supply/ '
+                'https://reactbits.dev/').split())
+
+def check_web_records(records, notes):
+    errors = []
+    if not isinstance(records, list) or len(records) != 7:
+        return ['public source coverage mismatch']
+    if any(not isinstance(r, dict) for r in records):
+        return ['invalid public source record']
+    urls = [r.get('url') for r in records]
+    if any(not isinstance(url, str) for url in urls) or set(urls) != WEB_URLS:
+        errors.append('public source coverage mismatch')
+    for record in records:
+        for field in ('id', 'url', 'inspected_on', 'evidence_type', 'observation',
+                      'transfer', 'rights', 'limitations'):
+            value = record.get(field)
+            if not isinstance(value, str) or not value.strip():
+                errors.append(f'public source missing field: {field}')
+        # This release contains text evidence, not locally rendered evidence.
+        if record.get('evidence_type') != 'primary-text-extraction':
+            errors.append('public source evidence type drift')
+        if record.get('local_render_verified') is not False:
+            errors.append('public source rendered claim drift')
+        url = record.get('url')
+        if isinstance(url, str) and url not in notes:
+            errors.append('public source without lineage note')
+    return errors
 
 def check(root):
     errors = []
@@ -63,7 +93,7 @@ def check(root):
         for key in ('name', 'version', 'description', 'author', 'license', 'keywords'):
             if any(m.get(key) != manifests[0].get(key) for m in manifests[1:]):
                 errors.append(f'manifest mismatch: {key}')
-        if manifests[0]['name'] != 'design-pack' or manifests[0]['version'] != '0.1.0':
+        if manifests[0]['name'] != 'design-pack' or manifests[0]['version'] != '0.2.0':
             errors.append('unexpected identity/version')
         for m in manifests:
             if any(k in m for k in ('hooks','mcpServers','commands','agents','apps')):
@@ -85,6 +115,8 @@ def check(root):
         if len(records) != 18 or {r['repository'] for r in records} != REPOS:
             errors.append('source coverage mismatch')
         notes = (root/'skills/design-pack/references/sources.md').read_text()
+        web_records = json.loads((root/'skills/design-pack/references/web-source-records.json').read_text())
+        errors.extend(check_web_records(web_records, notes))
         for r in records:
             if r['url'] not in notes:
                 errors.append('source without lineage note')
@@ -96,10 +128,22 @@ def check(root):
     return errors
 
 def self_test():
+    def mutate_web(p, change):
+        path = p/'skills/design-pack/references/web-source-records.json'
+        records = json.loads(path.read_text())
+        change(records)
+        path.write_text(json.dumps(records))
+
     mutations = {
         'broken-link': lambda p: (p/'README.md').write_text('[broken](missing.md)'),
         'manifest-drift': lambda p: (p/'.claude-plugin/plugin.json').write_text('{}'),
         'missing-source': lambda p: (p/'skills/design-pack/references/source-records.json').write_text('[]'),
+        'missing-public-source': lambda p: mutate_web(p, lambda records: records.pop()),
+        'duplicate-public-source': lambda p: mutate_web(p, lambda records: records.__setitem__(0, records[1])),
+        'missing-evidence-limit': lambda p: mutate_web(p, lambda records: records[0].pop('limitations')),
+        'unsupported-render-claim': lambda p: mutate_web(p, lambda records: records[0].update(local_render_verified=True)),
+        'unrouted-method': lambda p: (p/'skills/design-pack/SKILL.md').write_text(
+            (p/'skills/design-pack/SKILL.md').read_text().replace('references/first-pass.md', '#first-pass')),
         'private-extra': lambda p: (p/'private-notes.txt').write_text('private'),
         'symlink': lambda p: (p/'outside').symlink_to('/tmp'),
     }
@@ -120,7 +164,7 @@ def main():
     if errors:
         for error in errors: print('FAIL',error)
         return 1
-    print(f'PASS {len(EXPECTED)} files, manifests, routes, links, 18 source records')
+    print(f'PASS {len(EXPECTED)} files, manifests, routes, links, 18 repository and 7 public source records')
     if args.self_test: self_test()
     return 0
 
