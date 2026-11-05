@@ -6,7 +6,7 @@
 - [First checked run](first-checked-run.md): shortest path to a checked result.
 - [Onboarding](onboarding.md): setup and recovery.
 - [Contributor guide](../CONTRIBUTING.md): repository changes and focused checks.
-- [Design Pack source candidate](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/tree/design-pack-20261104/plugins/design-pack): optional, self-contained design guidance from client briefing through delivery, with separate validation and no external tool dependencies. This source-only pack is outside the current Cargo distribution and plugin marketplace.
+- [Design Pack source candidate](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/tree/dot/design-pack/20261105/plugins/design-pack): optional, self-contained design guidance from client briefing through delivery, with separate validation and no external tool dependencies. This source-only pack is outside the current Cargo distribution and plugin marketplace.
 
 ## Product reference
 
