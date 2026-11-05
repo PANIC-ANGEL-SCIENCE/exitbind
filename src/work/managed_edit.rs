@@ -154,16 +154,16 @@ pub(super) fn interact_content(
     file: &str,
     content: Option<&str>,
 ) -> Result<Value, String> {
-    interact_content_after_observation(loaded, action, session, file, content, || Ok(()))
+    interact_content_before_read_commit(loaded, action, session, file, content, || Ok(()))
 }
 
-fn interact_content_after_observation(
+fn interact_content_before_read_commit(
     loaded: &Loaded,
     action: &str,
     session: &str,
     file: &str,
     content: Option<&str>,
-    after_observation: impl FnOnce() -> Result<(), String>,
+    before_read_commit: impl FnOnce() -> Result<(), String>,
 ) -> Result<Value, String> {
     if !matches!(action, "read" | "refresh" | "edit" | "inspect") {
         return Err("managed file action must be read, refresh, edit or inspect".into());
@@ -177,28 +177,11 @@ fn interact_content_after_observation(
     let binding = state::load_binding(loaded, session)?;
     let ledger = super::resolve(loaded, &binding.work)?;
     let lock = run::ledger::ledger_path(&loaded.state_root, &ledger, false)?;
-    // This is only an initial, authorized observation. It cannot be returned or
-    // recorded until the same binding, assignment, path and source have been
-    // checked again under the canonical Work lock below.
-    let observed_before = if action == "read" {
-        state::load_reads(loaded, session)?;
-        let assignment = current_worker(loaded, &binding, &lock)?;
-        if !state::preparation(loaded, &lock, session, &binding)? {
-            return Err("managed preparation registry is missing; no edit admitted".into());
-        }
-        ensure_observable(&assignment, file)?;
-        file_effect::protect(loaded, &loaded.product_root.join(file), file)?;
-        let observed = state::observe_file(loaded, file)?;
-        after_observation()?;
-        Some(observed)
-    } else {
-        None
-    };
     let commit = || {
         if action == "read" {
             let current = crate::config::load(Some(&binding.config))?;
             if state::load_binding(&current, session)? != binding {
-                return Err("managed edit executable, configuration or assignment binding changed; no edit admitted".into());
+                return Err("managed read executable, configuration or assignment binding changed; no read admitted".into());
             }
         }
         // Reconcile an already-admitted exact intent without minting a new
@@ -233,12 +216,6 @@ fn interact_content_after_observation(
         }
         if matches!(action, "read" | "refresh") {
             let observed = state::observe_file(loaded, file)?;
-            // The commit observes the source again: use fresh bytes if it
-            // changed after the concurrent observation, never the stale read.
-            let observed = match observed_before {
-                Some(before) if before == observed => before,
-                _ => observed,
-            };
             let old = reads.files.get(file);
             if action == "refresh" {
                 if let Some(old) = old {
@@ -357,6 +334,7 @@ fn interact_content_after_observation(
             })
     };
     if action == "read" {
+        before_read_commit()?;
         run::ledger::with_read_commit_lock(&lock, commit)
     } else {
         run::ledger::with_lock(&lock, commit)

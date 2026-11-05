@@ -1,4 +1,4 @@
-//! Managed observations overlap, but baseline commits and effects remain fenced.
+//! Queued managed reads serialize baseline commits and effects remain fenced.
 use super::*;
 use std::{fs, sync::Barrier};
 
@@ -76,12 +76,19 @@ impl Fixture {
         }
     }
 
-    fn read_after(
+    fn read_before_commit(
         &self,
         file: &str,
-        after: impl FnOnce() -> Result<(), String>,
+        before_commit: impl FnOnce() -> Result<(), String>,
     ) -> Result<Value, String> {
-        interact_content_after_observation(&self.loaded, "read", &self.session, file, None, after)
+        interact_content_before_read_commit(
+            &self.loaded,
+            "read",
+            &self.session,
+            file,
+            None,
+            before_commit,
+        )
     }
 
     fn saved(&self) -> Reads {
@@ -90,8 +97,8 @@ impl Fixture {
 }
 
 #[test]
-fn independent_observations_overlap_and_merge_without_losing_baselines() {
-    let f = Fixture::new("managed-overlapping-read");
+fn queued_distinct_file_reads_merge_without_losing_baselines() {
+    let f = Fixture::new("managed-queued-read");
     let names = (0..6).map(|n| format!("src/{n}.txt")).collect::<Vec<_>>();
     for name in &names {
         fs::write(f.root.join(name), name).unwrap();
@@ -104,7 +111,7 @@ fn independent_observations_overlap_and_merge_without_losing_baselines() {
                 let f = &f;
                 let barrier = &barrier;
                 scope.spawn(move || {
-                    f.read_after(name, || {
+                    f.read_before_commit(name, || {
                         barrier.wait();
                         Ok(())
                     })
@@ -126,7 +133,7 @@ fn independent_observations_overlap_and_merge_without_losing_baselines() {
 }
 
 #[test]
-fn same_file_observations_share_one_baseline() {
+fn queued_same_file_reads_share_one_baseline() {
     let f = Fixture::new("managed-same-read");
     fs::write(f.root.join("src/a"), "first").unwrap();
     let barrier = Barrier::new(4);
@@ -136,7 +143,7 @@ fn same_file_observations_share_one_baseline() {
                 let f = &f;
                 let barrier = &barrier;
                 scope.spawn(move || {
-                    f.read_after("src/a", || {
+                    f.read_before_commit("src/a", || {
                         barrier.wait();
                         Ok(())
                     })
@@ -153,11 +160,11 @@ fn same_file_observations_share_one_baseline() {
 }
 
 #[test]
-fn source_and_binding_are_rechecked_after_observation() {
+fn source_and_binding_are_checked_at_commit() {
     let f = Fixture::new("managed-read-source-change");
     fs::write(f.root.join("src/a"), "before").unwrap();
     let value = f
-        .read_after("src/a", || {
+        .read_before_commit("src/a", || {
             fs::write(f.root.join("src/a"), "after").map_err(|e| e.to_string())
         })
         .unwrap();
@@ -166,7 +173,7 @@ fn source_and_binding_are_rechecked_after_observation() {
 
     fs::write(f.root.join("src/b"), "safe").unwrap();
     let error = f
-        .read_after("src/b", || {
+        .read_before_commit("src/b", || {
             fs::remove_file(f.root.join("src/b")).map_err(|e| e.to_string())?;
             std::os::unix::fs::symlink("a", f.root.join("src/b")).map_err(|e| e.to_string())
         })
@@ -176,7 +183,7 @@ fn source_and_binding_are_rechecked_after_observation() {
 
     fs::write(f.root.join("src/c"), "private").unwrap();
     let error = f
-        .read_after("src/c", || {
+        .read_before_commit("src/c", || {
             let mut source = fs::read(&f.loaded.path).map_err(|e| e.to_string())?;
             source.push(b' ');
             fs::write(&f.loaded.path, source).map_err(|e| e.to_string())
@@ -187,11 +194,11 @@ fn source_and_binding_are_rechecked_after_observation() {
 }
 
 #[test]
-fn work_transition_after_observation_refuses_delivery_and_baseline() {
+fn work_transition_before_commit_refuses_delivery_and_baseline() {
     let f = Fixture::new("managed-read-transition");
     fs::write(f.root.join("src/a"), "must not be delivered").unwrap();
     let error = f
-        .read_after("src/a", || {
+        .read_before_commit("src/a", || {
             crate::work::return_result_impl::return_result_with(
                 &f.loaded,
                 &f.work,
@@ -246,11 +253,11 @@ fn active_effect_lock_stays_exclusive_and_is_not_removed_by_waiting_read() {
 }
 
 #[test]
-fn edit_between_observation_and_commit_keeps_the_original_baseline() {
+fn edit_before_commit_keeps_the_original_baseline() {
     let f = Fixture::new("managed-read-concurrent-edit");
     fs::write(f.root.join("src/a"), "original").unwrap();
     assert_eq!(
-        f.read_after("src/a", || Ok(())).unwrap()["content"],
+        f.read_before_commit("src/a", || Ok(())).unwrap()["content"],
         "original"
     );
     crate::work::permit_response::permit(
@@ -262,7 +269,7 @@ fn edit_between_observation_and_commit_keeps_the_original_baseline() {
     )
     .unwrap();
     let result = f
-        .read_after("src/a", || {
+        .read_before_commit("src/a", || {
             interact_content(&f.loaded, "edit", &f.session, "src/a", Some("replacement"))?;
             Ok(())
         })

@@ -125,7 +125,7 @@ pub(super) fn binding(loaded: &Loaded, work: &str, assignment: &str) -> Result<B
 
 /// Immutable preparation anchor beside the canonical Work ledger, independent
 /// of the disposable session directory. Authority requires the canonical Work
-/// lock; a speculative read must recheck the anchor under that lock.
+/// lock.
 pub(super) fn preparation_path(
     loaded: &Loaded,
     ledger: &crate::run::ledger::LedgerPath,

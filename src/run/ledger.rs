@@ -346,10 +346,9 @@ fn open_stage(path: &Path) -> Result<File, String> {
 
 const BUSY: &str = "run ledger is busy; no mutation was made";
 
-/// Read observations have already taken place when they reach this short
-/// commit boundary. Let their independent baseline updates take turns, while
-/// retaining the same lock and the same bounded refusal for a persistent owner.
-/// A closure that ran is never retried, even if it returns the busy message.
+/// Let read requests take turns at the shared baseline commit while retaining
+/// the same lock and a bounded refusal for a persistent owner. A closure that
+/// ran is never retried, even if it returns the busy message.
 pub(crate) fn with_read_commit_lock<T, F: FnOnce() -> Result<T, String>>(
     ledger: &LedgerPath,
     action: F,
