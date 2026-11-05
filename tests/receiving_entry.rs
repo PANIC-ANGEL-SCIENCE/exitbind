@@ -704,14 +704,16 @@ fn governed_session_start_scopes_work_navigation_to_its_configuration() {
         .as_str()
         .unwrap();
     let exe = env!("CARGO_BIN_EXE_exitbind");
+    assert!(context.contains("replace both placeholders"), "{context}");
     assert!(
-        context.contains("read work detail --json using that Work's own configuration"),
+        context.contains(&format!(
+            "`{exe} work detail <WORK> --json --config <WORK_CONFIG>`"
+        )),
         "{context}"
     );
-    assert!(
-        !context.contains("work detail <WORK> --json --config "),
-        "{context}"
-    );
+    assert!(context.contains(&format!(
+        "`{exe} work continuation <WORK> --config <WORK_CONFIG>`"
+    )));
     assert!(context.contains(&format!(
         "For Work in this project, use `{exe} work resume --json --config "
     )));
@@ -720,6 +722,30 @@ fn governed_session_start_scopes_work_navigation_to_its_configuration() {
     assert!(context.contains("only for an initialized same-Work cross-host handoff"));
     assert!(context.contains("stale or incomplete detail needs its supported refresh/expansion"));
     assert!(context.contains("preserve it and use current Work detail"));
+    let outside = support::temp("receiving-template-outside");
+    let (foreign, foreign_work) = project(
+        "receiving-foreign 'project'",
+        json!([{"id":"foreign","text":"Document the foreign flag."}]),
+        "Document the foreign flag.",
+    );
+    let quote = |value: &str| format!("'{}'", value.replace('\'', "'\\''"));
+    let config = foreign.join("exitbind.json");
+    for (action, field) in [("detail", "complete"), ("continuation", "receive")] {
+        let command = context
+            .split('`')
+            .find(|part| part.contains(&format!(" work {action} <WORK> ")))
+            .unwrap_or_else(|| panic!("{action} template missing: {context}"))
+            .replace("<WORK>", &quote(&foreign_work))
+            .replace("<WORK_CONFIG>", &quote(config.to_str().unwrap()));
+        let output = support::git_topology::command("/bin/sh")
+            .args(["-c", &command])
+            .current_dir(&outside)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{command}: {output:?}");
+        let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert!(!value[field].is_null(), "{command}: {value}");
+    }
     let detail = exitbind(&root, &["work", "detail", &work, "--json"], b"");
     assert_eq!(detail["complete"], true);
     assert_eq!(detail["recipientContext"]["complete"], true);

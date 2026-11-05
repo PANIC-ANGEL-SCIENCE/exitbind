@@ -365,7 +365,7 @@ fn same_session_resume_keeps_goal_and_saved_decisions_reachable() {
 #[test]
 fn a_project_that_does_not_own_the_session_goal_still_reads_context_only() {
     let owner = Project::new("resume-owner-project");
-    let other = Project::new("resume-other-project");
+    let other = Project::new("resume-other-project 'spaced'");
     let session = "claude-resume-owner-mismatch";
     let owner_work = incorporate_and_begin(&owner, session, "owned-goal");
     let shared_store = owner.session_store.as_path();
@@ -423,21 +423,19 @@ fn a_project_that_does_not_own_the_session_goal_still_reads_context_only() {
     let other_before = files_under(&other.root.join(".exitbind"));
     let goals_before = files_under(shared_store);
     let context = resume_hook(&owner, session, &claude(session));
-    assert!(
-        context.contains("that Work's own configuration"),
-        "{context}"
-    );
+    assert!(context.contains("replace both placeholders"), "{context}");
     assert!(
         context.contains("this does not search other projects")
             || context.contains("other projects are not searched"),
         "{context}"
     );
-    assert!(
-        !context.contains("work detail <WORK> --json --config "),
-        "{context}"
-    );
+    let template = context
+        .split('`')
+        .find(|part| part.contains(" work detail <WORK> --json --config <WORK_CONFIG>"))
+        .unwrap_or_else(|| panic!("Work detail template missing: {context}"));
+    assert!(!template.contains(&config(&owner)), "{template}");
     let command = printed_detail_command(&context, other_work);
-    assert!(command.contains(&other_config), "{command}");
+    assert!(command.contains(&shell_quote(&other_config)), "{command}");
     let outside = super::support::temp("resume-foreign-work-outside");
     let detail = super::support::git_topology::command("/bin/sh")
         .args(["-c", command])
@@ -452,6 +450,39 @@ fn a_project_that_does_not_own_the_session_goal_still_reads_context_only() {
         .unwrap();
     assert!(detail.status.success(), "{detail:?}");
     assert!(String::from_utf8_lossy(&detail.stdout).contains(other_work));
+    let generic = template
+        .replace("<WORK>", &shell_quote(other_work))
+        .replace("<WORK_CONFIG>", &shell_quote(&other_config));
+    let detail = super::support::git_topology::command("/bin/sh")
+        .args(["-c", &generic])
+        .current_dir(&outside)
+        .env_remove("CODEX_THREAD_ID")
+        .env_remove("CODEX_SESSION_ID")
+        .env_remove("EXITBIND_NATIVE_SESSION_ID")
+        .env("CLAUDE_CODE_SESSION_ID", session)
+        .env("EXITBIND_SESSION_GOALS_DIR", shared_store)
+        .env("EXITBIND_NO_UPDATE_CHECK", "1")
+        .output()
+        .unwrap();
+    assert!(detail.status.success(), "{generic}: {detail:?}");
+    let generic_value: Value = serde_json::from_slice(&detail.stdout).unwrap();
+    assert_eq!(generic_value["complete"], true);
+    assert_eq!(generic_value["work"], other_work);
+    let wrong_project = template
+        .replace("<WORK>", &shell_quote(other_work))
+        .replace("<WORK_CONFIG>", &shell_quote(&config(&owner)));
+    let wrong = super::support::git_topology::command("/bin/sh")
+        .args(["-c", &wrong_project])
+        .current_dir(&outside)
+        .env_remove("CODEX_THREAD_ID")
+        .env_remove("CODEX_SESSION_ID")
+        .env_remove("EXITBIND_NATIVE_SESSION_ID")
+        .env("CLAUDE_CODE_SESSION_ID", session)
+        .env("EXITBIND_SESSION_GOALS_DIR", shared_store)
+        .env("EXITBIND_NO_UPDATE_CHECK", "1")
+        .output()
+        .unwrap();
+    assert!(!wrong.status.success(), "{wrong_project}: {wrong:?}");
     assert_eq!(files_under(&owner.root.join(".exitbind")), owner_before);
     assert_eq!(files_under(&other.root.join(".exitbind")), other_before);
     assert_eq!(files_under(shared_store), goals_before);

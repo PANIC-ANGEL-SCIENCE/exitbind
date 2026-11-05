@@ -26,6 +26,9 @@ pub(crate) enum Fill {
     Positional,
     /// A field of a printed decision template the actor completes.
     Field(&'static str),
+    /// A value supplied from the Work context in an informational template;
+    /// it is not an option on the Work fill command.
+    Context,
 }
 
 pub(crate) struct Placeholder {
@@ -210,6 +213,11 @@ pub(crate) const PLACEHOLDERS: &[Placeholder] = &[
         name: "WORK",
         fills: &[Fill::Positional],
         meaning: "the Work the refused command read",
+    },
+    Placeholder {
+        name: "WORK_CONFIG",
+        fills: &[Fill::Context],
+        meaning: "the configuration belonging to that Work, which may differ from the session project",
     },
     Placeholder {
         name: "TASK",
