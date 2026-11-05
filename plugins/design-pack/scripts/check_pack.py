@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REFS = ('briefing roles lifecycle direction reference-analysis visual-methods aesthetic-construction typography preview-evidence first-pass elements color interface interface-craft interface-source-notes diagrams communication-design '
+REFS = ('briefing roles lifecycle brand-system brand-system-evidence direction reference-analysis visual-methods aesthetic-construction typography preview-evidence first-pass elements color interface interface-craft interface-source-notes diagrams communication-design '
         'physical-design motion-sound spatial validation memory exitbind sources').split()
 EXPECTED = {
     'README.md', 'LICENSE', 'VALIDATION.md', 'EVALUATION.md', 'plugin.json',
@@ -19,11 +19,12 @@ EXPECTED = {
     'skills/design-pack/references/web-source-records.json',
     'skills/design-pack/references/aesthetic-source-records.json',
     'skills/design-pack/references/interface-source-records.json',
+    'skills/design-pack/references/brand-system-source-records.json',
     'skills/mockup-image/SKILL.md',
     'skills/mockup-image/references/image-production.md',
     'skills/mockup-image/templates/image-brief.md',
     *(f'skills/design-pack/references/{name}.md' for name in REFS),
-    *(f'skills/design-pack/templates/{name}.md' for name in ('brief', 'project-profile', 'handoff')),
+    *(f'skills/design-pack/templates/{name}.md' for name in ('brief', 'project-profile', 'handoff', 'brand-system')),
 }
 REPOS = set('Leonxlnx/taste-skill emilkowalski/skills pbakaus/impeccable '
     'nextlevelbuilder/ui-ux-pro-max-skill cathrynlavery/diagram-design Caho1/open-claude-ui '
@@ -170,6 +171,42 @@ def check_interface_record(record, notes):
             errors.append('interface source without lineage note')
     return errors
 
+
+BRAND_SOURCES = {
+    'uber-redesign': ('https://www.uber.com/us/en/u/redesigned-uber-app/', '2023', 'reported-rendered', 'historical-snapshot'),
+    'uber-newsroom': ('https://www.uber.com/us/en/newsroom/were-redesigning-the-uber-app-just-for-you/', '2023-02-22', 'reported-text-and-rendered', 'historical-snapshot'),
+    'mckl-uber': ('https://www.mckltype.com/custom/uber', 'undated-project-description', 'reported-primary-text', 'text-only'),
+    'base-web-history': ('https://www.uber.com/us/en/blog/introducing-base-web/', '2019-04-16', 'reported-primary-text', 'historical-text'),
+    'base-typography-extraction': ('https://base.uber.com/6d2425e9f/p/976582-typography', 'unknown', 'reported-extraction-failure', 'extraction-failed'),
+}
+
+def check_brand_records(records, notes):
+    if not isinstance(records, list) or any(not isinstance(r, dict) for r in records):
+        return ['invalid brand records']
+    ids = [r.get('id') for r in records]
+    if any(not isinstance(i, str) for i in ids):
+        return ['invalid brand identity']
+    errors = []
+    if len(ids) != len(BRAND_SOURCES) or set(ids) != set(BRAND_SOURCES):
+        errors.append('brand source coverage mismatch')
+    fields = {'id', 'url', 'inspected_on', 'source_period', 'evidence_type', 'access_status',
+              'observer', 'observation', 'author_claims', 'transfer_hypothesis', 'limitations',
+              'rights', 'current_app_verified', 'current_tokens_verified', 'assets_bundled'}
+    for r in records:
+        if set(r) - fields:
+            errors.append('unexpected brand evidence fields')
+        for field in fields - {'current_app_verified', 'current_tokens_verified', 'assets_bundled'}:
+            if not isinstance(r.get(field), str) or not r[field].strip():
+                errors.append(f'brand missing field: {field}')
+        if tuple(r.get(f) for f in ('url', 'source_period', 'evidence_type', 'access_status')) != BRAND_SOURCES.get(r.get('id')):
+            errors.append('brand evidence identity drift')
+        for field in ('current_app_verified', 'current_tokens_verified', 'assets_bundled'):
+            if r.get(field) is not False:
+                errors.append(f'brand unsupported claim: {field}')
+        if not isinstance(r.get('url'), str) or r['url'] not in notes:
+            errors.append('brand source without lineage note')
+    return errors
+
 def check(root):
     errors = []
     files = set()
@@ -207,7 +244,7 @@ def check(root):
         for key in ('name', 'version', 'description', 'author', 'license', 'keywords'):
             if any(m.get(key) != manifests[0].get(key) for m in manifests[1:]):
                 errors.append(f'manifest mismatch: {key}')
-        if manifests[0]['name'] != 'design-pack' or manifests[0]['version'] != '0.4.0':
+        if manifests[0]['name'] != 'design-pack' or manifests[0]['version'] != '0.5.0':
             errors.append('unexpected identity/version')
         for m in manifests:
             if any(k in m for k in ('hooks','mcpServers','commands','agents','apps')):
@@ -239,6 +276,14 @@ def check(root):
         interface_record = json.loads((root/'skills/design-pack/references/interface-source-records.json').read_text())
         interface_notes = (root/'skills/design-pack/references/interface-source-notes.md').read_text()
         errors.extend(check_interface_record(interface_record, interface_notes))
+        brand_records = json.loads((root/'skills/design-pack/references/brand-system-source-records.json').read_text())
+        brand_notes = (root/'skills/design-pack/references/brand-system-evidence.md').read_text()
+        errors.extend(check_brand_records(brand_records, brand_notes))
+        brand_method = (root/'skills/design-pack/references/brand-system.md').read_text()
+        if '](../templates/brand-system.md)' not in brand_method:
+            errors.append('unrouted brand template')
+        if '](first-pass.md)' not in brand_method:
+            errors.append('unrouted brand first-pass')
         records = json.loads((root/'skills/design-pack/references/source-records.json').read_text())
         if len(records) != 18 or {r['repository'] for r in records} != REPOS:
             errors.append('source coverage mismatch')
@@ -259,6 +304,54 @@ def check(root):
     return errors
 
 def self_test():
+    brand_path = 'skills/design-pack/references/brand-system-source-records.json'
+    brand_records = json.loads((ROOT/brand_path).read_text())
+    brand_notes = (ROOT/'skills/design-pack/references/brand-system-evidence.md').read_text()
+    alternative = json.loads(json.dumps(brand_records))
+    alternative[0]['transfer_hypothesis'] = 'Choose a different expressive territory while preserving the evidence boundary.'
+    if check_brand_records(brand_records, brand_notes) or check_brand_records(alternative, brand_notes):
+        raise RuntimeError('positive historical/failed brand evidence rejected')
+    print('PASS positive bounded brand evidence and alternate territory')
+    mutations = {
+        'brand-missing-source': (lambda r: r.pop(), 'brand source coverage mismatch'),
+        'brand-duplicate-source': (lambda r: r.__setitem__(0, r[1]), 'brand source coverage mismatch'),
+        'brand-nonpublic-source': (lambda r: r[0].update(url='https://example.invalid/private-board'), 'brand evidence identity drift'),
+        'brand-history-to-current': (lambda r: r[0].update(source_period='current'), 'brand evidence identity drift'),
+        'brand-reported-to-direct': (lambda r: r[0].update(evidence_type='direct-rendered'), 'brand evidence identity drift'),
+        'brand-extraction-to-render': (lambda r: r[4].update(evidence_type='reported-rendered', access_status='snapshot'), 'brand evidence identity drift'),
+        'brand-invented-tokens': (lambda r: r[4].update(current_tokens_verified=True), 'brand unsupported claim: current_tokens_verified'),
+        'brand-current-app-claim': (lambda r: r[0].update(current_app_verified=True), 'brand unsupported claim: current_app_verified'),
+        'brand-asset-claim': (lambda r: r[2].update(assets_bundled=True), 'brand unsupported claim: assets_bundled'),
+        'brand-missing-rights': (lambda r: r[2].pop('rights'), 'brand missing field: rights'),
+        'brand-missing-limit': (lambda r: r[4].pop('limitations'), 'brand missing field: limitations'),
+        'brand-private-extra-field': (lambda r: r[0].update(private_references=[]), 'unexpected brand evidence fields'),
+    }
+    for name, (change, expected) in mutations.items():
+        with tempfile.TemporaryDirectory(prefix='design-pack-test-') as tmp:
+            p = Path(tmp)/'pack'
+            shutil.copytree(ROOT, p, ignore=shutil.ignore_patterns('__pycache__'))
+            records = json.loads((p/brand_path).read_text())
+            change(records)
+            (p/brand_path).write_text(json.dumps(records))
+            if expected not in check(p):
+                raise RuntimeError(f'negative brand test missed expected reason: {name}')
+            print(f'PASS reject {name}')
+    route_cases = [
+        ('skills/design-pack/SKILL.md', 'references/brand-system.md', 'unrouted reference: brand-system'),
+        ('skills/design-pack/SKILL.md', 'references/brand-system-evidence.md', 'unrouted reference: brand-system-evidence'),
+        ('skills/design-pack/references/brand-system.md', '../templates/brand-system.md', 'unrouted brand template'),
+        ('skills/design-pack/references/brand-system.md', '](first-pass.md)', 'unrouted brand first-pass'),
+    ]
+    for path, link, expected in route_cases:
+        with tempfile.TemporaryDirectory(prefix='design-pack-test-') as tmp:
+            p = Path(tmp)/'pack'
+            shutil.copytree(ROOT, p, ignore=shutil.ignore_patterns('__pycache__'))
+            target = p/path
+            target.write_text(target.read_text().replace(link, '#removed-route'))
+            if expected not in check(p):
+                raise RuntimeError(f'negative brand route missed expected reason: {link}')
+            print(f'PASS reject brand route {link}')
+
     interface_path = 'skills/design-pack/references/interface-source-records.json'
     interface_record = json.loads((ROOT/interface_path).read_text())
     interface_notes = (ROOT/'skills/design-pack/references/interface-source-notes.md').read_text()
@@ -394,7 +487,7 @@ def main():
     if errors:
         for error in errors: print('FAIL',error)
         return 1
-    print(f'PASS {len(EXPECTED)} files, manifests, routes, links, 18 repository, 7 original public and 15 focused evidence records and 9 pinned interface skill sources')
+    print(f'PASS {len(EXPECTED)} files, manifests, routes, links, 18 repository, 7 original public and 15 focused evidence records and 9 pinned interface skill sources and 5 bounded brand sources')
     if args.self_test: self_test()
     return 0
 

@@ -1,6 +1,14 @@
 # Validation record
 
-## 0.4.0 imagery and interface update
+## 0.5.0 brand-to-system update
+
+Date: 2026-11-05. Executed `python3 plugins/design-pack/scripts/check_pack.py --self-test`: PASS,48 allowlisted files, consistent0.5.0 manifests, both skill entrypoints, local routes and original evidence plus5 bounded public brand/system records. Existing18 repository,7 public-site,15 aesthetic records, the pinned9-skill interface ledger and exact first-pass protocol remain unchanged.
+
+Positive checks accept historical/reported/extraction-failed evidence and a different proposed expressive territory. All57 negative cases pass:41 existing cases plus12 brand provenance/identity/privacy-field cases and4 new reference/template/first-pass routes. New cases require the expected diagnostic for missing/duplicate/nonpublic sources, promotion of historical/reported/failed evidence, invented current tokens/app verification or bundled assets, missing rights/limits and unexpected private-reference fields. Structural field checks do not establish the truth of prose or guarantee detection of all private information; public content also needs human review.
+
+The gap mapping and original worked chain are in [brand-system.md](skills/design-pack/references/brand-system.md) and [EVALUATION.md](EVALUATION.md). They are written methods, not rendered identity/system trials. No current Uber app/device test, Base token/API extraction, proprietary font/asset use, installation, image generation or design-quality uplift is claimed. Package ZIP verification, when performed, compares every allowlisted member to source bytes; its external receipt belongs in the worker delivery, avoiding self-referential archive hashes. Governing check, independent review and acceptance remain separate from worker verification.
+
+## Historical 0.4.0 imagery and interface update
 
 Date: 2026-11-05. Executed `python3 plugins/design-pack/scripts/check_pack.py --self-test` from the repository root: PASS,44 allowlisted files, three consistent0.4.0 manifests, both skill entrypoints and their local routes,18 original repository records,7 original public-site records,15 focused aesthetic records and9 pinned interface skill sources. The original three evidence ledgers and first-pass protocol remain byte-identical to the0.3.0 baseline.
 

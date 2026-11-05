@@ -60,3 +60,7 @@ See [preview-evidence.md](preview-evidence.md) and [aesthetic-source-records.jso
 ## Focused additions in 0.4.0
 
 [Interface source notes](interface-source-notes.md) and [structured records](interface-source-records.json) cover nine inspected skills from the pinned jakubkrehel/skills repository. The original18/7/15 records remain unchanged. [Mockup Image](../../mockup-image/SKILL.md) is original image-production synthesis; the UI source is not credited with photography-generation instruction. No private image references, generated examples, source assets or provider integrations are distributed.
+
+## Bounded additions in 0.5.0
+
+[Brand/system evidence](brand-system-evidence.md) and [public records](brand-system-source-records.json) distinguish reported historical Uber imagery/text, foundry description and failed Base documentation extraction. No current tokens, app behavior, font rights or proprietary assets are inferred. [Brand to system](brand-system.md), its template and fictional worked chain are original synthesis. Earlier evidence ledgers remain unchanged; no private reference associations or preferences are distributed.

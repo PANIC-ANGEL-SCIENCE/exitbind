@@ -37,3 +37,5 @@ Map the editorial proposition, reader, content types, sequence and reading rhyth
 Test representative spreads and difficult content: long headings, multi-column text, footnotes, tables, multilingual paragraphs and image captions. Check widows/orphans where relevant, alignment, consistent references, reading order and image provenance. Digital editions need meaningful structure, navigation and accessibility in the final format, not only in the source layout.
 
 Deliver editable layout, styles, asset ledger, final exports, proofreading status and edition/version identifiers. Separate copy approval from design approval, and rerun affected pagination and cross-reference checks after text changes.
+
+For a substantive brand/system task, use [brand-system.md](brand-system.md) and its [decision-chain template](../templates/brand-system.md) to connect supported positioning to identity invariants, application contracts and ownership. Keep the medium-specific production methods above; a local refinement needs only the affected part of the chain.

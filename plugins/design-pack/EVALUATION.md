@@ -71,3 +71,20 @@ Written scenarios only: no generated image, rendered fixture or provider trial w
 | Familiar UI advice overlaps existing guidance | Use targeted state/data/evidence delta, preserve contextual optical/motion judgment | Importing numeric style defaults, no-debug policies or a duplicate generic checklist |
 
 These routes support disciplined production; they do not demonstrate output quality gains or establish image rights automatically.
+
+## 0.5.0 author walkthrough and gap mapping
+
+Existing0.4.0 already covered brand lifecycle, expressive territories, detailed type/color/image methods, component states and general maintenance. The gap was a usable decision chain between those pieces: positioning/proof to identity invariants, token/component responsibility and promotion, adaptation and migration. The new reference/template connects those layers rather than duplicating their craft instructions. These are written walkthroughs, not rendered or participant trials.
+
+| Scenario | Added decision or contract | Failure prevented |
+| --- | --- | --- |
+| “Build an identity and reusable system” | Promise/evidence → identity invariant → semantic role → actual component/state → adaptation → owner/test | Brand adjectives disconnected from product behavior |
+| Similar shapes recur in a few places | Promote only a stable shared meaning/behavior with real consumers; otherwise retain local composition | Token/component proliferation or contradictory variant flags |
+| Theme change loses selected-row focus | Resolve semantic pairs together; test focus on selection and dependent consumers | Treating one swatch or one resting component as full mode coverage |
+| A room row begins performing reservations | Classify behavior change, update data/focus/recovery contracts and migrate consumers | Calling a breaking behavior change cosmetic |
+| A single spacing correction | Trace only affected role/state and check under existing identity | Mandatory brand workshop |
+| Official2019/2023 material is cited | Preserve historical dates, reported evidence and author-claim boundaries | Inventing current app behavior, APIs or tokens |
+| Base documentation extraction fails | Mark extraction-only failure; no inferred values | Claiming universal unavailability or filling gaps from snippets |
+| Photograph requested but unavailable | Preserve medium; report missing capability/asset and continue independent planning | Silent illustration/diagram substitution |
+
+The fictional rehearsal-room example includes alternatives, token-role mapping, component anatomy/states, responsive and nondigital adaptation, handoff and a change event. It is original teaching material without production validation. The strict first-pass protocol remains unchanged and takes precedence over ordinary iteration.

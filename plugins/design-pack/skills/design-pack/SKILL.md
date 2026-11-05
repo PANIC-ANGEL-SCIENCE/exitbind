@@ -42,6 +42,8 @@ For an explicit one-shot or fresh-first-attempt request, use [first-pass.md](ref
 | Focused public-preview and typography evidence, reported/observed limits | [preview-evidence.md](references/preview-evidence.md) |
 | Translate evidence into composition, optical alignment, effects and visual rejection tests | [visual-methods.md](references/visual-methods.md) |
 | Explicit one-shot creation, fresh trial, freeze and read-only verification | [first-pass.md](references/first-pass.md) |
+| Brand strategy → identity → tokens/components/states → adaptation and change ownership | [brand-system.md](references/brand-system.md) |
+| Bounded public brand/system evidence and historical/current limits | [brand-system-evidence.md](references/brand-system-evidence.md) |
 | Reference analysis, concept, composition, typography, brand | [direction.md](references/direction.md) |
 | Proactive palette, type, spacing, layout, icon, shape, imagery, material and sensory choices | [elements.md](references/elements.md) |
 | Generate context-specific palettes using hue, lightness, chroma, semantic roles and alternatives | [color.md](references/color.md) |
