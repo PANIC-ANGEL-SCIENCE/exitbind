@@ -119,7 +119,9 @@ pub(crate) fn current(loaded: &Loaded, work: &str) -> Result<Value, String> {
 /// artifacts. Mandatory context stays available through exact section pages.
 pub(crate) fn action_view(loaded: &Loaded, work: &str) -> Result<Value, String> {
     super::details::ensure_current_config(loaded)?;
-    let next = super::next_for(loaded, work, &super::resolve(loaded, work)?)?;
+    // This view selects the complete form below, so the compact form normally
+    // embedded in each navigation snapshot would only be constructed and lost.
+    let next = super::next_for_projection(loaded, work, &super::resolve(loaded, work)?, false)?;
     let binding = next["current"]["binding"]
         .as_str()
         .ok_or("current action binding unavailable")?;
@@ -140,7 +142,7 @@ pub(crate) fn action_view(loaded: &Loaded, work: &str) -> Result<Value, String> 
             "meaning":"current navigation metadata; inspect complete relevant evidence before deciding"},
         "details":routes,
         "instructions":{"complete":false,"meaning":"action view carries the delivered guidance below but not the profile, rules, assignment or evidence; consume those complete current sections before dependent work"}});
-    let fresh = super::next_for(loaded, work, &super::resolve(loaded, work)?)?;
+    let fresh = super::next_for_projection(loaded, work, &super::resolve(loaded, work)?, false)?;
     super::details::ensure_current_config(loaded)?;
     if fresh["current"]["binding"] != binding {
         return Err("action changed during read; inspect current work detail before acting".into());

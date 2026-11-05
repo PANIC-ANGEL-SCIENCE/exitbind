@@ -344,6 +344,36 @@ fn open_stage(path: &Path) -> Result<File, String> {
     options.open(path).map_err(|error| error.to_string())
 }
 
+const BUSY: &str = "run ledger is busy; no mutation was made";
+
+/// Read observations have already taken place when they reach this short
+/// commit boundary. Let their independent baseline updates take turns, while
+/// retaining the same lock and the same bounded refusal for a persistent owner.
+/// A closure that ran is never retried, even if it returns the busy message.
+pub(crate) fn with_read_commit_lock<T, F: FnOnce() -> Result<T, String>>(
+    ledger: &LedgerPath,
+    action: F,
+) -> Result<T, String> {
+    use std::time::{Duration, Instant};
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let mut action = Some(action);
+    loop {
+        let mut entered = false;
+        let result = with_lock(ledger, || {
+            entered = true;
+            action.take().expect("read commit entered only once")()
+        });
+        if entered || !matches!(&result, Err(error) if error == BUSY) {
+            return result;
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return result;
+        }
+        std::thread::sleep(remaining.min(Duration::from_millis(5)));
+    }
+}
+
 pub(crate) fn with_lock<T, F: FnOnce() -> Result<T, String>>(
     ledger: &LedgerPath,
     action: F,
@@ -364,13 +394,13 @@ pub(crate) fn with_lock<T, F: FnOnce() -> Result<T, String>>(
                     && error.kind() == std::io::ErrorKind::AlreadyExists
                     && remove_stale(&ledger.lock) => {}
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-                return Err("run ledger is busy; no mutation was made".into());
+                return Err(BUSY.into());
             }
             Err(error) => return Err(error.to_string()),
         }
     }
 
-    let mut lock = handle.ok_or("run ledger is busy; no mutation was made")?;
+    let mut lock = handle.ok_or(BUSY)?;
     let owned = lock.metadata().map_err(|error| error.to_string())?;
     lock.write_all(
         format!(

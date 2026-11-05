@@ -146,6 +146,7 @@ pub(super) fn attach(
     work: &str,
     snapshot: &RunSnapshot,
     next: &mut Value,
+    compact_form: bool,
 ) -> Result<(), String> {
     let mut goal = crate::session_goal::WorkGoalObservation::acquire(loaded, work);
     let progress = goal.progress(&next["progress"])?;
@@ -243,8 +244,10 @@ pub(super) fn attach(
     if let Some(relation) = super::replacement_relation::relation(loaded, work, &events)? {
         next["current"]["checkReplacement"] = relation;
     }
-    next["current"]["actionForm"] =
-        crate::work::action_forms::project(loaded, work, next, &binding);
+    if compact_form {
+        next["current"]["actionForm"] =
+            crate::work::action_forms::project(loaded, work, next, &binding);
+    }
     if next["action"] == "done" {
         next["current"]["completion"] = super::closeout::projection(loaded, work, snapshot, next);
     }

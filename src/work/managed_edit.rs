@@ -154,6 +154,17 @@ pub(super) fn interact_content(
     file: &str,
     content: Option<&str>,
 ) -> Result<Value, String> {
+    interact_content_after_observation(loaded, action, session, file, content, || Ok(()))
+}
+
+fn interact_content_after_observation(
+    loaded: &Loaded,
+    action: &str,
+    session: &str,
+    file: &str,
+    content: Option<&str>,
+    after_observation: impl FnOnce() -> Result<(), String>,
+) -> Result<Value, String> {
     if !matches!(action, "read" | "refresh" | "edit" | "inspect") {
         return Err("managed file action must be read, refresh, edit or inspect".into());
     }
@@ -166,7 +177,30 @@ pub(super) fn interact_content(
     let binding = state::load_binding(loaded, session)?;
     let ledger = super::resolve(loaded, &binding.work)?;
     let lock = run::ledger::ledger_path(&loaded.state_root, &ledger, false)?;
-    run::ledger::with_lock(&lock, || {
+    // This is only an initial, authorized observation. It cannot be returned or
+    // recorded until the same binding, assignment, path and source have been
+    // checked again under the canonical Work lock below.
+    let observed_before = if action == "read" {
+        state::load_reads(loaded, session)?;
+        let assignment = current_worker(loaded, &binding, &lock)?;
+        if !state::preparation(loaded, &lock, session, &binding)? {
+            return Err("managed preparation registry is missing; no edit admitted".into());
+        }
+        ensure_observable(&assignment, file)?;
+        file_effect::protect(loaded, &loaded.product_root.join(file), file)?;
+        let observed = state::observe_file(loaded, file)?;
+        after_observation()?;
+        Some(observed)
+    } else {
+        None
+    };
+    let commit = || {
+        if action == "read" {
+            let current = crate::config::load(Some(&binding.config))?;
+            if state::load_binding(&current, session)? != binding {
+                return Err("managed edit executable, configuration or assignment binding changed; no edit admitted".into());
+            }
+        }
         // Reconcile an already-admitted exact intent without minting a new
         // grant after revocation. New requests still require current authority.
         let (mut reads, mut original) = state::load_reads(loaded, session)?;
@@ -190,18 +224,8 @@ pub(super) fn interact_content(
         if !state::preparation(loaded, &lock, session, &binding)? {
             return Err("managed preparation registry is missing; no edit admitted".into());
         }
-        let observable = assignment.as_ref().map_or(true, |assignment| {
-            assignment["declaredBoundary"]["observe"]
-                .as_array()
-                .is_some_and(|patterns| {
-                    patterns
-                        .iter()
-                        .filter_map(Value::as_str)
-                        .any(|p| crate::config::boundary::maximum_contains(p, file))
-                })
-        });
-        if !observable {
-            return Err("file is outside the current worker read boundary".into());
+        if let Some(assignment) = assignment.as_ref() {
+            ensure_observable(assignment, file)?;
         }
         file_effect::protect(loaded, &loaded.product_root.join(file), file)?;
         if action == "inspect" {
@@ -209,6 +233,12 @@ pub(super) fn interact_content(
         }
         if matches!(action, "read" | "refresh") {
             let observed = state::observe_file(loaded, file)?;
+            // The commit observes the source again: use fresh bytes if it
+            // changed after the concurrent observation, never the stale read.
+            let observed = match observed_before {
+                Some(before) if before == observed => before,
+                _ => observed,
+            };
             let old = reads.files.get(file);
             if action == "refresh" {
                 if let Some(old) = old {
@@ -325,7 +355,28 @@ pub(super) fn interact_content(
             .map_err(|e| {
                 format!("{e}; use the supplied tool's inspect action before choosing refresh")
             })
-    })
+    };
+    if action == "read" {
+        run::ledger::with_read_commit_lock(&lock, commit)
+    } else {
+        run::ledger::with_lock(&lock, commit)
+    }
+}
+
+fn ensure_observable(assignment: &Value, file: &str) -> Result<(), String> {
+    let allowed = assignment["declaredBoundary"]["observe"]
+        .as_array()
+        .is_some_and(|patterns| {
+            patterns
+                .iter()
+                .filter_map(Value::as_str)
+                .any(|p| crate::config::boundary::maximum_contains(p, file))
+        });
+    if allowed {
+        Ok(())
+    } else {
+        Err("file is outside the current worker read boundary".into())
+    }
 }
 
 fn file_path(file: &str) -> Result<(), String> {
@@ -442,3 +493,7 @@ fn inspect(
         "next":"refresh only for a deliberate new edit after a refused or completed request; unresolved or missing admitted effects require Lead inspection and cannot be reset here"}),
     )
 }
+
+#[cfg(all(test, unix))]
+#[path = "managed_edit_tests.rs"]
+mod tests;

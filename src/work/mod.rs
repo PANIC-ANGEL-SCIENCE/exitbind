@@ -435,7 +435,21 @@ fn discovery_error(error: String, work: &str) -> String {
 }
 
 fn next_for(loaded: &Loaded, work: &str, ledger: &str) -> Result<Value, String> {
-    let mut next = next_from(loaded, work, &run::RunSnapshot::capture(loaded, ledger)?)?;
+    next_for_projection(loaded, work, ledger, true)
+}
+
+fn next_for_projection(
+    loaded: &Loaded,
+    work: &str,
+    ledger: &str,
+    compact_form: bool,
+) -> Result<Value, String> {
+    let mut next = next_from_projection(
+        loaded,
+        work,
+        &run::RunSnapshot::capture(loaded, ledger)?,
+        compact_form,
+    )?;
     if let Some(assignment) = next["assignment"].as_str().map(str::to_owned) {
         attach_held(loaded, work, &assignment, &mut next)?;
     }
@@ -458,10 +472,19 @@ fn attach_held(
 }
 
 fn next_from(loaded: &Loaded, work: &str, snapshot: &run::RunSnapshot) -> Result<Value, String> {
+    next_from_projection(loaded, work, snapshot, true)
+}
+
+fn next_from_projection(
+    loaded: &Loaded,
+    work: &str,
+    snapshot: &run::RunSnapshot,
+    compact_form: bool,
+) -> Result<Value, String> {
     let mut next = next_from_base(loaded, work, snapshot)?;
     let view = snapshot.inspect_view();
     crate::project::continuation::attach_validated_action_association(loaded, &view, &mut next)?;
-    details::attach(loaded, work, snapshot, &mut next)?;
+    details::attach(loaded, work, snapshot, &mut next, compact_form)?;
     Ok(next)
 }
 

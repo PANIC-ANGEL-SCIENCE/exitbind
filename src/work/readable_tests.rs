@@ -206,6 +206,41 @@ fn scope_current_lead(loaded: &Loaded, work: &str) {
 }
 
 #[test]
+fn action_view_preserves_the_canonical_grant_and_held_result_suppression() {
+    if !crate::compatibility::is_exitbind() {
+        return;
+    }
+    let (_root, loaded, work) = fixture("action-view-current-grant", "true");
+    scope_current_lead(&loaded, &work);
+    let next = crate::work::next(&loaded, &work).unwrap();
+    let assignment = next["next"]["assignment"].as_str().unwrap();
+    crate::work::permit_response::permit(
+        &loaded,
+        &work,
+        assignment,
+        "Edit the fixture",
+        Some("action-view-current-grant"),
+    )
+    .unwrap();
+    let detail = current(&loaded, &work).unwrap();
+    let action = action_view(&loaded, &work).unwrap();
+    assert_eq!(action["binding"], detail["binding"]);
+    assert!(detail["actionForms"]["currentGrant"].is_object());
+    assert_eq!(
+        action["effectiveAction"]["currentGrant"],
+        detail["actionForms"]["currentGrant"]
+    );
+
+    crate::work::held::store(&loaded, &work, assignment, b"retained result").unwrap();
+    let detail = current(&loaded, &work).unwrap();
+    let action = action_view(&loaded, &work).unwrap();
+    assert_eq!(action["binding"], detail["binding"]);
+    assert!(detail["actionForms"]["currentGrant"].is_null());
+    assert!(action["effectiveAction"]["currentGrant"].is_null());
+    assert!(action["effectiveAction"]["beforeEditing"].is_null());
+}
+
+#[test]
 fn journey_projections_match_and_ancestor_changes_refuse_detail() {
     if !crate::compatibility::is_exitbind() {
         return;
