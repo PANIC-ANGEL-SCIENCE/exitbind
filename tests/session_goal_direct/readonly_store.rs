@@ -371,6 +371,75 @@ fn readonly_ready_goal_does_not_offer_or_execute_close() {
 }
 
 #[test]
+fn readonly_foreign_source_status_does_not_offer_an_unavailable_preview() {
+    for host in ["codex", "claude"] {
+        let (owner, store) = project_with_store("readonly-recovery-owner");
+        let source = Project::new("readonly-recovery-source");
+        incorporate(&owner, host, "parent");
+        let started = source.value_in_session(
+            host,
+            "parent",
+            &store,
+            &[
+                "work",
+                "begin",
+                "change",
+                "--goal",
+                "A foreign source contribution",
+                "--check-command",
+                "true",
+                "--review-policy",
+                "required",
+            ],
+        );
+        assert!(started["work"].is_string(), "{host}: {started}");
+        let before_store = tree(&store);
+        let before_owner = tree(&owner.root);
+        let before_source = tree(&source.root);
+        let before = value(&owner, host, "parent", &["goal", "status", "--json"]);
+        assert!(
+            before["goalProgress"]["journeyCompletion"]["recoveryForm"].is_object(),
+            "{host}: {before}"
+        );
+        assert!(before["goalProgress"]["nextAction"].is_null(), "{host}");
+        assert_eq!(tree(&store), before_store, "{host}");
+        assert_eq!(tree(&owner.root), before_owner, "{host}");
+        assert_eq!(tree(&source.root), before_source, "{host}");
+
+        let Some(mode) = readonly(&store) else { return };
+        let after = value(&owner, host, "parent", &["goal", "status", "--json"]);
+        assert_eq!(after["goalId"], before["goalId"], "{host}");
+        assert!(
+            after["goalProgress"]["journeyCompletion"]["recoveryForm"].is_null(),
+            "{host}: {after}"
+        );
+        assert!(after["goalProgress"]["nextAction"].is_null(), "{host}");
+        let source_config = source.root.join("exitbind.json");
+        let preview = owner.call_in_session(
+            host,
+            "parent",
+            &store,
+            &[
+                "goal",
+                "recover",
+                "--source-config",
+                source_config.to_str().unwrap(),
+                "--request-id",
+                "readonly-preview",
+                "--reason",
+                "Inspect the foreign source",
+                "--json",
+            ],
+        );
+        refused(&preview, "read-only");
+        assert_eq!(tree(&store), before_store, "{host}");
+        assert_eq!(tree(&owner.root), before_owner, "{host}");
+        assert_eq!(tree(&source.root), before_source, "{host}");
+        drop(mode);
+    }
+}
+
+#[test]
 fn readonly_resolution_keeps_invalid_contexts_and_foreign_owners_distinct() {
     use std::os::unix::fs::symlink;
 

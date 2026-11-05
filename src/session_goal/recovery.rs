@@ -118,6 +118,136 @@ fn named_goal(record: &Value) -> bool {
     super::requirements::named(record)
 }
 
+/// Offer only a read-only preview for one unambiguous foreign Source. The
+/// actual preview and apply routes independently revalidate their inputs.
+pub(crate) fn preview_form(owner_loaded: &Loaded, record: &Value) -> Option<Value> {
+    fn candidate(owner_loaded: &Loaded, record: &Value) -> Result<Option<Value>, String> {
+        if named_goal(record) || record["closure"]["closed"] != false || record.get(FIELD).is_some()
+        {
+            return Ok(None);
+        }
+        let scope = super::native::scope_readonly(owner_loaded)?;
+        if !scope.is_session()
+            || !scope.owner_matches
+            || super::read(&scope.root)?.as_ref() != Some(record)
+        {
+            return Ok(None);
+        }
+        let owner = config_binding(owner_loaded)?;
+        let journey = match super::journey::state(record)? {
+            Some(journey) => journey,
+            None => return Ok(None),
+        };
+        let foreign = journey
+            .members
+            .iter()
+            .filter(|member| {
+                member.project_identity_sha256 != owner.project_identity_sha256
+                    || member.local_identity_sha256 != owner.local_identity_sha256
+                    || member.product_root != owner.product_root
+                    || member.state_root != owner.state_root
+            })
+            .collect::<Vec<_>>();
+        let paths = foreign
+            .iter()
+            .map(|member| member.config_path.as_str())
+            .collect::<BTreeSet<_>>();
+        if paths.len() != 1 {
+            return Ok(None);
+        }
+        let source_path = *paths.iter().next().expect("one source path");
+        let source = crate::config::load(Some(source_path))?;
+        let request = Request {
+            source_config: source_path,
+            historical_fixtures: "",
+            endpoint_configs: None,
+            request_id: "preview",
+            reason: "preview",
+            apply: false,
+            current_binding: None,
+        };
+        let (decision, _) = preview_decision(
+            owner_loaded,
+            &source,
+            record,
+            &request,
+            super::native::Access::ReadExisting,
+        )?;
+        let selected = decision
+            .source_members
+            .iter()
+            .map(|item| item.member.work.as_str())
+            .collect::<BTreeSet<_>>();
+        let expected = foreign
+            .iter()
+            .map(|member| member.work.as_str())
+            .collect::<BTreeSet<_>>();
+        if selected != expected {
+            return Ok(None);
+        }
+        // A status route is not a frozen preview. Decline to offer it if the
+        // facts used to identify the Source changed during this observation.
+        let owner_path = owner_loaded
+            .path
+            .to_str()
+            .ok_or("owner configuration path is not valid UTF-8")?;
+        let fresh_owner = crate::config::load(Some(owner_path))?;
+        let fresh_source = crate::config::load(Some(source_path))?;
+        let fresh_scope = super::native::scope_readonly(&fresh_owner)?;
+        // Recovery preview has no write effects, but its existing CLI entry
+        // point requires writable native storage. This check inspects existing
+        // directories and access only; it does not create or change them.
+        let preview_scope = super::native::scope(&fresh_owner, false)?;
+        if config_binding(&fresh_owner)? != owner
+            || config_binding(&fresh_source)? != decision.source_config
+            || !fresh_scope.is_session()
+            || !fresh_scope.owner_matches
+            || fresh_scope.root != scope.root
+            || !preview_scope.is_session()
+            || !preview_scope.owner_matches
+            || preview_scope.root != scope.root
+            || super::read(&fresh_scope.root)?.as_ref() != Some(record)
+        {
+            return Ok(None);
+        }
+        let request_id = crate::emitted::slot("REQUEST_ID");
+        let reason = crate::emitted::slot("REASON");
+        let route = crate::emitted::Route::new([
+            "goal",
+            "recover",
+            "--source-config",
+            source_path,
+            "--request-id",
+            request_id.as_str(),
+            "--reason",
+            reason.as_str(),
+            "--json",
+        ])
+        .config(&owner_loaded.path)
+        .within(16 * 1024);
+        if route.argv_value().is_null() {
+            return Ok(None);
+        }
+        Ok(Some(json!({
+            "kind":"native_goal_recovery_preview",
+            "readOnly":true,
+            "sourceConfig":source_path,
+            "sourceWorks":selected,
+            "command":route.argv_value(),
+            "sameConfigRequired":route.needs_config(),
+            "sameExecutableRequired":route.needs_executable(),
+            "placeholders":["REQUEST_ID","REASON"],
+            "inputConstraints":{
+                "REQUEST_ID":{"minimumBytes":1,"maximumBytes":128,"nonBlank":true,"forbiddenCharacters":["NUL"]},
+                "REASON":{"minimumBytes":1,"maximumBytes":1024,"nonBlank":true,"forbiddenCharacters":["NUL"]}
+            },
+            "integrationRequired":true,
+            "meaning":"Preview only; Source acceptance and a checked, reviewed integration remain separate."
+        })))
+    }
+    candidate(owner_loaded, record).ok().flatten()
+}
+
 pub(crate) fn context(owner_loaded: &Loaded, record: &Value) -> Result<Option<Context>, String> {
     let Some(state) = validated_state(record)? else {
         return Ok(None);
@@ -370,6 +500,7 @@ fn preview_decision(
     source: &Loaded,
     record: &Value,
     request: &Request<'_>,
+    access: super::native::Access,
 ) -> Result<(ActiveDecision, String), String> {
     if named_goal(record) {
         return Err("native Goal recovery does not support named-requirement Goals".into());
@@ -412,10 +543,12 @@ fn preview_decision(
     {
         return Err("--endpoint-configs must select exact current Source members".into());
     }
-    let session = super::native::current()?
-        .ok_or("goal recover requires a current native session identity")?;
-    let scope = super::native::scope(owner_loaded, false)?;
+    let scope = super::native::scope_with_access(owner_loaded, access)?;
     scope.require_owner()?;
+    let session = scope
+        .session
+        .as_ref()
+        .ok_or("goal recover requires a current native session identity")?;
     let owner = scope
         .owner
         .as_ref()
@@ -444,7 +577,7 @@ fn preview_decision(
                 member.work
             ));
         }
-        super::journey::validate_recovery_endpoint(&endpoint, &member)?;
+        super::journey::validate_recovery_endpoint_with_access(&endpoint, &member, access)?;
         source_members.push(SourceMember {
             member_sha256: super::journey::member_identity(&member),
             member,
@@ -495,7 +628,7 @@ fn preview_decision(
             .ok_or("native Goal event identity is missing")?
             .to_owned(),
         host: session.host.to_owned(),
-        session_key: session.key,
+        session_key: session.key.clone(),
         owner_identity_sha256: owner.identity_sha256.clone(),
         owner_project_id: owner.project_id.clone(),
         reason: request.reason.to_owned(),
@@ -560,7 +693,13 @@ pub(crate) fn recover(
     let source = crate::config::load(Some(request.source_config))
         .map_err(|error| format!("--source-config is unavailable: {error}"))?;
     let current = super::read(root)?.ok_or("no native session Goal is incorporated")?;
-    let (active, preview_sha256) = preview_decision(owner_loaded, &source, &current, &request)?;
+    let (active, preview_sha256) = preview_decision(
+        owner_loaded,
+        &source,
+        &current,
+        &request,
+        super::native::Access::RequireWritable,
+    )?;
     let owner_config = owner_loaded
         .path
         .to_str()
@@ -621,8 +760,13 @@ pub(crate) fn recover(
         owner_scope.require_owner()?;
         let fresh_source = crate::config::load(Some(request.source_config))
             .map_err(|error| format!("Source configuration changed or became unavailable; preview recovery again: {error}"))?;
-        let (fresh, fresh_preview) =
-            preview_decision(&fresh_owner, &fresh_source, previous, &request)?;
+        let (fresh, fresh_preview) = preview_decision(
+            &fresh_owner,
+            &fresh_source,
+            previous,
+            &request,
+            super::native::Access::RequireWritable,
+        )?;
         if fresh_preview != preview_sha256 || fresh != active {
             return Err("native Goal recovery preview is stale; request a new preview".into());
         }

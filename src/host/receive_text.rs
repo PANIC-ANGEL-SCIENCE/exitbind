@@ -1,17 +1,13 @@
-//! The receiving agent's Work read routes in the session context, each
-//! printed through the emitted-route builder.
+//! The receiving agent's Work navigation in the session context.
 
-/// How a receiving agent reads its Work, with every route printed through
-/// the emitted-route builder (this executable, `--config` when known).
+/// Scope the project fallback to its emitted executable and configuration.
 pub(super) fn receive_work(config: Option<&std::path::Path>) -> String {
-    format!("For a known Work or explicit smw_ locator, run `{}` directly for complete current profile/rules, assignment, evidence and action forms. Follow exact emitted argv; stale or incomplete detail needs its supported refresh/expansion before action. Unknown Work uses `{}` and its current detail route; focus is navigation, never authority. Use `{}` only for an initialized same-Work cross-host handoff; its `receive` block gives the bind and child-prepare commands. If another goal owns that sidecar, preserve it and use current Work detail. Do not read raw .exitbind state to recover it.",
-        crate::emitted::command_line(&["work", "detail", &crate::emitted::slot("WORK"), "--json"], config),
-        crate::emitted::command_line(&["work", "resume", "--json"], config),
-        crate::emitted::command_line(&["work", "continuation", &crate::emitted::slot("WORK")], config))
+    format!("For a known Work or explicit smw_ locator, read work detail --json using that Work's own configuration, which can differ from this session's project, for complete current profile/rules, assignment, evidence and action forms. Follow exact emitted argv; stale or incomplete detail needs its supported refresh/expansion before action. For Work in this project, use `{}` and its current detail route; this does not search other projects. Focus is navigation, never authority. Use work continuation with that Work's own configuration only for an initialized same-Work cross-host handoff; its receive block gives the bind and child-prepare commands. If another goal owns that sidecar, preserve it and use current Work detail. Do not read raw .exitbind state to recover it.",
+        crate::emitted::command_line(&["work", "resume", "--json"], config))
 }
 
 /// Keep a complete navigation route when the full examples exceed the budget.
 pub(super) fn receive_work_compact(config: Option<&std::path::Path>) -> String {
-    format!("Known Work: read its work detail --json. Otherwise run `{}` then detail. Read profile, rules, assignment, evidence and forms; refresh outdated/incomplete detail. Focus grants no authority. Use continuation only for an initialized same-Work cross-host handoff; preserve foreign Goal sidecars. Never read raw .exitbind state.",
+    format!("Known Work: read work detail --json with that Work's own configuration. For this project only, run `{}` then detail; other projects are not searched. Read profile, rules, assignment, evidence and forms; refresh outdated/incomplete detail. Focus grants no authority. Use continuation with the Work's configuration only for an initialized same-Work cross-host handoff; preserve foreign Goal sidecars. Never read raw .exitbind state.",
         crate::emitted::command_line(&["work", "resume", "--json"], config))
 }

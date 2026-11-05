@@ -69,6 +69,17 @@ pub(super) fn goal_status(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
     }
     value["currentReadiness"] = presentation["currentReadiness"].clone();
     value["goalProgress"] = presentation["goalProgress"].clone();
+    if scope.is_session()
+        && scope.owner_matches
+        && value["goalProgress"]["journeyCompletion"]["state"] == "blocked"
+    {
+        if let Some(form) = record
+            .as_ref()
+            .and_then(|goal| crate::session_goal::recovery::preview_form(l, goal))
+        {
+            value["goalProgress"]["journeyCompletion"]["recoveryForm"] = form;
+        }
+    }
     let named = record
         .as_ref()
         .is_some_and(crate::session_goal::requirements::named);

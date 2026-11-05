@@ -635,7 +635,15 @@ pub(super) fn member_identity(member: &Member) -> String {
 }
 
 pub(super) fn validate_recovery_endpoint(selected: &Loaded, member: &Member) -> Result<(), String> {
-    let scope = super::native::scope(selected, false)?;
+    validate_recovery_endpoint_with_access(selected, member, super::native::Access::RequireWritable)
+}
+
+pub(super) fn validate_recovery_endpoint_with_access(
+    selected: &Loaded,
+    member: &Member,
+    access: super::native::Access,
+) -> Result<(), String> {
+    let scope = super::native::scope_with_access(selected, access)?;
     let session = scope
         .session
         .ok_or("recovery endpoint validation requires the original native session")?;

@@ -169,6 +169,111 @@ fn accept_recovery_integration(source: &Project, config: &Path) -> String {
     integration
 }
 
+#[test]
+fn owner_status_offers_a_read_only_foreign_source_preview_without_credit() {
+    let (owner, source) = owner_and_source("native-recovery-status-form");
+    let work = source_member(&source);
+    let journal = native_journal(&owner);
+    let before_goal = fs::read(&journal).unwrap();
+    let work_ledger = source
+        .root
+        .join(".exitbind/runs")
+        .join(format!("work-{}.jsonl", work.strip_prefix("smw_").unwrap()));
+    let before_work = fs::read(&work_ledger).unwrap();
+    let status = owner.status();
+    let journey = &status["goalProgress"]["journeyCompletion"];
+    assert_eq!(journey["state"], "blocked");
+    assert!(status["goalProgress"]["nextAction"].is_null());
+    let form = &journey["recoveryForm"];
+    assert_eq!(form["kind"], "native_goal_recovery_preview");
+    assert_eq!(form["readOnly"], true);
+    assert_eq!(form["integrationRequired"], true);
+    assert_eq!(form["sourceWorks"], json!([work]));
+    assert_eq!(form["sameConfigRequired"], false);
+    assert_eq!(form["sameExecutableRequired"], false);
+    let mut argv = form["command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    for word in &mut argv {
+        match word.as_str() {
+            "<REQUEST_ID>" => *word = "status-preview".into(),
+            "<REASON>" => *word = "Inspect the source binding".into(),
+            _ => {}
+        }
+    }
+    assert!(!argv.iter().any(|word| word == "--apply"));
+    let preview = owner.call_exact_argv(&argv);
+    assert!(
+        preview.status.success(),
+        "{}",
+        String::from_utf8_lossy(&preview.stderr)
+    );
+    let preview: Value = serde_json::from_slice(&preview.stdout).unwrap();
+    assert_eq!(preview["kind"], "native_goal_recovery_preview");
+    assert_eq!(preview["readOnly"], true);
+    assert_eq!(
+        preview["decision"]["sourceMembers"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        preview["decision"]["sourceMembers"][0]["member"]["work"],
+        work
+    );
+    assert_eq!(fs::read(&journal).unwrap(), before_goal);
+    assert_eq!(fs::read(&work_ledger).unwrap(), before_work);
+    assert_eq!(
+        owner.status()["goalProgress"]["journeyCompletion"]["state"],
+        "blocked"
+    );
+}
+
+#[test]
+fn recovery_form_keeps_pending_and_ambiguous_sources_uncredited() {
+    let (owner, source) = owner_and_source("native-recovery-status-negative");
+    let absent = owner.status();
+    assert!(absent["goalProgress"]["journeyCompletion"]["recoveryForm"].is_null());
+    let config = source.root.join("exitbind.json");
+    let pending = begin_in(&source, &config, "Pending Source", "sh check.sh", &[]);
+    let status = owner.status();
+    let form = &status["goalProgress"]["journeyCompletion"]["recoveryForm"];
+    assert_eq!(form["sourceWorks"], json!([pending]));
+    assert_eq!(form["integrationRequired"], true);
+    assert!(status["goalProgress"]["nextAction"].is_null());
+    let foreign = source.value(&["goal", "status", "--json"], None);
+    assert_eq!(foreign["contextOnly"], true);
+    assert!(foreign["goalProgress"]["journeyCompletion"]["recoveryForm"].is_null());
+
+    let bytes = fs::read(&config).unwrap();
+    fs::write(&config, b"{").unwrap();
+    let invalid = owner.status();
+    assert!(invalid["goalProgress"]["journeyCompletion"]["recoveryForm"].is_null());
+    fs::write(&config, bytes).unwrap();
+
+    let mut second = Project::new("native-recovery-status-second-source");
+    second.native_session = owner.native_session.clone();
+    second.file("check.sh", "set -eu\ntrue\n");
+    let second_config = second.root.join("exitbind.json");
+    begin_in(
+        &second,
+        &second_config,
+        "Another Source",
+        "sh check.sh",
+        &[],
+    );
+    let ambiguous = owner.status();
+    assert!(ambiguous["goalProgress"]["journeyCompletion"]["recoveryForm"].is_null());
+    assert_eq!(
+        ambiguous["goalProgress"]["journeyCompletion"]["state"],
+        "blocked"
+    );
+}
+
 #[path = "native_recovery/semantic_repair.rs"]
 mod semantic_repair;
 
@@ -954,6 +1059,7 @@ fn native_recovery_refuses_named_goal_and_unaccepted_source_evidence() {
     let named =
         Project::new("native-recovery-named-goal").with_native_session("named-recovery-session");
     named.setup();
+    assert!(named.status()["goalProgress"]["journeyCompletion"]["recoveryForm"].is_null());
     let named_result = named.call(
         &[
             "goal",
@@ -984,6 +1090,7 @@ fn native_recovery_refuses_named_goal_and_unaccepted_source_evidence() {
     let status = owner.status();
     let journey = &status["goalProgress"]["journeyCompletion"];
     assert_eq!(journey["state"], "blocked");
+    assert!(journey["recoveryForm"].is_null());
     assert_eq!(journey["members"]["total"], 1);
     assert_eq!(journey["members"]["historical"], 0);
     assert!(journey["unresolved"]

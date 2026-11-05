@@ -416,6 +416,45 @@ fn a_project_that_does_not_own_the_session_goal_still_reads_context_only() {
         &["work", "detail", &owner_work, "--view", "action", "--json"],
     );
     assert_eq!(owner_action["goalAssociation"]["kind"], "journey_member");
+
+    // The Goal owner and the open Work use different configurations. The
+    // derived Work command must run with that Work's verified configuration.
+    let owner_before = files_under(&owner.root.join(".exitbind"));
+    let other_before = files_under(&other.root.join(".exitbind"));
+    let goals_before = files_under(shared_store);
+    let context = resume_hook(&owner, session, &claude(session));
+    assert!(
+        context.contains("that Work's own configuration"),
+        "{context}"
+    );
+    assert!(
+        context.contains("this does not search other projects")
+            || context.contains("other projects are not searched"),
+        "{context}"
+    );
+    assert!(
+        !context.contains("work detail <WORK> --json --config "),
+        "{context}"
+    );
+    let command = printed_detail_command(&context, other_work);
+    assert!(command.contains(&other_config), "{command}");
+    let outside = super::support::temp("resume-foreign-work-outside");
+    let detail = super::support::git_topology::command("/bin/sh")
+        .args(["-c", command])
+        .current_dir(&outside)
+        .env_remove("CODEX_THREAD_ID")
+        .env_remove("CODEX_SESSION_ID")
+        .env_remove("EXITBIND_NATIVE_SESSION_ID")
+        .env("CLAUDE_CODE_SESSION_ID", session)
+        .env("EXITBIND_SESSION_GOALS_DIR", shared_store)
+        .env("EXITBIND_NO_UPDATE_CHECK", "1")
+        .output()
+        .unwrap();
+    assert!(detail.status.success(), "{detail:?}");
+    assert!(String::from_utf8_lossy(&detail.stdout).contains(other_work));
+    assert_eq!(files_under(&owner.root.join(".exitbind")), owner_before);
+    assert_eq!(files_under(&other.root.join(".exitbind")), other_before);
+    assert_eq!(files_under(shared_store), goals_before);
     fs::remove_dir_all(owner.root).unwrap();
     fs::remove_dir_all(other.root).unwrap();
 }

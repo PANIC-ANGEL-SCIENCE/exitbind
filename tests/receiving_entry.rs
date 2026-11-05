@@ -682,7 +682,7 @@ fn expanded_view_keeps_the_token_and_receive_routes() {
 }
 
 #[test]
-fn governed_session_start_routes_known_work_to_detail_and_unknown_work_to_resume() {
+fn governed_session_start_scopes_work_navigation_to_its_configuration() {
     let (root, work) = project(
         "receiving-hook",
         json!([{"id":"docs","text":"Document the flag."}]),
@@ -705,12 +705,17 @@ fn governed_session_start_routes_known_work_to_detail_and_unknown_work_to_resume
         .unwrap();
     let exe = env!("CARGO_BIN_EXE_exitbind");
     assert!(
-        context.contains(&format!("run `{exe} work detail <WORK> --json --config ")),
+        context.contains("read work detail --json using that Work's own configuration"),
+        "{context}"
+    );
+    assert!(
+        !context.contains("work detail <WORK> --json --config "),
         "{context}"
     );
     assert!(context.contains(&format!(
-        "Unknown Work uses `{exe} work resume --json --config "
+        "For Work in this project, use `{exe} work resume --json --config "
     )));
+    assert!(context.contains("this does not search other projects"));
     assert!(!context.contains("first run `exitbind work next WORK --json`"));
     assert!(context.contains("only for an initialized same-Work cross-host handoff"));
     assert!(context.contains("stale or incomplete detail needs its supported refresh/expansion"));

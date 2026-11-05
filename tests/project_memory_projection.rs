@@ -412,11 +412,15 @@ fn many_accepted_items_never_drop_the_session_context() {
     let context = session_context(&root);
     let exe = env!("CARGO_BIN_EXE_exitbind");
     assert!(
-        context.contains(&format!("run `{exe} work detail <WORK> --json --config ")),
+        context.contains("read work detail --json using that Work's own configuration"),
+        "{context}"
+    );
+    assert!(
+        !context.contains("work detail <WORK> --json --config "),
         "{context}"
     );
     assert!(context.contains(&format!(
-        "Unknown Work uses `{exe} work resume --json --config "
+        "For Work in this project, use `{exe} work resume --json --config "
     )));
     assert!(context.contains("only for an initialized same-Work cross-host handoff"));
     assert!(context.len() <= 3072);
