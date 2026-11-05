@@ -73,3 +73,5 @@ Set brief-specific thresholds before inspection. Use visible observations rather
 - **Effect without benefit:** removing an effect preserves the intended communication and improves clarity or reliability. Keep it only if a commissioned expressive purpose still justifies the cost.
 
 A rejection identifies artifact/version, location/state, observation, consequence and next test. It is a finding, not permission to revise a frozen first pass or override a client's deliberate choice.
+
+Appearance itself is a valid purpose in the decision sheet: atmosphere, delight, visual tension, material richness and recognizable brand voice may justify an expressive choice without an invented utilitarian benefit. Budgets protect the intended experience; they do not demand neutral minimalism. Use [aesthetic-construction.md](aesthetic-construction.md) for coupled creation and [typography.md](typography.md) for optical type decisions.

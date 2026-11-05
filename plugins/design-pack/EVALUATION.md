@@ -36,3 +36,20 @@ These are author walkthroughs of written instructions, not generated design tria
 | A brief calls for restraint | Effect sheet can select none; signature can come from content relationships | Mandatory grain, dark mode, animation or any house palette |
 
 This review found broad method coverage, not demonstrated output quality across all fields. Brand/print, physical, spatial and fashion workflows still need representative practitioner trials before any claim of specialist production reliability. No project-specific prototype or media is distributed with this package.
+
+## 0.3.0 author walkthrough additions
+
+These are written-method scenarios, not rendered trials or independent aesthetic evidence.
+
+| Scenario | Route and concrete behavior | Failure to avoid |
+| --- | --- | --- |
+| “Improve the appearance, not just the flow” | Aesthetic construction couples mass/space, type silhouette, color area, image light and material; compares five ideas on common content | More usability checklists or five recolors |
+| “An expressive Korean and English exhibition” | Typography compares actual bilingual specimens and optional voices; checks apparent mass, script ownership, roles and real assets | Latin-only display silently falling back or applying Latin tracking to Hangul |
+| “Use Black Han Sans at 700” | Inspect supplied face: reported metadata lists only 400; choose real supported face/alternative and test emphasis | Calling synthesized bold an actual supplied weight |
+| “This font card proves the pairing works” | Equal content/declared scale then optical compensation; test paragraphs, headings and glyphs | Treating equal CSS size or metadata as rendered quality evidence |
+| “The gallery proves one-shot improvement” | Separate reported visual relationships from different Build/Design-first conditions | Confounding human-selected image direction and direct first output |
+| “VOID was inspected, so recommend its full flow” | Preserve partial modal-obstructed evidence; keep expense error separate | Turning partial/failed access into successful UI evidence |
+| “Beautiful grain has no measurable conversion effect” | Permit atmosphere/material expression; inspect craft, legibility and actual rendering | Utility-only deletion or mandatory texture |
+| “A first-pass title looks cramped” | Freeze and report read-only finding under unchanged first-pass protocol | Quietly repairing and relabeling it as the first artifact |
+
+The added checker cases test routes and evidence structure/identity, not whether a font is attractive or prose is semantically true. Practitioner and controlled output trials remain unperformed.

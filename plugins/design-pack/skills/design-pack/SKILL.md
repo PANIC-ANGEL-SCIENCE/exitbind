@@ -37,6 +37,9 @@ For an explicit one-shot or fresh-first-attempt request, use [first-pass.md](ref
 | Whole-project plan, stage evidence, scope change and maintenance | [lifecycle.md](references/lifecycle.md) |
 | Roles, responsibilities, capability selection | [roles.md](references/roles.md) |
 | Actual-example comparison, generic-style diagnosis, purposeful copy | [reference-analysis.md](references/reference-analysis.md) |
+| Appearance-led creation: coupled composition, type, color, image, form and material directions | [aesthetic-construction.md](references/aesthetic-construction.md) |
+| Deep font selection, expressive roles, Korean/Latin optical matching, assets and specimens | [typography.md](references/typography.md) |
+| Focused public-preview and typography evidence, reported/observed limits | [preview-evidence.md](references/preview-evidence.md) |
 | Translate evidence into composition, optical alignment, effects and visual rejection tests | [visual-methods.md](references/visual-methods.md) |
 | Explicit one-shot creation, fresh trial, freeze and read-only verification | [first-pass.md](references/first-pass.md) |
 | Reference analysis, concept, composition, typography, brand | [direction.md](references/direction.md) |

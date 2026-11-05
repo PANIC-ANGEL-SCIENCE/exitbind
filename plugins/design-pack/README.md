@@ -1,6 +1,6 @@
-# Design Pack 0.2.0
+# Design Pack 0.3.0
 
-A self-contained, independently authored design workflow intended for possible future distribution alongside Exitbind. It consolidates useful methods from 18 reference repositories and seven public visual references into **one pack**, rather than connecting or installing those repositories.
+A self-contained, independently authored design workflow intended for possible future distribution alongside Exitbind. It consolidates useful methods from 18 reference repositories and seven original public visual references, with focused preview and typography evidence, into **one pack**, rather than connecting or installing those repositories.
 
 Start at [the skill](skills/design-pack/SKILL.md). It routes work across client briefing, research, strategy, art direction, digital products/services, brand, graphic/print/editorial, diagrams, industrial products, spaces, fashion, motion, sound and 3D. The workflow covers discovery through maintenance, with compact on-demand references and editable templates.
 
@@ -8,6 +8,8 @@ Start at [the skill](skills/design-pack/SKILL.md). It routes work across client 
 
 - A designer's method for turning vague requests into concrete intent, alternatives, decisions and acceptance checks.
 - Actual-reference comparison and purposeful-copy checks before choosing or revising visual direction.
+- Coupled aesthetic construction across composition, type, color, form, imagery and material, with five contextual direction hypotheses.
+- Deep typography: expressive Korean/Latin voices, optical matching, real specimens, font assets/axes/fallback and licensing.
 - Concrete composition contracts, optical alignment, contextual color and optional effect budgets with visual rejection tests.
 - Explicit one-shot mode: planning alternatives only, freeze the first artifact, then inspect without redesign.
 - Role-specific perspectives and medium-specific production handoffs.
@@ -42,10 +44,10 @@ Python 3.10+ standard library only. Run from this package root:
 ```sh
 python3 scripts/check_pack.py
 python3 scripts/check_pack.py --self-test
-python3 scripts/package.py --output ../design-pack-0.2.0.zip
+python3 scripts/package.py --output ../design-pack-0.3.0.zip
 ```
 
-The checker validates the exact file inventory, local links, metadata consistency, source coverage and absence of symlinks/unexpected private material. Its negative tests exercise broken links, manifest drift, missing original and public sources, missing observation limits, unrouted methods, unexpected files and symlinks. Packaging revalidates and uses only the declared files. A successful check proves package properties, not design quality or provider compatibility.
+The checker validates the exact file inventory, local links, metadata consistency, source coverage and absence of symlinks/unexpected private material. Focused evidence records distinguish reported snapshots, partial/failed access, primary text and claims; no rendered output quality improvement is asserted. Its positive and negative tests exercise broken links, manifest drift, missing original and public sources, missing observation limits, unrouted methods, unexpected files and symlinks. Packaging revalidates and uses only the declared files. A successful check proves package properties, not design quality or provider compatibility.
 
 See [VALIDATION.md](VALIDATION.md) for the actual execution record and [EVALUATION.md](EVALUATION.md) for scenario coverage and its limits.
 

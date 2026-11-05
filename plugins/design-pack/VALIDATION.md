@@ -1,6 +1,14 @@
 # Validation record
 
-## 0.2.0 method update
+## 0.3.0 aesthetic and typography update
+
+Date: 2026-11-05. Executed `python3 plugins/design-pack/scripts/check_pack.py --self-test` from the repository root: PASS. The check covers 38 allowlisted files, three consistent 0.3.0 manifests, compact routes/local links, 18 original repository records, seven original public-site records and 15 new focused evidence records. Original source records and first-pass protocol remain unchanged.
+
+The positive case accepts mixed reported snapshots, partial/failed access and primary text, plus an alternative aesthetic hypothesis without imposing a taste rule. All 25 negative cases passed: the original ten, plus twelve focused provenance/identity/limit cases and three missing new-route cases. The latter assert the specific expected diagnostic, including wrong prompt-frame identity, promotion of failed/partial/text evidence, invented local render/interaction/viewport claims, and missing rights/transfer boundaries.
+
+These are structural and provenance-field checks, not semantic proof of the prose, visual quality, font compatibility, accessibility or output improvement. The typography candidates are reported primary metadata findings, not downloaded assets or rendered pairings. The five construction directions and values are original hypothetical examples. No mockup, font/image asset, archive, installation or external publication was produced by this update. Independent review, governing final check and acceptance remain separate from the worker self-test. [EVALUATION.md](EVALUATION.md) records author walkthroughs only; [focused evidence](skills/design-pack/references/preview-evidence.md) preserves access, rights and observation limits.
+
+## Historical 0.2.0 method update
 
 Date: 2026-11-05. Scope: 34 allowlisted files; three consistent manifests; compact entrypoint and all routed references; local links; original 18 repository records plus seven public source records with observation and rights limits. No external dependency, demo or private project artifact added.
 

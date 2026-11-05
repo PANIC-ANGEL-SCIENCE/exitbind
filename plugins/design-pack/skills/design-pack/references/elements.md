@@ -74,3 +74,5 @@ Specify event meaning, priority, timbre, register, attack/decay, repetition and 
 | Earshot, Blender integration, img2threejs | Sound analysis/generation and staged 3D tooling | Tool availability and inferred geometry remain limits | Cue/scene specifications, evidence and medium-appropriate verification |
 
 See [sources.md](sources.md) for every repository and inspected license. This inventory summarizes documentation, not rendered sample inspection or independent tool testing.
+
+For a deeper role/specimen/asset workflow, read [typography.md](typography.md). For coherent alternatives across these elements, read [aesthetic-construction.md](aesthetic-construction.md); do not select each element independently from a style menu.

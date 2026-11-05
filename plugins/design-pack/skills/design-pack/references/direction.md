@@ -38,3 +38,5 @@ Brand recognition, legibility and task clarity matter together. If a motif inten
 ## Review questions
 
 Can a viewer identify the subject and intended priority? Is each expressive choice supported by the concept? Does it hold up with actual content, at small and large sizes, in relevant languages and conditions? Is the design distinguishable without relying on an unlicensed asset? What changed because of evidence rather than personal habit?
+
+For appearance-led creation, use [aesthetic-construction.md](aesthetic-construction.md) to couple type, composition, color, form, material and imagery. For font selection beyond a style label, use [typography.md](typography.md). Mood, visual pleasure and brand expression are valid concept outcomes, not merely decoration that must improve task metrics.

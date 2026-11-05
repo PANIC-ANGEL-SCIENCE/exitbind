@@ -25,7 +25,7 @@ When feedback rejects a direction, preserve working behavior while reopening the
 
 ## Copy must earn its place
 
-For each line, identify its job: identify a person/object, orient, enable an action, explain state or consequence, provide relevant verified detail, or contribute a deliberately commissioned story. If it has no job, delete it before shortening or restyling it.
+For each line, identify its job: identify a person/object, orient, enable an action, explain state or consequence, provide relevant verified detail, or contribute intentional narrative, atmosphere or brand voice within the brief. If it has no job, delete it before shortening or restyling it.
 
 - Avoid interchangeable mood slogans, generic praise and invented lifestyle claims added merely to make a layout feel designed. Do not replace one empty adjective with another.
 - Do not fabricate issue numbers, collection counts, exclusivity, creator testimony, product properties or editorial provenance. Sample content must be marked as such, and decorative counters must not impersonate working navigation.
@@ -33,7 +33,7 @@ For each line, identify its job: identify a person/object, orient, enable an act
 - Expressive language remains available for genuine editorial, cultural or brand work. It needs a specific subject, intentional voice and a purpose in the brief. Emotional effect is legitimate; empty filler is not.
 - Honor explicit client prohibitions in the project scope. Do not publish their exact wording or apply it to unrelated clients.
 
-**Deletion test:** remove the line. If meaning, action, orientation and the commissioned narrative all remain intact, the line probably does not belong. **Swap test:** could the line fit almost any unrelated product unchanged? If so, supply specific substance or delete it. These tests guide judgment; they do not ban short labels or intentionally repeated brand language.
+**Deletion test:** remove the line. If meaning, action, orientation and the intended narrative/atmosphere all remain intact, the line probably does not belong. **Swap test:** could the line fit almost any unrelated product unchanged? If so, supply specific substance or delete it. These tests guide judgment; they do not ban short labels or intentionally repeated brand language.
 
 ## Completion evidence
 
