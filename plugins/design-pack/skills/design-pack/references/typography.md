@@ -6,7 +6,7 @@ Typography shapes an artifact before it communicates individual words. Select it
 
 Describe letterform behavior: compact/expansive width, open/tight counters, even/contrasting strokes, sharp/soft endings, upright/sloped stress and regular/irregular rhythm. Relate visible properties to the subject and intended feeling. “Premium” alone cannot choose a font. A geometric sans can be expressive; a serif can be functional; neither is a universal shortcut or ban.
 
-Set roles before counting families: display, section title, reading text, action/label, caption and numeric data. Contrast can come from size, width, weight, case, spacing or family. Change the dimensions needed to distinguish roles. Expressive display with quiet text is one route; one family with contrasting widths/weights is another; restrained size with strong spatial separation is another. A pair should share some rhythm or structure while differing where roles need contrast. Two nearly identical voices can look accidental; competing display faces can erase priority.
+Set roles before counting families: display, section title, reading text, action/label, caption and numeric data. Contrast can come from size, width, weight, case, spacing or family. Change the dimensions needed to distinguish roles. Compare how the actual roles can be distinguished through letterform, width, weight, scale or spatial relationships; family count and display intensity are project choices. A pair should share some rhythm or structure while differing where roles need contrast. Two nearly identical voices can look accidental; competing display faces can erase priority.
 
 Begin body text at the real reading distance and medium. Compose the title as a shape and set supporting labels in relation to it. Test whether personality survives at the actual size, and whether reading text remains pleasant through a paragraph. An alphabet specimen alone is insufficient.
 
@@ -14,25 +14,7 @@ Begin body text at the real reading distance and medium. Compose the title as a 
 
 Before direction/production, inventory scripts, content length, numerals, punctuation, symbols, emphasis and deployment constraints. For Korean work, retain a real Hangul/Latin/numeral shortlist with family, actual weight and role size. Ordinary work renders comparable specimens before selection; explicit first-pass plans before its single build and inspects the frozen result. A system stack is a deliberate candidate, not evidence of brand expression by itself. Compare a small shortlist using identical text and intended role sizes: first equal declared size, then optical compensation with the difference recorded. Equal CSS size is not equal perceived size. Keep content and layout comparable; better words or shorter titles can bias selection.
 
-Possible paths, never defaults:
-
-- **Integrated bilingual family:** evaluate a Korean/Latin family to reduce accidental fallback while checking balance. Noto Sans KR offers an even-stroke candidate; Noto Serif KR offers a different stroke-contrast candidate. Suitability is a specimen question.
-- **Expressive Hangul display with quiet reading text:** investigate Black Han Sans or Do Hyeon for a strong title silhouette, or Gowun Batang for a different text texture. Test a short real title beside a longer Korean paragraph. Do not assume a display's voice works for captions or that every weight exists.
-- **Related family system:** investigate IBM Plex Sans KR with an appropriate related Latin family. Related naming suggests a shortlist, not matching metrics, coverage or identical releases.
-- **Deliberate script contrast:** a Latin display face such as Fraunces may serve a Latin-only title with a separately chosen Korean companion. Choose the companion for compatible dark mass, contrast and rhythm. Latin display selection must not silently leave every Korean heading to the operating system.
-
-Reported primary Google Fonts metadata inspected 2026-11-05 supplies these bounded candidate facts. No font was downloaded, rendered or paired in this update; the table is not a recommended combination or full glyph/license audit.
-
-| Candidate metadata | Reported coverage and faces/axes | Selection consequence |
-| --- | --- | --- |
-| [Noto Sans KR](https://github.com/google/fonts/blob/main/ofl/notosanskr/METADATA.pb) | Korean/Latin; variable `wght` 100–900 | Explore weight within the exact asset's supported range |
-| [Noto Serif KR](https://github.com/google/fonts/blob/main/ofl/notoserifkr/METADATA.pb) | Korean/Latin; variable `wght` 200–900 | Compare stroke contrast at real body and heading sizes |
-| [IBM Plex Sans KR](https://github.com/google/fonts/blob/main/ofl/ibmplexsanskr/METADATA.pb) | Korean/Latin; static weights 100–700 | Map actual static files, not an invented variable range |
-| [Black Han Sans](https://github.com/google/fonts/blob/main/ofl/blackhansans/METADATA.pb) / [Do Hyeon](https://github.com/google/fonts/blob/main/ofl/dohyeon/METADATA.pb) | Korean/Latin; static 400 only | Do not request 700 and assume a real drawn bold exists |
-| [Gowun Batang](https://github.com/google/fonts/blob/main/ofl/gowunbatang/METADATA.pb) | Korean/Latin; static 400/700 | Compare the two real weights and reading texture |
-| [Fraunces](https://github.com/google/fonts/blob/main/ofl/fraunces/METADATA.pb) | Latin, no Korean listed; `wght` 100–900, `opsz` 9–144, `SOFT` 0–100, `WONK` 0–1, italic file | Test the supported expressive axes; provide an explicit Korean strategy |
-
-All seven metadata records label OFL. Inspect the exact license and files before adoption; a metadata label is not every distribution obligation. No `opsz` is declared in the six Korean candidates above. Never invent optical-size support based on a family name.
+Compare actual available paths: an integrated bilingual family, independently selected Hangul display and reading roles, a related family system, or a deliberately contrasting script pair. Name the exact candidate files in the project note. Related naming does not prove matching metrics or script coverage. A Latin-only display must have an explicit Korean companion and punctuation strategy. Inspect actual supported weights and axes; a static regular face does not acquire a drawn bold because CSS requests it. Retain exact license and embedding/subsetting obligations with each asset. No font is bundled or prescribed here.
 
 ## Korean and Latin optical matching
 
@@ -59,7 +41,7 @@ Test required Hanja, historic Hangul/Jamo, names, other languages and combining 
 
 ## Scale, measure and line breaks
 
-Choose role contrasts from the artifact, not a universal modular scale. A poster may use an overwhelming title; a table may need small size differences and stronger alignment. Specify size, weight, width, leading, tracking and measure per role. As an independent illustrative example, a 17-unit reading role with 27-unit leading and a 44-unit title might suit one editorial frame. These are not source measurements or defaults, and may be wrong for the chosen Korean face or screen.
+Choose role contrasts from the artifact, not a universal modular scale. A poster may use an overwhelming title; a table may need small size differences and stronger alignment. Specify size, weight, width, leading, tracking and measure per role. Derive reading size and leading with actual paragraphs, script metrics, viewing distance and required zoom. Set title relationships using the real words and intended emphasis, then inspect line breaks and glyph fit at the target sizes. Record selected values and their evidence in the project instead of borrowing an example scale.
 
 - **Weight:** compare actual dark mass. Numeric weights are labels within a family, not cross-family optical equivalence. Inspect thin strokes on the intended background, especially small reversed text. Prefer real faces to unintended synthesis.
 - **Tracking:** tune by role and script. Tighter large Latin headings do not establish a safe Korean setting. Hangul block spacing, Latin kerning and mixed punctuation need separate inspection. Never transfer a source's negative tracking to every language or to body text. Check joins, counters and texture at normal scale.
@@ -75,10 +57,14 @@ Map each role to real font faces and fallbacks. Match `@font-face` weights/style
 
 For web delivery, budget font requests and Korean subset coverage together. A subset may omit a rare name; test actual and dynamic content. Select a loading strategy and inspect both fallback and loaded phases, including missing files and slow loading, for invisible text, layout shift and truncation. Metric adjustments such as `size-adjust` require measured metrics and target-browser checks, not copied percentages. Verify the rendered font for representative glyphs with available diagnostics; the CSS family declaration alone cannot prove glyph source.
 
-For print/PDF, inspect embedding permissions, substitution and the final export at actual size. For motion/3D, inspect rasterization, distance, movement and frame timing. Record performed and unavailable tests separately. The [CSS Fonts draft](https://www.w3.org/TR/css-fonts-4/) and [Korean layout draft](https://www.w3.org/TR/klreq/) are reference material, with status in [preview-evidence.md](preview-evidence.md), not automatic conformance evidence.
+For print/PDF, inspect embedding permissions, substitution and the final export at actual size. For motion/3D, inspect rasterization, distance, movement and frame timing. Record performed and unavailable tests separately. Consult current font and language-layout specifications for the selected target when needed; a specification citation alone does not prove conformance.
 
 ## Finish and handoff
 
 Inspect real text on intended light/dark/image backgrounds; narrow/wide layouts; zoom and user text spacing; long labels/errors; loading/fallback; and required scripts. Also judge voice, title silhouette, paragraph color and transitions between roles. Technical success does not establish expressive success. Retain an annotated specimen with chosen/rejected pairings and optical reasons, role specifications, asset/license records and coverage gaps.
 
 Ordinary work revises the affected relationship and retests it. Explicit one-shot work prepares the type plan before production, freezes the first artifact and reports failures without changing it; [first-pass.md](first-pass.md) governs. No generated-output quality improvement is demonstrated by this chapter alone.
+
+## Naming language across a set
+
+Choose a task-scoped naming policy before typography is finished: one language or a deliberate division by role, without silently translating approved proper names. Inspect real strings at use size for script mass, baseline, weight, line breaks, wrapping and hierarchy. A language change can alter layout across states and pages; recheck the whole affected set. English-only is not a quality rule, and nominal font metrics are not visual evidence.

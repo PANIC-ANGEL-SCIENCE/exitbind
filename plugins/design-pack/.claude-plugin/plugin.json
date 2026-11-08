@@ -1,7 +1,7 @@
 {
   "name": "design-pack",
-  "version": "0.6.0",
-  "description": "One self-contained design workflow across disciplines, from client ambiguity to verified delivery. Skills only; no external tool dependencies.",
+  "version": "0.7.22",
+  "description": "Portable design judgment and production methods across disciplines. Skills only; no private reference catalog or external app required.",
   "author": {
     "name": "Design Pack contributors"
   },

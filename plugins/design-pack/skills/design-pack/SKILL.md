@@ -1,75 +1,25 @@
 ---
 name: design-pack
-description: One design workflow from ambiguous client request through research, strategy, concepts, production, validation, delivery and maintenance. Use across brand, graphic/print, editorial, digital products/services, information design, industrial products, spaces, fashion, motion, sound and 3D. Includes role perspectives and medium-specific handoffs. Core methods need no external apps.
+description: "Create and refine deliberate visual work: interfaces, portfolio presentations, brand, editorial, physical, spatial, motion, sound and 3D. Turn inspected references into actual composition, typography, imagery and states."
 ---
 
 # Design Pack
 
-Operate as a design partner: understand the intended experience, make defensible choices, produce useful work, and check what was actually made. Match the user's language. Do not confuse a complete-looking surface with a complete user journey.
+Make the work, not a description of good work. Choose from the brief, actual content and inspected references, then judge the artifact at the scale where it will be seen. Own routine creative decisions within the user's scope.
 
-## Start here, every time
+## Choose the route
 
-1. Read the current request and relevant project guidance, existing design system, approved decisions and available artifacts. Confirm the scope from evidence; do not import another client's visual identity.
-2. Record **loaded guidance** by path/version, the active project profile and its scope, and any missing evidence. Installed files alone do not demonstrate use. Read only the references needed below.
-3. For a short request implying new design, read [discovery.md](references/discovery.md) and the [reference catalog](references/reference-catalog.md) now. Select a small justified set, open actual visual materials and retain state/viewport/capture evidence before direction or production. Use authorized project-private overlays; summaries never replace maker inspection. If access fails, try alternatives or explicitly limit the outcome to a provisional direction.
-4. Decide the work route: small local refinement, new direction, product flow, diagram, motion/audio, or 3D. A small reversible refinement needs a one-line interpretation and direct work; do not demand a full discovery workshop.
-5. For vague or consequential requests, read [briefing.md](references/briefing.md). Separate user facts, observations, hypotheses, proposals and confirmed choices. Clarify only what changes the design or would cause costly rework. Existing authorization persists.
-6. Use [roles.md](references/roles.md) to select the perspectives needed. These are thinking responsibilities, not automatic subagents. Do not manufacture independent review by changing persona.
+Read [design judgment](references/design-judgment.md) for a new or rejected direction. First reconcile the [brief](references/briefing.md) and applicable [profile](references/memory.md), including scoped constraints and allowed inputs. Use [Discovery](references/discovery.md) for requested references; missing essential pixels block only dependent work.
 
-## One coherent process
+- Hero boards and case-study sequences: [portfolio presentation](references/portfolio-presentation.md).
+- UI screens and product flows: [screen production](references/screen-production.md).
+- Other media or a specific craft question: [method index](references/methods.md).
+- Imagery and generated mockups: [Mockup Image](../mockup-image/SKILL.md).
 
-**Understand → frame → explore → make → inspect → refine → hand off.**
+## Work visibly
 
-For an explicit one-shot or fresh-first-attempt request, use [first-pass.md](references/first-pass.md): inspect selected external references before direction; candidate alternatives stay in planning; freeze one produced concept before read-only verification. Its no-redesign boundary overrides the iterative make/refine steps below.
+Explore the uncertain relationship with actual content, then choose, build and inspect. A prompt or checklist is not a composition study. Choose asset-first, composition-first or coupled development according to the uncertainty; precision and reuse call for clean masters, not a universal production order. For connected pages, build the sequence before polishing isolated boards. Honor explicit control silhouettes and naming language at use size.
 
-- **Understand:** Who is doing what, in which situation, and why is the current experience insufficient? For redesigns, inspect the actual artifact and representative states before proposing changes.
-- **Frame:** Write a short brief with outcome, audience, primary action, constraints, preservation requirements, unknowns, and observable acceptance criteria. Use [brief.md](templates/brief.md) for substantial work; otherwise keep these in the task note.
-- **Explore:** For a new or rejected direction, complete maker inspection through discovery, then compare relevant real examples using [reference-analysis.md](references/reference-analysis.md) before choosing a visual language. When direction is genuinely undecided, propose two or three materially different approaches. Explain the conceptual idea, content hierarchy, composition, interaction, tradeoffs, and what would invalidate each. Do not produce three recolors. Recommend one. Where the user delegates direction, select and record it; where their answer is required, wait only on dependent work.
-- **Make:** Produce the smallest representative artifact that tests the riskiest assumption: a content-first wireframe, one component with states, a styleframe, a storyboard, or a geometry blockout. Use real or clearly marked example content. Expand after the important uncertainty is resolved.
-- **Inspect:** Examine the built artifact, not only its source or a tool's success code. Check relevant states, devices and access needs with [validation.md](references/validation.md). If only a specification is possible, deliver it as a specification and list production checks still needed.
-- **Refine:** Prioritize failures that prevent the intended task, then coherence and expression. Preserve deliberate character when correcting usability. Each change has a reason; do not sand every design into the same neutral template.
-- **Hand off:** Supply editable output, key decisions, tokens/specifications, state behavior, asset provenance, actual evidence and known gaps. For governed Exitbind work, use [exitbind.md](references/exitbind.md) without replacing the host's authority or claiming acceptance yourself.
+Compare thumbnail impact, use-size reading and source detail with the relevant benchmark pixels. Correctness does not close a craft rejection. If expression, hierarchy or the organizing idea still misses the brief, keep it in rework even when states and geometry are correct. Use [validation](references/validation.md) for evidence and [Exitbind](references/exitbind.md) for governed work.
 
-## Load by need
-
-| Work | Read |
-| --- | --- |
-| Autonomous discovery, public sources and private overlays | [discovery.md](references/discovery.md), [reference-catalog.md](references/reference-catalog.md) |
-| Ambiguous client request, feedback, stakeholder disagreement | [briefing.md](references/briefing.md) |
-| Whole-project plan, stage evidence, scope change and maintenance | [lifecycle.md](references/lifecycle.md) |
-| Roles, responsibilities, capability selection | [roles.md](references/roles.md) |
-| Actual-example comparison, generic-style diagnosis, purposeful copy | [reference-analysis.md](references/reference-analysis.md) |
-| Appearance-led creation: coupled composition, type, color, image, form and material directions | [aesthetic-construction.md](references/aesthetic-construction.md) |
-| Deep font selection, expressive roles, Korean/Latin optical matching, assets and specimens | [typography.md](references/typography.md) |
-| Focused public-preview and typography evidence, reported/observed limits | [preview-evidence.md](references/preview-evidence.md) |
-| Translate evidence into composition, optical alignment, effects and visual rejection tests | [visual-methods.md](references/visual-methods.md) |
-| Explicit one-shot creation, fresh trial, freeze and read-only verification | [first-pass.md](references/first-pass.md) |
-| Brand strategy → identity → tokens/components/states → adaptation and change ownership | [brand-system.md](references/brand-system.md) |
-| Bounded public brand/system evidence and historical/current limits | [brand-system-evidence.md](references/brand-system-evidence.md) |
-| Reference analysis, concept, composition, typography, brand | [direction.md](references/direction.md) |
-| Proactive palette, type, spacing, layout, icon, shape, imagery, material and sensory choices | [elements.md](references/elements.md) |
-| Generate context-specific palettes using hue, lightness, chroma, semantic roles and alternatives | [color.md](references/color.md) |
-| Image assets, photography/illustration direction, mockup scenes and image/UI review | [Mockup Image skill](../mockup-image/SKILL.md) |
-| Existing component state workbench, difficult-input fixtures and precise craft findings | [interface-craft.md](references/interface-craft.md) |
-| Pinned interface source scope, original image synthesis and rights boundaries | [interface-source-notes.md](references/interface-source-notes.md) |
-| User flows, UI, responsive behavior, design systems, copy | [interface.md](references/interface.md) |
-| Diagrams, charts, explanatory visuals | [diagrams.md](references/diagrams.md) |
-| Brand identity, graphic/print, packaging graphics and editorial | [communication-design.md](references/communication-design.md) |
-| Industrial/product, spatial/environmental, fashion/textile design | [physical-design.md](references/physical-design.md) |
-| Motion, narrative, video, sound | [motion-sound.md](references/motion-sound.md) |
-| 3D objects, scene composition, image reconstruction | [spatial.md](references/spatial.md) |
-| Critique, accessibility, verification, final handoff | [validation.md](references/validation.md) |
-| Learning from feedback; keeping project choices separate | [memory.md](references/memory.md) |
-
-For an unfamiliar specialty, use the common lifecycle, identify its medium-specific inputs, prototype, handoff and verification authority, and explicitly record missing expertise. Breadth of routing does not imply production certification in every field.
-
-## Non-negotiable boundaries
-
-- User decisions outrank aesthetic heuristics. A font, color, radius, duration or motif is never universally forbidden because it appears in generic AI output. Judge its purpose and execution.
-- Never treat options you found as preferences the client selected. Silence is not a decision. Do not invent testimonials, product capabilities, user research, measurements or conversion gains.
-- No reference is permission to copy protected assets, fonts, logos, voices or identities. Keep attribution and allowed-use records at asset level.
-- Briefing, planning and specifications can use reasoning and editable text alone. Source-grounded aesthetic decisions require actual visual inspection; produced artifacts need medium-appropriate review. Use available authorized tools, or declare a provisional/specification-only outcome and missing checks. No particular external model, paid account, renderer or MCP server is required.
-- Do not install tools, enable hooks, loosen host permissions, publish, purchase assets or contact clients just because a reference does so. Follow the actual task's authorization.
-- No claim of browser, assistive-technology, audio or render verification without that observation. State whether evidence came from inspection, measurement, playback or inference.
-
-For source lineage and differences from the inspirations, see [sources.md](references/sources.md). Read it when choosing outside resources or checking provenance; it is not a dependency list.
+Only an explicitly selected untouched-output evaluation uses [first pass](references/first-pass.md). A normal first draft includes private refinement. No palette, font, composition, medium or fixed study count is universal. Preserve accessibility, truthful states, approved identity and required rights notices. Private sources and filled evidence stay outside this pack. Structural checks and a version bump prove neither aesthetics nor owner acceptance.

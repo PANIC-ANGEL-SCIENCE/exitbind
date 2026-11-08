@@ -7,6 +7,7 @@
 - System/specification: tokens, content, states, materials or dimensions as applicable:
 - Asset provenance and permitted uses:
 - Production/export settings and downstream interfaces:
+- Craft outcome and core unresolved gaps, separate from functional and delivery checks:
 - Evidence matrix and failed/untested items:
 - Changes from approved direction and rationale:
 - Remaining specialist/tool/physical checks and owner:
@@ -18,3 +19,6 @@
 
 | Location/state | Observation | Consequence | Severity/confidence | Repair | Verification |
 | --- | --- | --- | --- | --- | --- |
+
+- Final sequence file / ordered page renders / overview, if requested:
+- Scoped shape, naming-language and cross-page checks; current hashes and unresolved craft outcomes:

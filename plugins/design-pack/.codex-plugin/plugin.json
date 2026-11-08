@@ -1,7 +1,7 @@
 {
   "name": "design-pack",
-  "version": "0.6.0",
-  "description": "One self-contained design workflow across disciplines, from client ambiguity to verified delivery. Skills only; no external tool dependencies.",
+  "version": "0.7.22",
+  "description": "Portable design judgment and production methods across disciplines. Skills only; no private reference catalog or external app required.",
   "author": {
     "name": "Design Pack contributors"
   },
@@ -17,15 +17,15 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Design Pack",
-    "shortDescription": "From ambiguous request to defensible design",
-    "longDescription": "One self-contained design workflow across disciplines, from client ambiguity to verified delivery. Skills only; no external tool dependencies.",
+    "shortDescription": "Carry design intent into finished visual work",
+    "longDescription": "Portable design judgment and production methods across disciplines. Skills only; no private reference catalog or external app required.",
     "developerName": "Design Pack contributors",
     "category": "Productivity",
     "capabilities": [
       "Read"
     ],
     "defaultPrompt": [
-      "Use Design Pack to interpret this brief, choose the relevant disciplines, create the result and verify what was actually produced."
+      "Use Design Pack to choose a reasoned visual direction, make the work and refine its actual composition, type, imagery and states."
     ]
   }
 }

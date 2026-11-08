@@ -4,7 +4,7 @@
 
 Map entry → intent → action → feedback → recovery → completion or exit. Include off-screen service steps where relevant: messages, staff actions, waiting, support and fulfillment. Record who owns each handoff and what happens when it fails. Existing analytics or research can guide hypotheses; absent evidence is not permission to invent user behavior.
 
-Define the primary user outcome and preservation conditions before changing structure. For a new flow, sketch the sequence with content and state labels before decorating it. For an existing flow, inspect and reproduce the current pain point where possible.
+Define the primary user outcome and preservation conditions before changing structure. For a new flow, make an action/state strip before decorating it: initial context → user action → visible change → next action → resulting state. Check every action the user requested, including selection and return context. Stage names alone do not establish changed content; do not omit the initial state by starting after the first action. Let the task determine state count and arrangement. For an existing flow, inspect and reproduce the current pain point where possible.
 
 ## Inventory meaningful states
 

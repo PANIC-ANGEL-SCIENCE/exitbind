@@ -1,29 +1,28 @@
-# Explicit one-shot first-pass mode
+# Explicit first-attempt trial
 
-Use only when the user requests one-shot, a fresh first attempt, or an evaluation of the first output. Ordinary design remains iterative under [lifecycle.md](lifecycle.md). A request for speed alone does not imply this mode.
+A rejection or request to rework is ordinary iteration unless the user explicitly requests another untouched-output evaluation. Preserving the earlier artifact does not freeze the new work.
 
-## Establish the trial
+Use only when the user selects a first output, one-shot or fresh-attempt evaluation. Ordinary production inspects and refines under existing authority. “First draft,” “initial concept,” or a request for speed alone does not select this protocol; use it when the request actually evaluates an untouched first output.
 
-Record the brief, supplied inputs, deliverable, target size/states, available tools, decision authority and evaluation criteria. Identify the output that counts as the first artifact before building. For a single-screen request, that means one rendered concept, not a contact sheet or a selected winner from multiple generated results. Multiple required states can belong to the same concept when explicitly in scope; do not invent additional deliverables.
+## Define what will be frozen
 
-For a fresh trial, provide the creator with the current brief and reusable pack only, plus expressly allowed assets and constraints. Exclude the previous screen, implementation, screenshots, private feedback and project taste history when the request calls for independence. Do not disguise old layout details as a new generic example. Record which inputs were actually supplied; an instruction to ignore a visible old artifact is not equivalent to withholding it. If isolation cannot be achieved, disclose that limit rather than claiming a clean trial.
+Record the exact brief, allowed inputs, target size/states, requested artifact and tools. Distinguish an **image asset**, a **complete screen containing that asset**, and a **presentation of that screen**. Identify which is the evaluated first artifact. Do not silently make a generated photograph and its receiving UI one uninspectable object.
 
-## Plan, choose, build once
+For an independent concept, withhold earlier generated screens and implementations unless the brief permits comparison. Independence does not mean forgetting current owner decisions. Preserve approved project constraints and preferences unless the evaluation explicitly excludes them; an original-brief-only comparison must state that exclusion. Supply the current reusable pack and authorized task materials. Record actual exposure and exclusions; asking an agent to ignore visible old work does not establish isolation.
 
-1. Read [discovery.md](discovery.md), personally inspect selected external visual materials and retain exact source/state/viewport/capture evidence before direction. This is research, not a competing produced concept. Load craft/type methods before planning and record paths/version; failed visual access retains a provisional limit. Convert evidence into decisions using [visual-methods.md](visual-methods.md).
-2. Compare organizing ideas in internal text planning only. Choose one within delegated authority. Do not render competing mockups, run image-generation batches, seek feedback on variants or silently select a later result as the first.
-3. Record the selected composition, semantic roles, assets, interaction assumptions, fallback and rejection criteria. Resolve available facts before production; mark unknowns instead of borrowing details from the old work.
-4. Build the selected concept once. Pre-output source composition is part of making it. Do not use a preview-and-polish loop to improve the supposed first attempt. If a tool automatically returns alternatives, preserve that fact and identify the first output rather than cherry-picking.
-5. Freeze the first produced artifact **before any visual review or verification**. Retain its source/export, artifact ID or digest, creation order and relevant generation/build settings. If no hashing is available, preserve a clearly named immutable copy and state the identification limit. Do not overwrite it with a later export.
+## Choose and produce
 
-## Verify without redesign
+1. Inspect relevant supplied assets and external visual materials before choosing a source-derived direction. Use [discovery](discovery.md) and keep access limits explicit. Existing research and actual asset inspection are not competing generated concepts.
+2. Compare organizing ideas in text, choose one within delegated authority and record composition, type, color/material, interaction and crop assumptions. Do not render variants and select a winner.
+3. If the complete screen needs a generated image, produce that asset once and preserve its original bytes and identity. **Freeze the asset, view its actual pixels, then compose the first complete screen against those pixels.** Initial label placement, responsive crop mapping and type/layout decisions informed by that view are part of making the first screen. Do not regenerate, edit or recrop the frozen source asset to improve it.
+4. Build the chosen complete screen once. Freeze its source/assets and first render before whole-screen visual review or verification. Retain creation order, hashes or immutable copies and observed tool settings. Do not preview-and-polish the completed screen and call the later version first.
 
-Read-only inspection may capture the frozen artifact, exercise its existing states, inspect source, measure contrast or check dimensions and functionality. Multiple captures of the same frozen artifact for required conditions are evidence, not new concepts. Keep source and content unchanged. A screenshot, browser console success or tool completion alone does not establish artistic quality.
+For an image-only evaluated artifact, freeze that image before its read-only review; there is no receiving-screen construction step. An automatically returned set of alternatives remains disclosed; do not cherry-pick a later result.
 
-Report directional fit, task clarity, visual craft and technical/accessibility findings separately using [validation.md](validation.md). Mark unavailable checks as not tested. Record every failure honestly, including a first artifact that cannot render. A build failure is evidence about that attempt; do not quietly repair it until a successful output can be labeled first.
+## Inspect without rewriting history
 
-A repair or second concept requires a separately authorized next pass. Preserve the first result and findings, label the new version and explain the change. Never silently redesign, swap assets, regenerate, polish spacing or relabel a revised result as the frozen first pass. The normal iterative route resumes only when authorized; first-pass failure is a valid evaluation outcome.
+Read-only verification may capture the frozen artifact, exercise its existing states and measure dimensions, contrast or behavior. Keep the frozen sources and content unchanged. Report composition, expressive fit, typography, image associations, task correctness and accessibility separately. An untouched failure is valid evidence of that attempt, not aesthetic success.
 
-## Handoff
+Preserve failed builds and generation results. A repair, regeneration or next concept needs separately selected next-pass authority; label it as a revision and retain the first result. Never silently swap an asset, polish spacing, change a crop rule or relabel a later output. Ordinary iterative work resumes when authorized.
 
-Deliver the frozen artifact (or the failed attempt and blocker), selected direction and reasons, exact inputs and exclusions, loaded guidance, freeze identity/order, read-only observations, failures and untested items. Distinguish planned tests from performed tests. State any protocol deviation, including accidental exposure to excluded material or post-freeze edits, so the recipient can judge the trial. Do not claim an independent review from self-inspection or an aesthetic improvement from a technical pass.
+Deliver the frozen artifact or exact blocker, actual input/exclusion record, loaded guidance, source identities/order, read-only findings and unavailable checks. A self-review is not independent review, and route compliance is not visual improvement.

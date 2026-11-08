@@ -1,42 +1,27 @@
-# Art direction, references and visual language
+# Choose a direction through construction
 
-Start from the subject's real content: the audience, product, place, material, history, service, constraints and distinctive behavior. A visual concept is a reason for the design to exist, not a list of fashionable effects. Never invent client facts to make the concept more interesting.
+Start with real subject matter, audience, medium, constraints and intended feeling. Preserve user-fixed identity; a rejected maker-selected concept remains replaceable within authorized rework. A visual concept is an organizing idea, not a list of effects or invented brand facts.
 
-## Research and interpretation
+## Research only what changes a choice
 
-For a new or rejected direction, first use the comparison and copy workflow in [reference-analysis.md](reference-analysis.md). Name the task being borrowed, not just a style adjective. Analyze combinations before proposing a replacement.
+Use [reference analysis](reference-analysis.md) for a new or rejected direction and [Discovery](discovery.md) for actual materials. Inspect the relevant composition, state, script, material or frame at useful scale. Keep observations distinct from estimates, inferred effects and unavailable evidence. A successful screenshot cannot prove market preference or working behavior.
 
-Inspect selected actual references before choosing a source-grounded direction; follow [discovery.md](discovery.md) for access failures and provisional limits. Record source, creator, date/version, viewport or physical scale, what was observed and which states were inaccessible. Analyse:
+## Explore actual alternatives
 
-- Composition: focal point, reading order, alignment, balance, negative space, crop and edge behavior.
-- Proportion: ratios between title, image, body, margins and controls; distinguish measurement from visual estimate. Record the reference size so a pixel value is not mistaken for a universal ratio.
-- Typography: contrast of roles, density, line length, rhythm, language support and personality.
-- Color/material: semantic roles, contrast, lighting, surface and reproduction conditions.
-- Interaction/time: what moves, what remains stable, input behavior, sequencing and reversibility.
-- Meaning: why this arrangement fits this subject and audience.
+Use the same core content and comparable fidelity. Build small studies that change a meaningful relationship: hierarchy, image scale/crop, state transformation, spatial organization, type voice or material treatment. Choose the study medium through [visual methods](visual-methods.md). A prose direction card is useful context, not a substitute for the construction.
 
-Transfer the relationship that creates the effect. Adapt to the new content, medium and user context instead of copying coordinates. Preserve approved identity. Use a small, relevant reference set; explain why each was selected. Record counterexamples to clarify the boundaries of the chosen direction.
+Recommend from the actual results and the brief. Identify the tradeoff and a visible failure condition. Do not compare a polished photographic candidate against an empty wireframe. An explicit first-output trial keeps alternatives in planning under [first pass](first-pass.md); an ordinary first draft does not inherit that restriction.
 
-## Exploration and selection
+Separate presentation from the artifact. Dramatic staging can help tell the story, but the product must remain coherent at use size. Conventional or unusual structures can each be appropriate. Reject a technique for its actual conflict, not a universal ban on cards, gradients, overlap, density or restraint.
 
-Build comparable direction cards using the same core content and similar fidelity. Vary the organizing idea, hierarchy, density, interaction or material language. Show work at actual intended scale, not only polished presentation mockups. Recommend using brief criteria and reveal tradeoffs: expressive but slower scanning, spacious but longer scroll, materially rich but harder reproduction.
+## Make the selected idea repeat usefully
 
-Separate editorial/marketing work from working interfaces. Storytelling may support a dramatic composition; an operations screen needs stable scanning, meaningful density and reliable control states. A promotional page containing product UI should depict truthful, coherent UI rather than decorative placeholder bars.
+Define which relationships remain recognizable across touchpoints and which can change. Coordinate type, imagery, color, shape and behavior without repeating the same motif everywhere. Test the identity in meaningful controls/content framing as well as display graphics; a logo alone does not settle product expression.
 
-Avoid universal aesthetic prohibitions. Gradients, cards, shadows, pixels, conventional fonts, asymmetry or restraint can all be appropriate. Repeated generic choices become a problem when no decision is grounded in the subject. Cohesion does not require turning every element into the same motif.
+For a reusable system, use [brand system](brand-system.md) to connect principles to semantic roles and component/state contracts. For local work, keep optical exceptions local. Use [aesthetic construction](aesthetic-construction.md) for coupled decisions and [typography](typography.md) for actual-script specimens.
 
-Before rendering, turn the chosen direction into the decision contract in [visual-methods.md](visual-methods.md): composition proportions and crop anchors, type rhythm, functional color roles, one distinctive relationship and visible rejection conditions. A direction name alone is insufficient.
+## Reopen at the right scale
 
-## Build the system
+Inspect the artifact at thumbnail, intended size and detail. If the visual idea is right but a crop or edge is wrong, repair that layer. If several cosmetic revisions leave the original rejection untouched, revisit the organizing assumption and build another study. No fixed edit count closes an unmet outcome. Preserve accessible operation, truthful content and authorized scope throughout.
 
-Define semantic roles before exact values: background, surface, text, muted text, primary action, selection, status, border; body, title, label, numeric and caption; spacing, density, shape and motion. Specify hierarchy and behavior first, then choose values per project and test them in context.
-
-Include: logo usage and clear space when relevant; typography and fallback strategy; image treatment; icons as a coherent family; layout rules; component variants and states; motion/audio tone; content voice; do/don't examples tied to the brief. Tokens should enable consistent decisions without flattening meaningful differences.
-
-Brand recognition, legibility and task clarity matter together. If a motif intentionally makes discovery slower, test whether the intended audience values it, whether essential tasks remain accessible, and whether recovery is obvious. Do not erase character merely to satisfy a generic checklist.
-
-## Review questions
-
-Can a viewer identify the subject and intended priority? Is each expressive choice supported by the concept? Does it hold up with actual content, at small and large sizes, in relevant languages and conditions? Is the design distinguishable without relying on an unlicensed asset? What changed because of evidence rather than personal habit?
-
-For appearance-led creation, use [aesthetic-construction.md](aesthetic-construction.md) to couple type, composition, color, form, material and imagery. For font selection beyond a style label, use [typography.md](typography.md). Mood, visual pleasure and brand expression are valid concept outcomes, not merely decoration that must improve task metrics.
+When the brief changes the reading genre, revisit the organizing idea before adding surface finish. A connected product-introduction sequence and an explanatory portfolio may use the same product evidence for different arguments. Neither genre is a default or proof of implemented behavior.

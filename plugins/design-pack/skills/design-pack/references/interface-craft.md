@@ -1,18 +1,28 @@
 # Interface craft in real states
 
-Load before interface direction and production, then use for refinement or state/fixture investigation alongside [interface.md](interface.md). These methods extend existing visual guidance with a more explicit evidence boundary. They are independently written synthesis from the bounded [source review](interface-source-notes.md); source-specific numerical and tooling prescriptions are not pack defaults.
+Load before interface direction and production, then use for refinement or state/fixture investigation alongside [interface.md](interface.md). Use this to investigate a specific visible relationship or state. Numeric and tooling choices belong to the actual project.
 
 ## Choose the operation
 
 | Operation | Work product | Boundary |
 | --- | --- | --- |
 | Reference fidelity | Comparison of the requested frames and implementation | Preserve authorized intent; distinguish exact source values from screenshot estimates and token substitutions. Surface accessibility conflicts rather than blindly reproducing them or secretly changing the brief |
-| Exploration | Distinct ideas on common content in the actual context | Different concepts are allowed only in the ordinary exploratory route; explicit first-pass alternatives stay text-only |
+| Exploration | Actual-content state strips or prototypes varying grouping, selection, detail origin or spatial transformation | Different concepts are allowed only in the ordinary exploratory route; explicit first-pass alternatives stay text-only |
 | State workbench | Existing component with switchable reachable states | Helps inspect one state at a time; it is not proof that transitions, backend permissions or real requests work |
 | Adversarial fixtures | Existing component under applicable difficult inputs | Tests content/environment boundaries, not a redesigned lookalike |
 | Review | Findings tied to current artifact, state, viewport and evidence | Separate observed failures, hypotheses and untested coverage; review alone changes nothing |
 
 Choose the smallest useful operation. A one-line copy change does not need a harness. Do not import mandatory tool, agent, one-look budget or approval policies from an upstream skill. Respect existing authorization and the strict [first-pass freeze](first-pass.md): post-freeze inspection may not alter the artifact or create replacement concepts.
+
+For new interaction ideas, show the initial state and the visible consequence of each requested action before building a full fixture. Preserve object identity, selection and return context. A list of state names is not a transition study.
+
+## Treat explicit silhouettes as scoped requirements
+
+Translate a requested control shape into the actual target family and reachable states before styling. “Round” may mean a circle, a capsule with semicircular ends, or a softened rectangle; use the user's contrast and examples, not a token name, to resolve it. An explicit circle or capsule request is not satisfied by a slightly radiused rectangle. Record the requirement only for the named controls and project. Other shapes and unchanged surfaces remain available.
+
+For a circular control inspect equal visible width/height and a circular contour. For a capsule inspect end caps across the full short axis, including borders and clipping; a declared large radius cannot establish the rendered shape. Test short/long labels, icon-only variants, pressed/selected/disabled states and focus rings as relevant. Preserve readable label padding and stable accessible hit areas rather than squeezing text to keep one width. Do not turn every card, image or panel into the requested button shape.
+
+Visual contour, measured geometry and action affordance answer different questions. Verify all that the task needs: can the action be recognized, distinguished from a tag or decoration, activated and recovered from? A pleasing pill with a wrong action or invisible focus still fails. A static concept can demonstrate contour and proposed state, not live activation.
 
 ## Make the fixture representative
 
@@ -30,6 +40,7 @@ Keep scratch setup removable and excluded from production delivery unless reques
 - **Nested edges:** inspect the visible inner and outer corner contours with their actual insets and border thickness. Adjust their relationship so the gap reads intentional; copying a radius formula into every shape can create the wrong silhouette. Check the crop and focus ring as well as the resting card.
 - **Optical marks:** compare icon visual mass and baseline against adjacent glyphs, then preserve a stable control target while correcting the visible mark. Equal SVG bounds or stroke numbers do not establish equal perceived size. Check the result at actual size rather than only zoomed in.
 - **Repeated actions:** test motion in a realistic repeated sequence. A welcome transition can become tiring on a frequently used control; prefer responsiveness and clear stable feedback where repetition makes flourish costly. Choose duration, amplitude and reduced-motion behavior from context, not a fixed press scale, blur or stagger.
+- **Selection and navigation:** use symbols that match the represented operation. Expand/collapse, selection and opening a destination are different actions; do not combine their marks merely for visual variety. Clarify whether a count names all available objects or the visible subset. Inspect the selected item, alternatives and return state rather than assuming a static arrow proves the transition.
 - **Copy and state:** check labels against actual destination/action and loading/error meaning. Preserve user input during recovery. Long names, partial data and failure text must remain specific enough to explain the state; shortening everything can conceal the issue instead of fixing layout.
 
 Example: a translucent caption passes over one dark crop but vanishes when the image shifts to a bright sleeve on mobile. Record that exact crop and blended background; test moving the caption into flow, changing the crop while preserving product evidence, or changing the actual overlay/text pair. A global font-size increase may not address the cause. These alternatives are ordinary revision options; for a frozen first pass, report them as proposed next-pass repairs only.

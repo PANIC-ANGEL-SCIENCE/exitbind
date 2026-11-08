@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "mode": null,
+  "maker_id": null,
+  "pack_version": null,
+  "target_viewport": {
+    "width": null,
+    "height": null
+  },
+  "events": [],
+  "event_shapes": {
+    "reference_view": {
+      "seq": null,
+      "kind": "reference_view",
+      "maker_id": null,
+      "path": null,
+      "sha256": null,
+      "view_tool_result_id": null,
+      "observation": null
+    },
+    "generation": {
+      "seq": null,
+      "kind": "generation",
+      "tool_name": null,
+      "tool_result_id": null,
+      "arguments": {},
+      "prompt_path": null,
+      "prompt_sha256": null,
+      "prompt_argument_pointer": null,
+      "conditioning": null,
+      "image_inputs": [
+        {
+          "argument_pointer": null,
+          "supplied_value": null,
+          "reference_seqs": [],
+          "input_binding": null,
+          "mapping_evidence": null
+        }
+      ],
+      "output": {
+        "path": null,
+        "sha256": null,
+        "width": null,
+        "height": null
+      },
+      "exact_target_frame": null,
+      "text_only_approval": null,
+      "required_reference_seqs": [],
+      "reference_omission_approval": null
+    },
+    "freeze": {
+      "seq": null,
+      "kind": "freeze",
+      "generation_seq": null,
+      "sha256": null
+    },
+    "review": {
+      "seq": null,
+      "kind": "review",
+      "generation_seq": null,
+      "sha256": null,
+      "view_tool_result_id": null,
+      "findings": [
+        {
+          "location": null,
+          "observation": null,
+          "impact": null,
+          "action": null,
+          "status": null
+        }
+      ]
+    }
+  }
+}

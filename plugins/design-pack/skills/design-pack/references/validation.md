@@ -4,10 +4,10 @@ Start with the artifact and brief. Record version, date, output medium, relevant
 
 ## Two independent questions
 
-1. **Does it achieve the agreed purpose?** Task or communication success, concept coherence, audience/context fit and preservation requirements.
+1. **Does it achieve the agreed purpose?** Task or communication success, the requested expressive ambition and benchmark relationships, audience/context fit and actual preservation requirements.
 2. **Does the medium work correctly?** Accessibility, state behavior, responsiveness, production fidelity, rights, performance and operational usability.
 
-Aesthetic preference is not proof of task failure. A technically valid artifact can still express the wrong idea. Assess both without averaging a severe failure into a passing score.
+Aesthetic preference is not proof of task failure, but an explicit art-direction or craft goal is part of the task. A technically valid artifact can still fail that goal. Assess both without averaging a severe failure into a passing score. Preserve user requirements; do not mistake preserving historical evidence for preserving a rejected designer-selected solution.
 
 ## Evidence matrix
 
@@ -17,11 +17,11 @@ Screenshots establish appearance in a captured state, not behavior. Automated te
 
 ## Digital accessibility baseline
 
-Use the project's agreed accessibility target. In the absence of one, propose WCAG 2.2 AA as a web baseline; do not claim legal or complete conformance from this short list. Consult the [W3C quick reference](https://www.w3.org/WAI/WCAG22/quickref/) for applicability and exceptions.
+Use the project's agreed accessibility target. In the absence of one, propose WCAG 2.2 AA as a web baseline; do not claim legal or complete conformance from this short list. Check the current standard for applicability and exceptions.
 
 Check keyboard operation and focus visibility/order; meaningful structure and control names; text and non-text contrast; text resizing and reflow; target sizing; error identification and recovery; alternatives for images/media; reduced motion and pause controls; status information that does not rely only on color. Inspect actual rendered states. Use automated checks plus manual tasks and relevant assistive technology when available; record untested browsers, devices and AT.
 
-W3C's [page structure tutorial](https://www.w3.org/WAI/tutorials/page-structure/) supports semantic regions and headings that reflect the content relationships. Prefer native semantics; adding ARIA does not repair an incoherent interaction.
+Use semantic regions and headings that reflect content relationships. Prefer platform-native semantics; adding ARIA does not repair an incoherent web interaction. For native mobile work, choose the actual platform target and test its accessibility tree, VoiceOver or TalkBack navigation/activation, focus and return behavior, dynamic text, touch targets and relevant system settings. A photo-triggered operation needs an accessible activation and non-spatial route to its objects. Static boards cannot validate native accessibility; name it as untested until exercised in the implementation.
 
 ## Context matrix
 
@@ -39,14 +39,24 @@ Compare the rendered work with the brief and the observed reference relationship
 
 Use the visual rejection criteria in [visual-methods.md](visual-methods.md) to locate lost priority, broken relationships, unsupported concepts, unreadable states, craft defects and effects without benefit. Record a visible counterexample at the actual size; functional passes alone cannot settle these findings. For an explicit [first-pass trial](first-pass.md), verification is read-only: report the frozen artifact's failures without repair or reselection.
 
+For app screens, use the concrete [screen review](screen-production.md) alongside source captures. Identify the weakest visual relationship even if every click works. Aesthetic findings need observed locations and consequences, not a fixed defect count or subjective score threshold.
+
 ## Findings that lead to repair
 
-Each finding includes location/state, observation, consequence for this audience, severity, confidence, proposed change and how to verify it. Rank: blocking task/safety/access failure; major comprehension/coherence failure; local usability defect; craft refinement. Explain context rather than assigning numerical “taste” scores without a rubric.
+Each finding includes location/state, observation, consequence for this audience, severity, confidence, proposed change and how to verify it. Assign severity by the unmet brief and consequence, not by discipline. Safety/access failures need attention, and a central expression, concept or composition failure can also block a craft-led deliverable. A small tonal difference may be local; an image with the wrong attitude can invalidate the whole direction. Explain the distinction with visible evidence rather than automatically demoting every aesthetic gap to refinement.
 
-When revision is authorized, after repair, inspect the affected context again. Stop when agreed criteria are met or remaining gaps are explicit and correctly owned. If repeated refinements do not improve the result, revisit the brief or concept instead of endlessly adjusting pixels.
+When revision is authorized, choose repair or replacement at the scale of the failure and inspect again. Compare with the benchmark as well as the previous version: improvement over rejected work alone is not enough. Stop when agreed criteria are met; if a real blocker prevents completion, name the unfinished outcome instead of declaring it ready with caveats. If local refinements leave the core gap intact, replace the organizing idea within scope. After image or whole-board edits, compare protected regions against clean masters; corrected copy does not offset degraded photographic detail.
+
+## Gate the requested outcome, not only the geometry
+
+Translate concrete feedback into task-scoped checks before making the revision: required control shape, a named content-language policy, a subject/context relationship, or the reading rhythm of a connected deliverable. Check all affected targets and states rather than accepting one successful crop. Keep “observed,” “inferred” and “not tested” distinct. For scene identity, describe the visible relationship and competing reading, not a stereotype or a guaranteed authenticity verdict.
+
+For a connected portfolio, review the final sequence overview, the actual ordered page transitions and each readable page. When PDF is requested, inspect renders from the final PDF as well as technical export checks. A post-export replacement or naming change invalidates affected page and sequence findings. Geometry can refute a claimed capsule but cannot establish affordance, attitude or presentation force.
+
+The optional [outcome review](../templates/outcome-review.json) and checker can bind scoped criteria, artifacts, views and a readiness decision. Honest failed or untested work may be retained as rework; it cannot be called ready by averaging it with technical passes. This is an optional private gate, not a mandatory workflow, independent execution log or algorithmic taste judgment. It does not replace actual inspection or user acceptance.
 
 ## Delivery review
 
 Can the recipient open and edit the source? Are export specifications and asset permissions recorded? Are example data and inferred claims labeled? Are approved constraints preserved? Are untested areas stated? Does the handoff explain what is finished and what requires real-world proof?
 
-If an independent review is required by the task, obtain it from an actual separate reviewer. Otherwise label the review as self-review. Formal Exitbind acceptance is a separate state and authority.
+If an independent review is required by the task, obtain it from an actual separate reviewer. Give the brief, applicable source pixels and artifact, not an instruction to ratify the maker's conclusion. Otherwise label self-review honestly. A reviewer must be able to recommend rework of a technically compliant concept. Formal Exitbind acceptance and user acceptance remain separate states and authorities.

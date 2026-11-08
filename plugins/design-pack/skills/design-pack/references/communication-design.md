@@ -16,7 +16,7 @@
 
 **Intake:** message, audience, reading distance, finished size, substrate, print process, quantity, folding/binding, distribution, budget and producer requirements. Missing production specifications mean the result remains provisional.
 
-**Concept and layout:** establish one clear information hierarchy; test actual text, images and language. Consider fold order, page sequence, margins, negative space and display conditions. Show a flat proof as well as a contextual mockup.
+**Concept and layout:** construct an intentional information hierarchy or distributed reading structure; test actual text, images and language. Consider fold order, page sequence, margins, negative space and display conditions. Show a flat proof as well as a contextual mockup.
 
 **Production:** obtain the printer's current specifications for bleed, trim, safe area, color profile/ink setup, overprint, image resolution, spot colors, finishes and PDF/export format. Do not treat a generic bleed or DPI number as suitable for every process. Preserve editable source, linked assets and permitted font handling.
 

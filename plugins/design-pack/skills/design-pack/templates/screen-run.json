@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "mode": null,
+  "maker_id": null,
+  "pack_version": null,
+  "events": [],
+  "event_shapes": {
+    "reference_view": {
+      "seq": null, "kind": "reference_view", "maker_id": null,
+      "input_id": null, "capture_path": null, "sha256": null,
+      "source_locator": null, "source_state": null, "observation": null,
+      "viewed": null, "evidence_type": null, "view_tool_result_id": null
+    },
+    "direction": {
+      "seq": null, "kind": "direction", "maker_id": null,
+      "decisions": [{"decision": null, "source_refs": []}]
+    },
+    "render": {
+      "seq": null, "kind": "render", "direction_seq": null,
+      "artifact_path": null, "sha256": null
+    },
+    "review": {
+      "seq": null, "kind": "review", "render_seq": null,
+      "reviewer_id": null, "viewed": null, "evidence_type": null,
+      "view_tool_result_id": null, "sha256": null,
+      "findings": [{"location": null, "observation": null,
+        "impact": null, "action": null, "status": null}]
+    }
+  }
+}

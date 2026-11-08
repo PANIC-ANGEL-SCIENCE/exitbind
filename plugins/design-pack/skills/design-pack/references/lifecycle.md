@@ -1,6 +1,6 @@
 # Full design lifecycle
 
-This is a selectable path, not a mandatory paperwork sequence. Small work can combine stages in one note. Large work should retain the artifacts that prevent loss of intent. Revisit the brief when evidence changes the problem. The iterative discover/define/explore/deliver idea is consistent with the [Design Council's Double Diamond](https://www.designcouncil.org.uk/resources/the-double-diamond/); the stage contracts below are this pack's own synthesis.
+This is a selectable path, not a mandatory paperwork sequence. Small work can combine stages in one note. Large work should retain the artifacts that prevent loss of intent. Revisit the brief when evidence changes the problem. The stage contracts below are independently written methods; combine or revisit them when the work warrants it.
 
 | Stage | Work and artifact | Decision/evidence to advance |
 | --- | --- | --- |
@@ -8,7 +8,7 @@ This is a selectable path, not a mandatory paperwork sequence. Small work can co
 | Discovery / research | Inspect current artifacts and references, existing research and actual use; propose focused research only when useful and authorized | Evidence log separates observations from hypotheses and identifies important gaps |
 | Problem definition | Identify unmet need, desired change, constraints and things to preserve | A brief states who benefits, what changes and how the result can be checked |
 | Strategy | Choose priorities, positioning, medium/channel, value proposition and resource tradeoffs | Strategy serves the audience and outcome; no invented market validation |
-| Concept exploration | Produce genuinely different organizing ideas at comparable fidelity | Alternatives state tradeoffs and a reasoned recommendation; material unknowns are surfaced |
+| Concept exploration | When uncertain, make actual-content studies varying the relevant organizing relationship at comparable fidelity | The chosen study resolves uncertainty; preserve requested concept count and do not manufacture extra directions |
 | Direction selection | Record selected concept, rationale, authorization/delegation and deferred choices | Client decision or delegated choice is explicit; do not count silence as agreement |
 | Prototype | Make the cheapest representative artifact that tests the largest uncertainty | Findings revise assumptions; prototype fidelity and scope of evidence are stated |
 | Detailed design | Define system, content, states, materials, specifications and production constraints | Scope is buildable; cross-disciplinary dependencies and acceptance checks are assigned |
@@ -20,7 +20,7 @@ This is a selectable path, not a mandatory paperwork sequence. Small work can co
 ## Scale the work
 
 - **Refinement:** request → one-line interpretation → edit → relevant check → handoff. Avoid speculative brand strategy for a local typo or spacing fix.
-- **New concept:** brief → small research set → distinct directions → representative prototype → refine → delivery.
+- **New concept:** brief → useful source study → construction studies where needed → representative prototype → refine → delivery. Several studies can develop one requested concept; they do not automatically become several delivered concepts.
 - **Production project:** use all relevant stages, with an acceptance matrix and discipline-specific handoffs. Agree only consequential checkpoints; do not create permission barriers for already authorized routine work.
 
 - **Explicit first-pass trial:** brief → planning-only alternatives → one selected artifact → freeze → read-only inspection → honest handoff. Use [first-pass.md](first-pass.md); the normal prototype/refine loop is suspended until a further pass is authorized.

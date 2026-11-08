@@ -1,65 +1,79 @@
-# Design Pack 0.6.0
+# Design Pack 0.7.22 candidate
 
-A self-contained, independently authored design workflow intended for possible future distribution alongside Exitbind. It consolidates useful methods from 18 reference repositories and seven original public visual references, with focused preview and typography evidence, into **one pack**, rather than connecting or installing those repositories.
+A skills-only design partner for turning real content and inspected references into deliberate visual work. It covers interfaces, portfolio presentations, brand, editorial, diagrams, objects, spaces, fashion, motion, sound and 3D. Start at [Design Pack](skills/design-pack/SKILL.md) and load only relevant [methods](skills/design-pack/references/methods.md).
 
-Start at [the core skill](skills/design-pack/SKILL.md). It routes work across client briefing, research, strategy, art direction, digital products/services, brand, graphic/print/editorial, diagrams, industrial products, spaces, fashion, motion, sound and 3D. The workflow covers discovery through maintenance, with compact on-demand references and editable templates.
+## Make, compare and refine
 
-Use [Mockup Image](skills/mockup-image/SKILL.md) for image assets, scene direction, reference-aware prompts and image/UI placement review. Its core brief and critique need no external app; actual image generation needs an available authorized host capability. The pack does not generate an image merely because it is installed or updated.
+New or substantially rejected directions need construction, not another page of adjectives. The core routes use actual-content thumbnails, type/crop studies and state strips to resolve uncertainty, then inspect the artifact at thumbnail, use and source-detail scales. Ordinary first drafts include refinement. Only an explicitly untouched evaluation uses [first pass](skills/design-pack/references/first-pass.md).
 
-For a new identity or reusable system, [Brand to system](skills/design-pack/references/brand-system.md) connects positioning, expression, tokens, components, states and change ownership. Its [editable chain template](skills/design-pack/templates/brand-system.md) scales down to one affected role for local work.
+- [Screen production](skills/design-pack/references/screen-production.md): develop the product relationship and meaningful action/state changes alongside the presentation when they affect one another.
+- [Portfolio presentation](skills/design-pack/references/portfolio-presentation.md): compose distinct narrative/evidence roles, not repeated hardware by default.
+- [Mockup Image](skills/mockup-image/SKILL.md): preserve clean asset masters and repair the relevant source layer, avoiding needless whole-board raster degradation.
+- [Source roles](skills/design-pack/references/reference-roles.md): scope constraints by medium and distinguish casting, expression, photographic craft, interface and presentation benchmarks.
 
-For short design requests, start with [autonomous discovery](skills/design-pack/references/discovery.md) and the [public catalog](skills/design-pack/references/reference-catalog.md). Open selected actual visual materials before direction; project-local evidence and private-overlay templates preserve provenance.
+No source catalog, fixed palette, layout recipe, external app or private calibration is required for planning. Production uses available authorized capabilities. Missing essential inputs remain explicit limits. A specification is not a made artifact; a static image is not a tested product.
 
-## What this delivers
+## Scope and privacy
 
-- An actionable brand-to-system chain, promotion criteria, original worked example and proportionate governance; bounded historical public evidence, not copied tokens.
-- A dedicated image workflow with a project-local reference/use ledger, scene/light/material/crop decisions and paired image/UI review.
-- Focused interface state/fixture methods grounded in nine inspected skills from an additional pinned repository.
-- A designer's method for turning vague requests into concrete intent, alternatives, decisions and acceptance checks.
-- Actual-reference comparison and purposeful-copy checks before choosing or revising visual direction.
-- Coupled aesthetic construction across composition, type, color, form, imagery and material, with five contextual direction hypotheses.
-- Deep typography: expressive Korean/Latin voices, optical matching, real specimens, font assets/axes/fallback and licensing.
-- Concrete composition contracts, optical alignment, contextual color and optional effect budgets with visual rejection tests.
-- Explicit one-shot mode: planning alternatives only, freeze the first artifact, then inspect without redesign.
-- Role-specific perspectives and medium-specific production handoffs.
-- Accessible, context-sensitive design validation and honest evidence limits.
-- Separation of reusable principles from private project colors, sizes, concepts and choices.
-- Source lineage and licensing considerations for every supplied repository.
+Keep private references, project identity, completed briefs and trial outputs outside the distributable. Preserve required rights notices for any added assets. Viewing, provider submission and public reuse are distinct. The pack's [MIT license](LICENSE) covers its original written methods, not third-party assets.
 
-This is a skills-only package, not a renderer, CAD suite, physical testing lab or guarantee of expertise in every design specialty. Core briefing, planning, critique and specification need no external applications. Production uses tools already available and authorized for the task; the pack does not install them.
+Existing governed work can use [Exitbind integration](skills/design-pack/references/exitbind.md). Files or manifests do not prove host activation or useful delivery. Record the guidance actually used and a few consequential decisions, without turning documentation into the work itself. The archive contains no runtime hooks, provider client or installation automation.
 
-## Use now without installation
+## Validate and package
 
-Open `skills/design-pack/SKILL.md` in your assistant's file context and ask it to apply Design Pack to your current task. Include existing project guidance and artifacts where relevant. Have it record which references it actually read and the specific decisions they informed.
-
-Example: “Use Design Pack. Make the appointment flow feel welcoming and considered; preserve the existing booking behavior. Choose the direction and explain the important assumptions.”
-
-For a small edit, it should proceed with a short interpretation. For a new or consequential direction, it should frame meaningful alternatives or choose within delegated authority. It should not turn every request into a workshop.
-
-## Installation candidate and future Exitbind distribution
-
-The archive includes root, Claude and Codex plugin manifests modeled on Exitbind's inspected 0.31.26 skills-only layout. It is a source-only candidate, **not released or installed**; provider discovery/installation has not been exercised.
-
-To try a skill-only local installation, use the host's documented skill import mechanism to copy both complete `skills/design-pack/` and `skills/mockup-image/` directories as siblings into an approved skill location. Preserve their `references/` and `templates/` directories and sibling links. Resolve any name collision before copying; do not overwrite an existing skill. Reload the host as required and explicitly invoke the skill, then confirm that it read the entrypoint and a relevant reference. This is a procedure, not a tested provider CLI command.
-
-For a host supporting local plugin imports, select this complete package root using that host's current documentation. Confirm metadata parsing and skill discovery before making compatibility claims. Do not register it in an Exitbind marketplace without a separate reviewed integration change. Exitbind's existing distribution checker is specific to its own plugin and is not this pack's validator.
-
-No hooks, MCP configurations, executables from upstream, provider settings or Exitbind runtime configuration are installed. The manifests do not grant host permissions. See [Exitbind boundaries](skills/design-pack/references/exitbind.md).
-
-## Local checks and packaging
-
-Python 3.10+ standard library only. Run from this package root:
+From this package root:
 
 ```sh
-python3 scripts/check_pack.py
-python3 scripts/check_pack.py --self-test
-python3 scripts/package.py --output ../design-pack-0.6.0.zip
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_pack.py --self-test
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_check_run.py
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_check_image_run.py
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_check_outcome.py
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_age_casting_guidance.py
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_attitude_guidance.py
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_expression_guidance.py
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_capture_styling_guidance.py
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_mirror_selfie_guidance.py
+python3 scripts/package.py --output /absolute/private/output/design-pack.zip
 ```
 
-The checker validates the exact file inventory, local links, metadata consistency, source coverage and absence of symlinks/unexpected private material. Focused evidence records distinguish reported snapshots, partial/failed access, primary text and claims; no rendered output quality improvement is asserted. Its positive and negative tests exercise broken links, manifest drift, missing original and public sources, missing observation limits, unrouted methods, unexpected files and symlinks. Packaging revalidates and uses only the declared files. A successful check proves package properties, not design quality or provider compatibility.
+The archive uses an exact allowlist and byte parity. [Validation](VALIDATION.md) states check coverage and limits. [Evaluation scenarios](EVALUATION.md) support behavioral review; they are not completed production trials. Optional private run receipts check declared evidence only.
 
-See [VALIDATION.md](VALIDATION.md) for the actual execution record and [EVALUATION.md](EVALUATION.md) for scenario coverage and its limits.
+Version 0.7.7 connects styling, activity, context and camera instead of treating wardrobe as identity proof. Connected presentations begin as sequences, distinguish communication genre from file format, and are reviewed in their final ordered delivery. Explicit control silhouettes and naming-language policies stay task-scoped. An optional [outcome review](skills/design-pack/templates/outcome-review.json) gate binds declared scoped checks to current artifacts without equating technical evidence with readiness. No culture, shape, language, page count or layout becomes a default. These are method changes, not demonstrated aesthetic gains; actual visual quality and owner acceptance still require observed evidence.
 
-## Maintenance and licensing
+Version 0.7.8 separates model direction from camera texture, requires reference coverage and observation-to-direction transfer, and compares candidate differences and generic drift in actual pixels. The new [model direction](skills/mockup-image/references/model-direction.md) route preserves approved photo-only replacement scope. This remains an unpublished candidate; structural checks do not establish visual improvement.
 
-Original pack content is MIT licensed; no upstream material is vendored. [Source notes](skills/design-pack/references/sources.md) describe independent synthesis and asset/license limits. Keep private profiles outside this directory. To update, change source notes and metadata as needed, review scenarios, update the file inventory deliberately, and rerun checks before packaging. Do not overwrite a user's project memory during an update.
+Version 0.7.9 adds requested age/life-stage casting independently of ethnicity, fashion status and phone texture, with varied plausible subjects and precisely scoped minor-safety boundaries. It adds project-local brief/review prompts and static scenario coverage, not a new receipt schema or automatic age detector. This is an UNPUBLISHED candidate; no generated samples or demonstrated visual improvement are claimed.
+
+Version 0.7.10 preserves successful direction cues across corrections and reviews age/life-stage, attitude, styling/wear, camera relationship and capture independently. Creative-scene briefs are translated into visible relationships, not inferred professions, ethnic stereotypes or a shared costume. A young, phone-realistic image can still fail its attitude brief. Static contracts and synthetic declared-outcome tests cover these distinctions without claiming aesthetic gains. This remains an UNPUBLISHED candidate; private sources, generated trials and task-specific copy remain outside the pack.
+
+Version 0.7.11 calibrates facial expression independently from attitude. It avoids accumulating intense facial cues, repairs overperformance without flattening successful styling/pose/camera relationships, and permits restraint, smiles or stronger expression when they fit the task. Written-contract and synthetic declared-outcome checks protect this distinction, not aesthetic success. This remains an UNPUBLISHED candidate; no installation, publication or owner acceptance is implied.
+
+The 0.7.11 photo review also separates expression from evidenced synthetic surface artifacts such as repeated invented texture or excessive sharpening. It preserves genuine detail and an accepted design, rather than prescribing blur, grain or a diagnosis of the viewer's reaction.
+
+Version 0.7.12 adds [capture and styling](skills/mockup-image/references/capture-styling.md): reference-grounded framing, person/space lighting transfer and clothing as worn. It checks staged product-display drift separately from expression or texture, preserves task-specific fixed garments and allows commercial or clean photography when requested. Actual observations and counterexamples guide each project; no private board, device, lighting recipe or wardrobe becomes a universal style. Static contracts and synthetic outcome declarations are not visual improvement or automatic host activation. This remains an UNPUBLISHED candidate.
+
+Version 0.7.13 adds [mirror selfie](skills/mockup-image/references/mirror-selfie.md) guidance for explicitly reflected self-portraits. It separates capture-mode evidence, phone/hand anatomy, mirror/room geometry, lighting and requested face/body life-stage consistency. Centred framing, clear faces and no-flash light remain valid; the method does not impose a pose, device, bathroom or youthful-face recipe. Actual source inspection and output review remain necessary. Written tests cannot prove visual success or that the guidance was consumed before generation. This remains an UNPUBLISHED candidate with no automatic activation or installation claim.
+
+Version 0.7.14 distinguishes an explicit whole reset from local repair and uses organized reference sections to construct one coherent subject, worn outfit, space, camera and light relationship. Reopened axes lose stale identity/garment/room anchors while still-current constraints remain. Actual output review separates whole-scene fit from individual technical passes and reviewer readiness from the user's OK. Existing methods and tests are extended without a new schema, runtime hook or personal style preset. This remains an UNPUBLISHED candidate; structural checks do not prove activation or aesthetic improvement.
+
+Version 0.7.15 makes consequential supporting artifacts inspectable before scene generation, with separate checks for the actual master, depicted features and readable information. It also distinguishes observed illumination, exposure and capture response without inventing camera measurements or imposing noise and darkness. These are task-scoped methods, not compulsory props, private fictional lore or a universal photographic preset. Existing written-contract and declared-outcome tests remain nonvisual; no activation, physical production or aesthetic success is claimed. This remains an UNPUBLISHED candidate.
+
+Version 0.7.16 protects defining reference relationships through new casting and local fashion repairs. Cut, material, layering and wear must survive production and actual output comparison; simpler or tidy clothing is not automatically a faithful interpretation. Repeated casting rejection reopens the permitted premise instead of only smoothing the same face. These task-scoped methods preserve simple-clothing counterexamples without demographic stereotypes, brand/price claims or private style defaults. Written and synthetic tests do not establish actual fidelity, age, activation or aesthetic improvement. This remains an UNPUBLISHED candidate.
+
+Version 0.7.17 separates material response from whole-garment construction and finish. It diagnoses apparent thickness, support, bending and contact, checks continuity into the hem without demanding equal decoration, and respects cropped-source uncertainty. Narrow repairs preserve the latest accepted character and styling. The method does not prescribe a fabric, fastening, hem or universal look. Written and synthetic tests do not prove physical manufacture, visible detail, preservation or aesthetic success. This remains an UNPUBLISHED candidate.
+
+Version 0.7.18 selects the visual subject before applying portrait direction. Outfit-led crops, wearer views and object-only photographs can be complete without a face; required evidence and source boundaries determine the frame. It distinguishes actual source framing from a browser crop and omits irrelevant facial checks without allowing required evidence to be hidden. No universal selfie, product-photo, hand, prop or app-item behavior is introduced. This pack-only candidate generates no additional samples and makes no activation or visual-success claim.
+
+Version 0.7.19 varies character self-presentation, action and camera view through actual source relationships, including overlap within and across reference groups. User-chosen fictional identity does not prescribe a binary pose or appearance. Front, side, back and partially seen views follow the task; tattoos and accessories can have concrete, consistent fictional designs and motives without becoming compulsory. Existing authority, protected-content and conditional-face checks remain. Written and synthetic tests are not identity classification, pose recognition, generation evidence or aesthetic approval. This remains an UNPUBLISHED candidate.
+
+The same 0.7.19 methods support requested groups of two or more through shared attention, distinct individuals and plausible contact/occlusion. Group photographs remain optional, source labels do not prove friendship, and reflected instances are not automatically additional people.
+
+Version 0.7.20 treats a disconnected face/body impression as a coherent-subject problem, separate from gender identity. It inspects head/neck/shoulder-body relationships, perspective and capture continuity together, distinguishes perceptual casting fit from established structural defects, and preserves successful poses, styling and deliberate occlusion during bounded repairs. No gendered anatomy template, fixed ratio or compulsory frontal face is introduced. Written and synthetic tests do not prove image coherence, identity or aesthetic approval. This remains an UNPUBLISHED candidate.
+
+The same task-scoped update supports visible joint/load relationships, skin-following tattoos and attached piercings/accessories, plus deliberately varied garment color combinations when requested. It preserves original fictional design and story distinctions without copying real biography or enforcing a body, adornment set or palette for a demographic group.
+
+Optional makeup direction distinguishes observed placement/finish from shadows and fictional routine, coordinates emphasis with clothing and light, and verifies only visible detail. It is neither compulsory for women nor restricted to women.
+
+Version 0.7.21 preserves outfit intent through coupled material, silhouette, layering, wear, color and personal-detail relationships instead of palette-only substitution. When feedback reopens fictional marks or motives, it reassesses the current character and concrete design rather than defending inherited details with a new story. User-specified context guides the task without becoming a cultural stereotype or universal wardrobe. Existing structural and synthetic checks cannot establish actual style fit or user approval. This remains an UNPUBLISHED candidate.
+
+Version 0.7.22 reconciles accumulated user requests before further work, distinguishing active requirements, later overrides, optional capabilities and genuine evidence gaps. It routes task/project/user writing-style selection through private profiles and preserves project-defined item semantics without hardcoding a client's style or app. Existing medium-specific methods remain in place; guidance coverage, actual use, output verification and user approval remain distinct. No automatic profile loading, runtime integration or exhaustive historical coverage is claimed. This remains an UNPUBLISHED candidate.
