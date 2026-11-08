@@ -1,4 +1,4 @@
-# Design Pack 0.7.22 candidate
+# Design Pack 0.7.23 candidate
 
 A skills-only design partner for turning real content and inspected references into deliberate visual work. It covers interfaces, portfolio presentations, brand, editorial, diagrams, objects, spaces, fashion, motion, sound and 3D. Start at [Design Pack](skills/design-pack/SKILL.md) and load only relevant [methods](skills/design-pack/references/methods.md).
 
@@ -32,6 +32,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_age_casting_guidance.py
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_attitude_guidance.py
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_expression_guidance.py
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_capture_styling_guidance.py
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_garment_structure_guidance.py
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_mirror_selfie_guidance.py
 python3 scripts/package.py --output /absolute/private/output/design-pack.zip
 ```
@@ -77,3 +78,7 @@ Optional makeup direction distinguishes observed placement/finish from shadows a
 Version 0.7.21 preserves outfit intent through coupled material, silhouette, layering, wear, color and personal-detail relationships instead of palette-only substitution. When feedback reopens fictional marks or motives, it reassesses the current character and concrete design rather than defending inherited details with a new story. User-specified context guides the task without becoming a cultural stereotype or universal wardrobe. Existing structural and synthetic checks cannot establish actual style fit or user approval. This remains an UNPUBLISHED candidate.
 
 Version 0.7.22 reconciles accumulated user requests before further work, distinguishing active requirements, later overrides, optional capabilities and genuine evidence gaps. It routes task/project/user writing-style selection through private profiles and preserves project-defined item semantics without hardcoding a client's style or app. Existing medium-specific methods remain in place; guidance coverage, actual use, output verification and user approval remain distinct. No automatic profile loading, runtime integration or exhaustive historical coverage is claimed. This remains an UNPUBLISHED candidate.
+
+Version 0.7.23 resolves a task-local garment construction brief before color/type substitutions: outline and volume connect to visible support, cut, material and edge behavior, then the actual output is compared with source relationships and the rejected generic fallback. It does not make elaborate trousers, hardware or any private taste universal. Static and synthetic tests cannot establish reference consumption or visual improvement. This is a candidate with no automatic activation or installation claim.
+
+The same update requires actual authorized reading of applicable private fashion/model guidance, resolving task then project then user scope and keeping unavailable sources explicit. It adds a portable procedure, not an automatic profile loader or permission expansion. Concrete personal guidance remains outside the public package.

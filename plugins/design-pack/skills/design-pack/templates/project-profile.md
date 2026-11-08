@@ -38,3 +38,5 @@ Preserve history without treating it as the current instruction.
 - Writing-style resolution for this task: explicit task choice → project voice → relevant configured user default → provisional context-appropriate copy; selected guide/version and actual read status:
 - Current requirements, superseded choices and optional capabilities; unresolved source coverage and latest override checks:
 - Profile availability and transfer limits: a stored path or resolver declaration is not proof of maker consumption or runtime reload:
+
+- Fashion/model direction source and scope: actual configured guide/version, read state, current task/project overrides and task-local examples not promoted to defaults:

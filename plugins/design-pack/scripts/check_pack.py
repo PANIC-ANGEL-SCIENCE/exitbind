@@ -27,6 +27,7 @@ EXPECTED = {
     'scripts/test_age_casting_guidance.py', 'scripts/test_attitude_guidance.py',
     'scripts/test_expression_guidance.py',
     'scripts/test_capture_styling_guidance.py',
+    'scripts/test_garment_structure_guidance.py',
     'scripts/test_mirror_selfie_guidance.py',
     'scripts/check_outcome.py', 'scripts/test_check_outcome.py', OUTCOME,
     'skills/mockup-image/references/generation-contract.md',

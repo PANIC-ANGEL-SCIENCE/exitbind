@@ -23,6 +23,10 @@ For style-context or outfit-intent feedback, read the coupled material/silhouett
 
 For accumulated feedback, first reconcile the current [brief](../design-pack/references/briefing.md) and applicable private profile. Carry active changes and preservation requirements into this image; supported modes are not a checklist of everything to include. Keep project-specific item semantics and writing-style sources separate from reusable image methods, and record actual consumption rather than assuming it from a version label.
 
+For generic garment drift after a color or category change, resolve the construction brief in [capture and styling](references/capture-styling.md) before generating: inspect the outline and volume, connect them to visible cut/support/material, then compare the output against the source and rejected fallback. Distinctive does not mean more arbitrary decoration.
+
+For saved fashion or model preferences, load the applicable actual private guidance through [profile memory](../design-pack/references/memory.md) before production. Current task overrides project direction, which overrides the relevant user default. Record missing or denied reads honestly; this method is not automatic host loading.
+
 ## Choose and make
 
 For reference-led people/model imagery or casting alternatives, read [model direction](references/model-direction.md) before prompting. Apply its facial checks only to the visible or required person evidence, not every phone-camera or object image.

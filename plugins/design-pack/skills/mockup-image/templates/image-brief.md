@@ -64,6 +64,10 @@ Use only consequential fields. Face, expression and casting fields apply only wh
 - New generation or targeted edit; expected changed and unchanged areas:
 - Exploration relationship or resolved edit instruction; actual supported image-input map:
 
+- Garment construction brief when relevant: inspected source and unresolved regions; outline/volume/length; support-to-edge cut/material relationships; defining features, authorized changes and rejected generic fallback; actual prompt/input carry-through:
+
+- Private fashion guidance: configured source/version and actual read status; relevant values and task/project overrides; downstream consumption evidence and access gaps:
+
 ## Output and review
 
 - Actual call and output identity / native dimensions / first original:
@@ -95,6 +99,7 @@ Use only consequential fields. Face, expression and casting fields apply only wh
 - Outfit-intent review: source/output material, silhouette, layer and wearing relationships together, independent of matching colors or a mood word; authorized departures and unresolved fit:
 - Character/detail coherence review: current design choices and consistent fictional reasons versus actual visible transfer; no retroactive rescue story or inferred cultural membership:
 - Requirement coverage review: method present, personally read, carried into actual call, inspected on this output and any implementation evidence; these stages are not interchangeable:
+- Garment structure review when relevant: whole/use-scale outline versus source and rejected fallback; native-detail support, cut, material and edge continuity; preserved regions and remaining uncertainty, independent of color:
 - Central art direction met or remains in rework, separate from technical correctness:
 - Untested behavior, rights and output limitations:
 - Repair/reinspection or explicit frozen-trial findings:

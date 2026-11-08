@@ -370,11 +370,15 @@
       {
         "pinned": "## Preserve the current request through accumulated feedback (0.7.22)",
         "reason": "Independent Design Pack candidate or historical guidance version; not the Exitbind Cargo release version."
+      },
+      {
+        "pinned": "## Garment structure substitution scenarios (0.7.23)",
+        "reason": "Independent Design Pack candidate or historical guidance version; not the Exitbind Cargo release version."
       }
     ],
     "plugins/design-pack/README.md": [
       {
-        "pinned": "# Design Pack 0.7.22 candidate",
+        "pinned": "# Design Pack 0.7.23 candidate",
         "reason": "Independent Design Pack candidate or historical guidance version; not the Exitbind Cargo release version."
       },
       {
@@ -448,6 +452,10 @@
       {
         "pinned": "Version 0.7.22 reconciles accumulated user requests before further work, distinguishing active requirements, later overrides, optional capabilities and genuine evidence gaps. It routes task/project/user writing-style selection through private profiles and preserves project-defined item semantics without hardcoding a client's style or app. Existing medium-specific methods remain in place; guidance coverage, actual use, output verification and user approval remain distinct. No automatic profile loading, runtime integration or exhaustive historical coverage is claimed. This remains an UNPUBLISHED candidate.",
         "reason": "Independent Design Pack candidate or historical guidance version; not the Exitbind Cargo release version."
+      },
+      {
+        "pinned": "Version 0.7.23 resolves a task-local garment construction brief before color/type substitutions: outline and volume connect to visible support, cut, material and edge behavior, then the actual output is compared with source relationships and the rejected generic fallback. It does not make elaborate trousers, hardware or any private taste universal. Static and synthetic tests cannot establish reference consumption or visual improvement. This is a candidate with no automatic activation or installation claim.",
+        "reason": "Independent Design Pack candidate or historical guidance version; not the Exitbind Cargo release version."
       }
     ],
     "plugins/design-pack/VALIDATION.md": [
@@ -509,6 +517,10 @@
       },
       {
         "pinned": "## Request reconciliation and private-profile coverage (0.7.22)",
+        "reason": "Independent Design Pack candidate or historical guidance version; not the Exitbind Cargo release version."
+      },
+      {
+        "pinned": "## Garment structure substitution coverage (0.7.23)",
         "reason": "Independent Design Pack candidate or historical guidance version; not the Exitbind Cargo release version."
       }
     ],

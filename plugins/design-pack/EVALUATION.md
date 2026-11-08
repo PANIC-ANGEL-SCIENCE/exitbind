@@ -345,3 +345,18 @@ These are manual scenarios, not completed production trials.
 | Some historical messages cannot be retrieved | State the verified scope and unresolved sources | Claim every past request was audited without evidence |
 
 Synthetic tests cannot determine these conditions from real history or pixels. They check declared scoped requirements only.
+
+## Garment structure substitution scenarios (0.7.23)
+
+- Color matches, defining garment structure disappears: reject the generic fallback even when anatomy and material pass.
+- Unusual silhouette with arbitrary added hardware: inspect whether the additions explain support, volume and openings, not whether they look busy.
+- Simple straight garment explicitly requested: do not impose panels, wraps or asymmetry.
+- Cropped source hides construction: preserve uncertainty; authorized original design is distinct from observed source structure.
+- New garment cut on a preserved pose: inspect bend, support and footwear/edge contact plus protected regions.
+- Structure looks plausible but price or brand is unknown: do not turn visual approval into manufacture, provenance or luxury claims.
+
+- Configured fashion profile successfully read: use applicable details, keep task overrides and preserve source-read evidence privately.
+- Profile path present but never read: do not mark profile consumption passed.
+- Missing or denied required fashion profile: report the narrow gap and preserve not-tested status without bypass.
+- No configured fashion profile: proceed from the current task, not an invented private preference.
+- Saved default conflicts with current task: apply the explicit task choice without erasing unrelated valid defaults.
