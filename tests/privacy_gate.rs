@@ -1,4 +1,6 @@
 use std::collections::BTreeSet;
+#[path = "privacy_gate/python_assignments.rs"]
+mod python_assignments;
 mod support;
 use std::ffi::OsStr;
 use std::fs;
@@ -70,6 +72,7 @@ fn scan(root: &Path) -> Findings {
                 "--no-textconv",
                 "--no-color",
                 "--format=",
+                "--full-index",
                 "-p",
             ],
         );
@@ -79,7 +82,7 @@ fn scan(root: &Path) -> Findings {
             None => add(&mut findings, "scan-incomplete", "git-history-metadata"),
         }
         match patches {
-            Some(bytes) => scan_patch(&bytes, &mut findings),
+            Some(bytes) => scan_patch(root, &bytes, &mut findings),
             None => add(&mut findings, "scan-incomplete", "git-history-patches"),
         }
     } else {
@@ -144,7 +147,13 @@ fn scan_file(root: &Path, relative: &Path, source: &str, findings: &mut Findings
     }
     match fs::read(path) {
         Ok(bytes) if !bytes.iter().take(8192).any(|byte| *byte == 0) => {
-            scan_text(&String::from_utf8_lossy(&bytes), source, findings)
+            let text = String::from_utf8_lossy(&bytes);
+            scan_text_with_assignments(
+                &text,
+                &python_assignments::file(&text, relative),
+                source,
+                findings,
+            )
         }
         Ok(_) => {}
         Err(_) => add(findings, "scan-incomplete", source),
@@ -159,6 +168,15 @@ fn scan_path(path: &Path, source: &str, findings: &mut Findings) {
 }
 
 fn scan_text(text: &str, source: &str, findings: &mut Findings) {
+    scan_text_with_assignments(text, text, source, findings);
+}
+
+fn scan_text_with_assignments(
+    text: &str,
+    assignments: &str,
+    source: &str,
+    findings: &mut Findings,
+) {
     if private_home(text) {
         add(findings, "private-home-path", source);
     }
@@ -191,7 +209,7 @@ fn scan_text(text: &str, source: &str, findings: &mut Findings) {
     if credential_signature(text) {
         add(findings, "credential-token-signature", source);
     }
-    if credential_assignment(text) {
+    if credential_assignment(assignments) {
         add(findings, "credential-assignment", source);
     }
 }
@@ -574,9 +592,14 @@ fn scan_metadata(bytes: &[u8], ignored_commit: Option<&[u8]>, findings: &mut Fin
     }
 }
 
-fn scan_patch(bytes: &[u8], findings: &mut Findings) {
+fn scan_patch(root: &Path, bytes: &[u8], findings: &mut Findings) {
     let patch = String::from_utf8_lossy(bytes);
-    scan_text(&patch, "git-history:patches", findings);
+    scan_text_with_assignments(
+        &patch,
+        &python_assignments::patch(root, &patch),
+        "git-history:patches",
+        findings,
+    );
     for line in patch
         .lines()
         .filter(|line| line.starts_with("diff --git a/"))
