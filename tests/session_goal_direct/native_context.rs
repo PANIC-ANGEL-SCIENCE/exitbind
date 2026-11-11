@@ -724,3 +724,129 @@ fn native_owner_work_guidance_uses_verified_journal_root_for_close_readiness() {
 }
 #[path = "native_context_recovery.rs"]
 mod native_context_recovery;
+
+#[test]
+fn resume_budget_covers_accepted_goal_obligation_from_prior_work() {
+    let project = Project::new("resume-accepted-obligation-budget");
+    let session = "resume-accepted-obligation-budget";
+    let store = project.session_store.as_path();
+    fs::write(project.root.join("input"), b"original").unwrap();
+    project.value_in_session(
+        "codex",
+        session,
+        store,
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "resume-accepted",
+            "--goal",
+            "Keep governed evidence current",
+            "--obligation",
+            "Checked task",
+            "--none-applicable",
+            "findings,blockers,decisions,externalActions",
+        ],
+    );
+    let first = project.value_in_session(
+        "codex",
+        session,
+        store,
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "Accept checked evidence",
+            "--check-command",
+            "true",
+            "--review-policy",
+            "required",
+        ],
+    )["work"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    complete_required_review_work(&project, session, &first);
+    project.value_in_session(
+        "codex",
+        session,
+        store,
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "resume-accepted",
+            "--goal",
+            "Keep governed evidence current",
+            "--obligation",
+            "Checked task",
+            "--disposition",
+            "accepted",
+            "--result-ref",
+            &first,
+        ],
+    );
+
+    // A later blocked Work avoids terminal acceptance's already bounded hash;
+    // Goal projection must independently bound its earlier accepted result.
+    let second = project.value_in_session(
+        "codex",
+        session,
+        store,
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "Block a later fixture Work",
+            "--check-command",
+            "true",
+            "--review-policy",
+            "required",
+        ],
+    )["work"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let next = project.value_in_session(
+        "codex",
+        session,
+        store,
+        &["work", "next", &second, "--json", "--full"],
+    );
+    return_in_session(
+        &project,
+        session,
+        &second,
+        next["next"]["assignment"].as_str().unwrap(),
+        "blocked",
+        b"Blocked fixture Work.\n",
+    );
+
+    let current = project.value_in_session("codex", session, store, &["work", "resume", "--json"]);
+    assert_eq!(current["status"], "none", "{current}");
+    assert_eq!(
+        current["presentation"]["goalProgress"]["tasks"][0]["current"], true,
+        "{current}"
+    );
+    fs::write(project.root.join("input"), b"changed").unwrap();
+    let changed = project.value_in_session("codex", session, store, &["work", "resume", "--json"]);
+    assert_eq!(
+        changed["presentation"]["goalProgress"]["tasks"][0]["current"], false,
+        "{changed}"
+    );
+
+    fs::File::create(project.root.join("large"))
+        .unwrap()
+        .set_len(16 * 1024 * 1024 + 1)
+        .unwrap();
+    let limited = project.value_in_session("codex", session, store, &["work", "resume", "--json"]);
+    assert_eq!(limited["status"], "unresolved", "{limited}");
+    assert_eq!(limited["reason"]["code"], "discovery_limited", "{limited}");
+    assert_eq!(
+        limited["discovery"]["limitedReason"], "fingerprint_byte_limit_exceeded",
+        "{limited}"
+    );
+    assert!(limited["presentation"]["terminal"].is_null());
+}

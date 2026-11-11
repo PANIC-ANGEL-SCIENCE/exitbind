@@ -13,6 +13,8 @@ mod native_context;
 mod native_supersede;
 #[path = "session_goal_direct/readonly_store.rs"]
 mod readonly_store;
+#[path = "session_goal_direct/resume_bounded_goal.rs"]
+mod resume_bounded_goal;
 #[path = "session_goal_direct/resume_current_work.rs"]
 mod resume_current_work;
 mod support;

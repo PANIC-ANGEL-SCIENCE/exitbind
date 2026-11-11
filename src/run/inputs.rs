@@ -9,11 +9,13 @@
 
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeSet;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 pub(crate) const COVERAGE: &str = "product-root-files-v1";
@@ -46,13 +48,48 @@ pub(crate) const WALK_PATH_LIMIT: usize = 4096;
 
 /// Limits and successful fingerprint memoization owned by one read-only
 /// `work resume` request. Normal callers use `fingerprint` and stay unbounded.
-pub(crate) struct ResumeInputBudget {
+#[derive(Clone)]
+pub(crate) struct ResumeInputBudget(Rc<RefCell<ResumeInputState>>);
+
+struct ResumeInputState {
     deadline: Instant,
     directory_entries: usize,
     work_ledgers: usize,
-    cached: Option<(PathBuf, PathBuf, &'static str, String)>,
+    cached: BTreeMap<(PathBuf, PathBuf, BTreeSet<String>), String>,
     limited: Option<&'static str>,
     detail: Option<String>,
+}
+
+// Resume visits existing read-only Goal and Work evaluators, some of which
+// reload a historical configuration before hashing its inputs. Scope their
+// existing fingerprint calls to this request's budget without changing any
+// mutation-time validation. A stack restores the outer request on nesting and
+// the guard removes it during normal return, errors, and panic unwinding.
+thread_local! {
+    static ACTIVE_RESUME_BUDGETS: RefCell<Vec<ResumeInputBudget>> = const { RefCell::new(Vec::new()) };
+}
+
+struct ResumeBudgetScope;
+
+impl Drop for ResumeBudgetScope {
+    fn drop(&mut self) {
+        ACTIVE_RESUME_BUDGETS.with(|budgets| {
+            budgets.borrow_mut().pop();
+        });
+    }
+}
+
+pub(crate) fn with_resume_budget<T>(
+    budget: &mut ResumeInputBudget,
+    operation: impl FnOnce(&mut ResumeInputBudget) -> T,
+) -> T {
+    ACTIVE_RESUME_BUDGETS.with(|budgets| budgets.borrow_mut().push(budget.clone()));
+    let _scope = ResumeBudgetScope;
+    operation(budget)
+}
+
+fn active_resume_budget() -> Option<ResumeInputBudget> {
+    ACTIVE_RESUME_BUDGETS.with(|budgets| budgets.borrow().last().cloned())
 }
 
 impl ResumeInputBudget {
@@ -61,72 +98,79 @@ impl ResumeInputBudget {
     }
 
     fn with_deadline(deadline: Instant) -> Self {
-        Self {
+        Self(Rc::new(RefCell::new(ResumeInputState {
             deadline,
             directory_entries: 0,
             work_ledgers: 0,
-            cached: None,
+            cached: BTreeMap::new(),
             limited: None,
             detail: None,
-        }
+        })))
     }
 
     pub(crate) fn check(&mut self) -> Result<(), &'static str> {
-        if self.limited.is_none() && Instant::now() >= self.deadline {
-            self.limited = Some("resume_deadline_exceeded");
+        let mut state = self.0.borrow_mut();
+        if state.limited.is_none() && Instant::now() >= state.deadline {
+            state.limited = Some("resume_deadline_exceeded");
         }
-        self.limited.map_or(Ok(()), Err)
+        state.limited.map_or(Ok(()), Err)
     }
 
     pub(crate) fn count_directory_entry(&mut self) -> Result<(), &'static str> {
         self.check()?;
-        self.directory_entries = self.directory_entries.saturating_add(1);
-        if self.directory_entries > WALK_DIRECTORY_LIMIT {
-            self.limited = Some("directory_entry_limit_exceeded");
+        let mut state = self.0.borrow_mut();
+        state.directory_entries = state.directory_entries.saturating_add(1);
+        if state.directory_entries > WALK_DIRECTORY_LIMIT {
+            state.limited = Some("directory_entry_limit_exceeded");
             return Err("directory_entry_limit_exceeded");
         }
         Ok(())
     }
 
     pub(crate) fn count_work_ledger(&mut self) -> usize {
-        self.work_ledgers = self.work_ledgers.saturating_add(1);
-        self.work_ledgers
+        let mut state = self.0.borrow_mut();
+        state.work_ledgers = state.work_ledgers.saturating_add(1);
+        state.work_ledgers
     }
 
     pub(crate) fn directory_entries(&self) -> usize {
-        self.directory_entries
+        self.0.borrow().directory_entries
     }
 
     pub(crate) fn deadline(&self) -> Instant {
-        self.deadline
+        self.0.borrow().deadline
     }
 
     pub(crate) fn work_ledgers(&self) -> usize {
-        self.work_ledgers
+        self.0.borrow().work_ledgers
     }
 
     pub(crate) fn limited_reason(&mut self) -> Option<&'static str> {
         let _ = self.check();
-        self.limited
+        self.0.borrow().limited
     }
 
     pub(crate) fn mark_limited(&mut self, reason: &'static str) {
-        self.limited = Some(reason);
+        self.0.borrow_mut().limited = Some(reason);
     }
 
     pub(crate) fn mark_unavailable(&mut self, detail: String) {
-        self.limited = Some("tested_inputs_unavailable");
-        self.detail = Some(detail);
+        let mut state = self.0.borrow_mut();
+        state.limited = Some("tested_inputs_unavailable");
+        state.detail = Some(detail);
     }
 
-    pub(crate) fn detail(&self) -> Option<&str> {
-        self.detail.as_deref()
+    pub(crate) fn detail(&self) -> Option<String> {
+        self.0.borrow().detail.clone()
     }
 }
 
 /// Digest of the current tested inputs, or an error when they cannot be
 /// established (which callers must treat as "not reusable").
 pub(crate) fn fingerprint(loaded: &crate::config::Loaded) -> Result<String, String> {
+    if let Some(mut budget) = active_resume_budget() {
+        return fingerprint_for_resume(loaded, &mut budget);
+    }
     fingerprint_impl(loaded, None, &BTreeSet::new())
 }
 
@@ -135,6 +179,9 @@ pub(crate) fn fingerprint_for_state(
     state: &Value,
 ) -> Result<String, String> {
     let excluded = crate::run::guidance_continuity::unambiguous_paths(loaded, state);
+    if let Some(mut budget) = active_resume_budget() {
+        return fingerprint_with_exclusions_for_resume(loaded, &excluded, &mut budget);
+    }
     fingerprint_impl(loaded, None, &excluded)
 }
 
@@ -142,14 +189,24 @@ pub(crate) fn fingerprint_for_resume(
     loaded: &crate::config::Loaded,
     budget: &mut ResumeInputBudget,
 ) -> Result<String, String> {
+    fingerprint_with_exclusions_for_resume(loaded, &BTreeSet::new(), budget)
+}
+
+fn fingerprint_with_exclusions_for_resume(
+    loaded: &crate::config::Loaded,
+    excluded: &BTreeSet<String>,
+    budget: &mut ResumeInputBudget,
+) -> Result<String, String> {
     budget.check().map_err(str::to_owned)?;
-    if let Some((root, state_root, coverage, digest)) = &budget.cached {
-        if root == &loaded.product_root && state_root == &loaded.state_root && *coverage == COVERAGE
-        {
-            return Ok(digest.clone());
-        }
+    let key = (
+        loaded.product_root.clone(),
+        loaded.state_root.clone(),
+        excluded.clone(),
+    );
+    if let Some(digest) = budget.0.borrow().cached.get(&key).cloned() {
+        return Ok(digest);
     }
-    let digest = match fingerprint_impl(loaded, Some(budget), &BTreeSet::new()) {
+    let digest = match fingerprint_impl(loaded, Some(budget), excluded) {
         Ok(digest) => digest,
         Err(error) => {
             let reason = match error.as_str() {
@@ -163,18 +220,22 @@ pub(crate) fn fingerprint_for_resume(
                 "resume_deadline_exceeded" => Some("resume_deadline_exceeded"),
                 _ => None,
             };
-            if let Some(reason) = reason {
-                budget.mark_limited(reason);
+            if budget.limited_reason().is_none() {
+                if let Some(reason) = reason {
+                    budget.mark_limited(reason);
+                } else {
+                    budget.mark_unavailable(error.clone());
+                }
             }
             return Err(error);
         }
     };
-    budget.cached = Some((
-        loaded.product_root.clone(),
-        loaded.state_root.clone(),
-        COVERAGE,
-        digest.clone(),
-    ));
+    // Caching is strictly request-local and capped; a new command always
+    // fingerprints again. Distinct continuity exclusions cannot share a hash.
+    let mut state = budget.0.borrow_mut();
+    if state.cached.len() < 32 {
+        state.cached.insert(key, digest.clone());
+    }
     Ok(digest)
 }
 
@@ -184,11 +245,7 @@ pub(crate) fn fingerprint_for_state_resume(
     budget: &mut ResumeInputBudget,
 ) -> Result<String, String> {
     let excluded = crate::run::guidance_continuity::unambiguous_paths(loaded, state);
-    if excluded.is_empty() {
-        return fingerprint_for_resume(loaded, budget);
-    }
-    budget.check().map_err(str::to_owned)?;
-    fingerprint_impl(loaded, Some(budget), &excluded)
+    fingerprint_with_exclusions_for_resume(loaded, &excluded, budget)
 }
 
 fn fingerprint_impl(
@@ -499,6 +556,114 @@ fn walk_paths_bounded(root: &Path, budget: &mut ResumeInputBudget) -> Result<Vec
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn loaded(root: &Path, state_root: &Path) -> crate::config::Loaded {
+        assert!(
+            !crate::project::git_preflight::has_git_marker(root),
+            "input-budget test requires a marker-free temporary root"
+        );
+        crate::config::Loaded {
+            config: json!({}),
+            agents: BTreeMap::new(),
+            lead: None,
+            architecture_contract: None,
+            capabilities: Vec::new(),
+            workflows: BTreeMap::new(),
+            verification_preparation: None,
+            path: root.join("exitbind.json"),
+            control_root: root.to_owned(),
+            product_root: root.to_owned(),
+            state_root: state_root.to_owned(),
+            mode: crate::project::layout_types::Mode::Portable,
+            project_id: None,
+            source: "{}".into(),
+        }
+    }
+
+    #[test]
+    fn resume_scope_restores_nested_budget_after_error_and_panic() {
+        let root = crate::test_root::temp("resume-budget-scope");
+        fs::write(root.join("input"), b"first").unwrap();
+        let loaded = loaded(&root, &root.join("state"));
+        let mut outer = ResumeInputBudget::new();
+        let mut expired = ResumeInputBudget::with_deadline(Instant::now() - Duration::from_secs(1));
+        let initial = fingerprint(&loaded).unwrap();
+
+        with_resume_budget(&mut outer, |_| {
+            assert_eq!(fingerprint(&loaded).unwrap(), initial);
+            let error = with_resume_budget(&mut expired, |_| fingerprint(&loaded));
+            assert_eq!(error.unwrap_err(), "resume_deadline_exceeded");
+            assert_eq!(fingerprint(&loaded).unwrap(), initial);
+            let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let mut nested = ResumeInputBudget::new();
+                with_resume_budget(&mut nested, |_| panic!("test resume scope unwind"));
+            }));
+            assert!(unwind.is_err());
+            assert_eq!(fingerprint(&loaded).unwrap(), initial);
+        });
+        assert!(active_resume_budget().is_none());
+
+        let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut request = ResumeInputBudget::new();
+            with_resume_budget(&mut request, |_| panic!("test top-level resume unwind"));
+        }));
+        assert!(unwind.is_err());
+        assert!(active_resume_budget().is_none());
+
+        // Outside the read-only scope a mutation consumer must hash new bytes.
+        fs::write(root.join("input"), b"changed").unwrap();
+        assert_ne!(fingerprint(&loaded).unwrap(), initial);
+        assert!(active_resume_budget().is_none());
+    }
+
+    #[test]
+    fn resume_limit_does_not_apply_to_later_mutation_fingerprints() {
+        let root = crate::test_root::temp("resume-budget-mutation");
+        File::create(root.join("large"))
+            .unwrap()
+            .set_len(16 * 1024 * 1024 + 1)
+            .unwrap();
+        let loaded = loaded(&root, &root.join("state"));
+        let mut budget = ResumeInputBudget::new();
+        let error = with_resume_budget(&mut budget, |_| fingerprint(&loaded)).unwrap_err();
+        assert_eq!(error, "fingerprint_byte_limit_exceeded");
+        assert_eq!(
+            budget.limited_reason(),
+            Some("fingerprint_byte_limit_exceeded")
+        );
+        assert!(fingerprint(&loaded).is_ok());
+    }
+
+    #[test]
+    fn resume_cache_keys_product_state_and_exact_exclusions() {
+        let root = crate::test_root::temp("resume-budget-cache");
+        fs::create_dir(root.join("state-one")).unwrap();
+        fs::write(root.join("state-one/kept"), b"state data").unwrap();
+        fs::write(root.join("source"), b"source data").unwrap();
+        let first = loaded(&root, &root.join("state-one"));
+        let other_state = loaded(&root, &root.join("state-two"));
+        let mut budget = ResumeInputBudget::new();
+        let included = fingerprint_for_resume(&first, &mut budget).unwrap();
+        let other = fingerprint_for_resume(&other_state, &mut budget).unwrap();
+        assert_ne!(included, other);
+        let excluded = BTreeSet::from(["source".to_owned()]);
+        let without_source =
+            fingerprint_with_exclusions_for_resume(&first, &excluded, &mut budget).unwrap();
+        assert_ne!(included, without_source);
+        assert_eq!(
+            fingerprint_for_resume(&first, &mut budget).unwrap(),
+            included
+        );
+
+        let another = crate::test_root::temp("resume-budget-other-root");
+        fs::write(another.join("different"), b"different").unwrap();
+        let other_root = loaded(&another, &another.join("state"));
+        assert_ne!(
+            fingerprint_for_resume(&other_root, &mut budget).unwrap(),
+            included
+        );
+        assert_eq!(budget.0.borrow().cached.len(), 4);
+    }
 
     #[test]
     fn bounded_stream_hash_matches_existing_full_file_digest() {

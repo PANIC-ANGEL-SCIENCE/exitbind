@@ -21,10 +21,19 @@ const MAX_DISCOVERED_WORK_LEDGERS: usize = 128;
 
 pub(crate) fn resume(loaded: &Loaded, history: bool) -> Result<Value, String> {
     let mut budget = run::inputs::ResumeInputBudget::new();
-    let mut result = resume_core(loaded, history, &mut budget)?;
+    // The same cooperative budget covers snapshots and every transitive
+    // read-only Goal/Work fingerprint reached while assembling this response.
+    let result =
+        run::inputs::with_resume_budget(&mut budget, |budget| resume_core(loaded, history, budget));
     if let Some(reason) = budget.limited_reason() {
-        result = discovery_limited(loaded, reason, budget.work_ledgers());
+        let mut limited = discovery_limited(loaded, reason, budget.work_ledgers());
+        limited["discovery"]["allDirectoryEntries"] = json!(budget.directory_entries());
+        if let Some(detail) = budget.detail() {
+            limited["discovery"]["failureDetail"] = json!(detail);
+        }
+        return Ok(limited);
     }
+    let mut result = result?;
     if result.get("discovery").is_none() {
         result["discovery"] = discovery_value(None, budget.work_ledgers(), true);
     }

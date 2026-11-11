@@ -94,3 +94,55 @@ fn an_accepted_member_with_a_changed_checker_reads_accepted_at_binding_and_the_c
         .iter()
         .any(|item| item == "supersede"));
 }
+
+#[test]
+fn named_requirement_projection_obeys_resume_input_budget() {
+    let p = Project::new("named-requirement-resume-budget");
+    p.setup();
+    let accepted = p.begin("R1", "sh check.sh R1");
+    p.drive(&accepted, true);
+    p.value(
+        &[
+            "goal",
+            "assign",
+            "--goal-id",
+            "import",
+            "--requirement",
+            "R1",
+            "--result-ref",
+            &accepted,
+        ],
+        None,
+    );
+
+    // A later blocked named Work selects a terminal snapshot whose packet
+    // itself does not fingerprint; named evidence still checks accepted R1.
+    let blocked = p.begin("R2", "sh check.sh R2");
+    let next = p.value(&["work", "next", &blocked, "--json", "--full"], None);
+    p.return_stage_with_config(
+        &blocked,
+        &next["next"],
+        "blocked",
+        &p.root.join("exitbind.json"),
+    );
+    let current = p.value(&["work", "resume", "--json"], None);
+    assert_eq!(current["status"], "none", "{current}");
+    assert!(current["presentation"]["terminal"].is_null());
+
+    p.file("data.txt", "changed\n");
+    let changed = p.value(&["work", "resume", "--json"], None);
+    assert_eq!(changed["status"], "none", "{changed}");
+    assert!(changed["presentation"]["terminal"].is_null());
+    fs::File::create(p.root.join("large"))
+        .unwrap()
+        .set_len(16 * 1024 * 1024 + 1)
+        .unwrap();
+    let limited = p.value(&["work", "resume", "--json"], None);
+    assert_eq!(limited["status"], "unresolved", "{limited}");
+    assert_eq!(limited["reason"]["code"], "discovery_limited", "{limited}");
+    assert_eq!(
+        limited["discovery"]["limitedReason"], "fingerprint_byte_limit_exceeded",
+        "{limited}"
+    );
+    assert!(limited["presentation"]["terminal"].is_null());
+}
