@@ -365,7 +365,7 @@ fn tested_paths(
             Some(budget) => git_paths_bounded(root, budget),
             None => git_paths(root),
         },
-        None => match budget.as_deref_mut() {
+        None => match budget {
             Some(budget) => walk_paths_bounded(root, budget),
             None => walk_paths(root),
         },
