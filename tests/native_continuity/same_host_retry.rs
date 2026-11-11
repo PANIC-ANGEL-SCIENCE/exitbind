@@ -1,7 +1,9 @@
 //! Model-free recovery of one ended, uncredited reviewer.
 #![cfg(target_os = "linux")]
 
-use super::{argv, delivery::BlockedStart, run, text, Fixture, OTHER, PROFILE_BODY, SESSION};
+use super::{
+    argv, delivery::BlockedStart, run, sha, text, Fixture, OTHER, REVIEWER_PROFILE_BODY, SESSION,
+};
 use serde_json::{json, Value};
 use std::fs;
 
@@ -13,7 +15,10 @@ struct FailedReviewer {
 }
 
 fn failed_reviewer(name: &str) -> FailedReviewer {
-    failed_reviewer_with(Fixture::new(name))
+    failed_reviewer_with(
+        Fixture::new_for_reviewer(name, None, None),
+        Some(REVIEWER_PROFILE_BODY),
+    )
 }
 
 fn prepare_reviewer(fixture: &Fixture) -> (String, String, Value) {
@@ -49,9 +54,9 @@ fn prepare_reviewer(fixture: &Fixture) -> (String, String, Value) {
     (old_id, native, prepared)
 }
 
-fn failed_reviewer_with(fixture: Fixture) -> FailedReviewer {
+fn failed_reviewer_with(fixture: Fixture, expected_profile: Option<&str>) -> FailedReviewer {
     let (old_id, native, _) = prepare_reviewer(&fixture);
-    let old_result = unavailable_start(&fixture, "old-reviewer", &native);
+    let old_result = unavailable_start(&fixture, "old-reviewer", &native, expected_profile);
     assert_eq!(
         fixture.intents().unwrap()[0]["assignmentDelivery"]["state"],
         "unavailable"
@@ -114,7 +119,12 @@ fn capacity_uncredited_reviewer(name: &str) -> FailedReviewer {
     }
 }
 
-fn unavailable_start(fixture: &Fixture, child: &str, native: &str) -> String {
+fn unavailable_start(
+    fixture: &Fixture,
+    child: &str,
+    native: &str,
+    expected_profile: Option<&str>,
+) -> String {
     let rules_path = fixture.product.join("AGENTS.md");
     assert!(!rules_path.exists());
     let blocked = BlockedStart::for_child(fixture, child, native);
@@ -126,6 +136,16 @@ fn unavailable_start(fixture: &Fixture, child: &str, native: &str) -> String {
     let presented = hook["hookSpecificOutput"]["additionalContext"]
         .as_str()
         .unwrap();
+    if let Some(expected_profile) = expected_profile {
+        assert!(
+            presented.contains(expected_profile.trim_end()),
+            "{presented}"
+        );
+        assert!(
+            presented.contains(&sha(expected_profile.as_bytes())),
+            "{presented}"
+        );
+    }
     assert!(
         presented.contains("Complete current assignment, evidence and task conditions"),
         "{presented}"
@@ -439,15 +459,12 @@ fn direct_retry(failed: &FailedReviewer, source: &str) -> std::process::Output {
 
 #[test]
 fn retry_refuses_write_rights_and_corrupted_original_observation() {
-    let fixture = Fixture::new_with_reviewer_write(
+    let fixture = Fixture::new_for_reviewer(
         "reviewer-retry-write-right",
-        "true",
-        None,
-        PROFILE_BODY,
         None,
         Some("review-output.txt"),
     );
-    let failed = failed_reviewer_with(fixture);
+    let failed = failed_reviewer_with(fixture, Some(REVIEWER_PROFILE_BODY));
     assert!(failed.fixture.next(Some(SESSION))["prepareChild"].is_null());
     let refused = direct_retry(&failed, &failed.old_id);
     assert!(!refused.status.success(), "{}", text(&refused));
@@ -524,7 +541,12 @@ fn retry_upgrade_refuses_live_unknown_or_pending_siblings_anywhere_in_root() {
 fn a_failed_retry_cannot_be_renewed_as_a_new_retry_source() {
     let failed = failed_reviewer("reviewer-retry-no-chain");
     let (_, retry_id) = prepare_retry(&failed);
-    let result = unavailable_start(&failed.fixture, "fresh-reviewer", &failed.native);
+    let result = unavailable_start(
+        &failed.fixture,
+        "fresh-reviewer",
+        &failed.native,
+        Some(REVIEWER_PROFILE_BODY),
+    );
     failed.fixture.hook(
         json!({"hook_event_name":"SubagentStop","session_id":SESSION,
         "agent_id":"fresh-reviewer","agent_type":failed.native,"last_assistant_message":result}),
@@ -625,7 +647,8 @@ fn retry_recovery_does_not_attribute_a_matching_committed_manual_event() {
 #[ignore = "requires an earlier producer executable in EXITBIND_TEST_OLD_PRODUCER"]
 fn older_producer_refuses_v2_prepared_child_paths() {
     let previous = std::env::var("EXITBIND_TEST_OLD_PRODUCER").expect("old producer path");
-    let failed = failed_reviewer("reviewer-retry-old-producer");
+    let fixture = Fixture::new("reviewer-retry-old-producer");
+    let failed = failed_reviewer_with(fixture, None);
     let (route, retry_id) = prepare_retry(&failed);
     let state_path = failed.fixture.product.join(".exitbind/child-intents.json");
     let before = fs::read(&state_path).unwrap();

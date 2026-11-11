@@ -711,18 +711,54 @@ fn governed_session_start_scopes_work_navigation_to_its_configuration() {
         )),
         "{context}"
     );
-    assert!(context.contains(&format!(
+    let full_receive = context.contains(&format!(
         "`{exe} work continuation <WORK> --config <WORK_CONFIG>`"
-    )));
-    assert!(context.contains(&format!(
-        "For Work in this project, use `{exe} work resume --json --config "
-    )));
-    assert!(context.contains("this does not search other projects"));
+    ));
+    if full_receive {
+        assert!(context.contains(&format!(
+            "For Work in this project, use `{exe} work resume --json --config "
+        )));
+        assert!(context.contains("this does not search other projects"));
+        assert!(
+            context.contains("stale or incomplete detail needs its supported refresh/expansion")
+        );
+        assert!(context.contains("preserve it and use current Work detail"));
+    } else {
+        assert!(
+            context.contains(&format!(
+                "For this project only, run `{exe} work resume --json --config "
+            )),
+            "{context}"
+        );
+        assert!(
+            context.contains("other projects are not searched"),
+            "{context}"
+        );
+        assert!(
+            context.contains("refresh outdated/incomplete detail"),
+            "{context}"
+        );
+        assert!(context.contains("Focus grants no authority"), "{context}");
+        assert!(
+            context.contains("preserve foreign Goal sidecars"),
+            "{context}"
+        );
+    }
     assert!(!context.contains("first run `exitbind work next WORK --json`"));
     assert!(context.contains("only for an initialized same-Work cross-host handoff"));
-    assert!(context.contains("stale or incomplete detail needs its supported refresh/expansion"));
-    assert!(context.contains("preserve it and use current Work detail"));
     let outside = support::temp("receiving-template-outside");
+    let resume = context
+        .split('`')
+        .find(|part| part.contains(" work resume --json --config "))
+        .expect("project-scoped resume route");
+    let resumed = support::git_topology::command("/bin/sh")
+        .args(["-c", resume])
+        .current_dir(&outside)
+        .output()
+        .unwrap();
+    assert!(resumed.status.success(), "{resume}: {resumed:?}");
+    let resumed: Value = serde_json::from_slice(&resumed.stdout).unwrap();
+    assert_eq!(resumed["work"], work);
     let (foreign, foreign_work) = project(
         "receiving-foreign 'project'",
         json!([{"id":"foreign","text":"Document the foreign flag."}]),
@@ -730,7 +766,12 @@ fn governed_session_start_scopes_work_navigation_to_its_configuration() {
     );
     let quote = |value: &str| format!("'{}'", value.replace('\'', "'\\''"));
     let config = foreign.join("exitbind.json");
-    for (action, field) in [("detail", "complete"), ("continuation", "receive")] {
+    let actions = if full_receive {
+        vec![("detail", "complete"), ("continuation", "receive")]
+    } else {
+        vec![("detail", "complete")]
+    };
+    for (action, field) in actions {
         let command = context
             .split('`')
             .find(|part| part.contains(&format!(" work {action} <WORK> ")))
@@ -745,6 +786,40 @@ fn governed_session_start_scopes_work_navigation_to_its_configuration() {
         assert!(output.status.success(), "{command}: {output:?}");
         let value: Value = serde_json::from_slice(&output.stdout).unwrap();
         assert!(!value[field].is_null(), "{command}: {value}");
+    }
+    if !full_receive {
+        // The compact hook points to the Work's supported navigation. Its
+        // emitted continuation route must retain the foreign Work's config.
+        let next = support::git_topology::command(exe)
+            .current_dir(&foreign)
+            .args(["work", "next", &foreign_work, "--json", "--config"])
+            .arg(&config)
+            .output()
+            .unwrap();
+        assert!(next.status.success(), "{next:?}");
+        let next: Value = serde_json::from_slice(&next.stdout).unwrap();
+        let continuation = &next["continuation"];
+        let descriptor = json!({
+            "argv": continuation["command"],
+            "sameExecutableRequired": continuation["sameExecutableRequired"] == true,
+            "sameConfigRequired": continuation["sameConfigRequired"] == true,
+        });
+        let argv = support::reconstruct_work_command(
+            &descriptor,
+            std::path::Path::new(exe),
+            &config,
+            &foreign,
+        );
+        assert_eq!(&argv[1..4], ["work", "continuation", &foreign_work]);
+        let output = support::git_topology::command(&argv[0])
+            .current_dir(&outside)
+            .args(&argv[1..])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{argv:?}: {output:?}");
+        let continued: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(continued["work"], foreign_work);
+        assert!(continued["receive"].is_object(), "{continued}");
     }
     let detail = exitbind(&root, &["work", "detail", &work, "--json"], b"");
     assert_eq!(detail["complete"], true);

@@ -423,20 +423,65 @@ fn a_project_that_does_not_own_the_session_goal_still_reads_context_only() {
     let other_before = files_under(&other.root.join(".exitbind"));
     let goals_before = files_under(shared_store);
     let context = resume_hook(&owner, session, &claude(session));
-    assert!(context.contains("replace both placeholders"), "{context}");
-    assert!(
-        context.contains("this does not search other projects")
-            || context.contains("other projects are not searched"),
-        "{context}"
-    );
     let template = context
         .split('`')
-        .find(|part| part.contains(" work detail <WORK> --json --config <WORK_CONFIG>"))
-        .unwrap_or_else(|| panic!("Work detail template missing: {context}"));
-    assert!(!template.contains(&config(&owner)), "{template}");
+        .find(|part| part.contains(" work detail <WORK> --json --config <WORK_CONFIG>"));
     let command = printed_detail_command(&context, other_work);
     assert!(command.contains(&shell_quote(&other_config)), "{command}");
     let outside = super::support::temp("resume-foreign-work-outside");
+    let owner_config = config(&owner);
+    let (generic, wrong_project) = if let Some(template) = template {
+        assert!(context.contains("replace both placeholders"), "{context}");
+        assert!(
+            context.contains("this does not search other projects")
+                || context.contains("other projects are not searched"),
+            "{context}"
+        );
+        assert!(!template.contains(&owner_config), "{template}");
+        let fill = |target: &str| {
+            template
+                .replace("<WORK>", &shell_quote(other_work))
+                .replace("<WORK_CONFIG>", &shell_quote(target))
+        };
+        (fill(&other_config), fill(&owner_config))
+    } else {
+        assert!(context.contains("Here only:"), "{context}");
+        assert!(
+            context.contains("Work's --config <WORK_CONFIG> last (shell-quote)"),
+            "{context}"
+        );
+        let resume = context
+            .split('`')
+            .find(|part| part.contains(" work resume --json --config "))
+            .expect("project-scoped resume route");
+        assert!(resume.contains(&owner_config), "{resume}");
+        let route = context
+            .split('`')
+            .find(|part| part.starts_with("{\"argv\":[\"work\",\"detail\","))
+            .expect("bounded Work detail descriptor");
+        assert!(!route.contains(&owner_config), "{route}");
+        let mut descriptor: Value = serde_json::from_str(route).unwrap();
+        assert_eq!(descriptor["sameExecutableRequired"], true);
+        assert_eq!(descriptor["sameConfigRequired"], true);
+        let argv = descriptor["argv"].as_array_mut().unwrap();
+        let slot = argv.iter_mut().find(|value| **value == "<WORK>").unwrap();
+        *slot = json!(other_work);
+        let fill = |target: &str| {
+            let argv = super::support::reconstruct_work_command(
+                &descriptor,
+                Path::new(env!("CARGO_BIN_EXE_exitbind")),
+                Path::new(target),
+                &outside,
+            );
+            assert_eq!(&argv[1..4], ["work", "detail", other_work]);
+            argv.iter()
+                .map(|value| shell_quote(value))
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        (fill(&other_config), fill(&owner_config))
+    };
+    assert!(generic.contains(&shell_quote(&other_config)), "{generic}");
     let detail = super::support::git_topology::command("/bin/sh")
         .args(["-c", command])
         .current_dir(&outside)
@@ -450,9 +495,6 @@ fn a_project_that_does_not_own_the_session_goal_still_reads_context_only() {
         .unwrap();
     assert!(detail.status.success(), "{detail:?}");
     assert!(String::from_utf8_lossy(&detail.stdout).contains(other_work));
-    let generic = template
-        .replace("<WORK>", &shell_quote(other_work))
-        .replace("<WORK_CONFIG>", &shell_quote(&other_config));
     let detail = super::support::git_topology::command("/bin/sh")
         .args(["-c", &generic])
         .current_dir(&outside)
@@ -468,9 +510,6 @@ fn a_project_that_does_not_own_the_session_goal_still_reads_context_only() {
     let generic_value: Value = serde_json::from_slice(&detail.stdout).unwrap();
     assert_eq!(generic_value["complete"], true);
     assert_eq!(generic_value["work"], other_work);
-    let wrong_project = template
-        .replace("<WORK>", &shell_quote(other_work))
-        .replace("<WORK_CONFIG>", &shell_quote(&config(&owner)));
     let wrong = super::support::git_topology::command("/bin/sh")
         .args(["-c", &wrong_project])
         .current_dir(&outside)

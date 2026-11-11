@@ -32,6 +32,11 @@ pub(super) fn minimal_presentation(presentation: &Value) -> Value {
         {
             progress.insert("overall".into(), json!(overall));
         }
+        if let Some(decomposition) = goal.get("decomposition").filter(|value| {
+            value.is_object() && serde_json::to_vec(value).is_ok_and(|bytes| bytes.len() <= 256)
+        }) {
+            progress.insert("decomposition".into(), decomposition.clone());
+        }
         copy_if_present(goal, &mut progress, "adoptRoute");
         if !progress.is_empty() {
             result.insert("goalProgress".into(), Value::Object(progress));

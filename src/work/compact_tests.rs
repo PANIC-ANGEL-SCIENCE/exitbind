@@ -25,7 +25,7 @@ fn optional_bool_field(value: &serde_json::Value, key: &str) -> bool {
 
 #[test]
 fn compact_adoption_route_survives_minimal_and_pathological_fallbacks() {
-    for config_bytes in [32, 512, 4_096] {
+    for config_bytes in [32, 512, 4_096, 64_000] {
         let config = format!("/tmp/{}/exitbind.json", "c".repeat(config_bytes));
         let session_key = "a".repeat(64);
         let mut route = continuation_route(
@@ -47,12 +47,17 @@ fn compact_adoption_route_survives_minimal_and_pathological_fallbacks() {
                 "actionForm":{"version":1,"state":"initial_scope"}
             }},
             "presentation":{"goalProgress":{"overall":"unavailable", "adoptRoute":route.clone(),
+                "decomposition":{"available":false,"reason":"native_session_goal_context_invalid"},
                 "systemText":"s".repeat(3_000)}, "state":{"review":"none"},
                 "terminal":"EXIT READY"},
             "residual":{"humanHelp":{"whatHappened":"x".repeat(5_000)}}
         });
         let minimal = super::presentation::minimal_presentation(&response["presentation"]);
         assert_eq!(minimal["goalProgress"]["adoptRoute"], route);
+        assert_eq!(
+            minimal["goalProgress"]["decomposition"]["reason"],
+            "native_session_goal_context_invalid"
+        );
         let output = project(&response, Path::new(&config), "resume")
             .unwrap_or_else(|error| panic!("config bytes={config_bytes}: {error}"));
         let bytes = serde_json::to_vec(&output).unwrap().len() + 1;
@@ -63,22 +68,55 @@ fn compact_adoption_route_survives_minimal_and_pathological_fallbacks() {
         );
         assert_eq!(output["presentation"]["terminal"], "EXIT READY", "{output}");
         assert_eq!(output["current"]["binding"], "binding", "{output}");
-        assert!(output["fullCommand"].is_array(), "{output}");
-        if config_bytes == 4_096 {
-            assert!(
-                output["omitted"]
-                    .to_string()
-                    .contains("required current executable and config"),
-                "{output}"
-            );
-            assert_eq!(output["fullCommandSameConfigRequired"], true, "{output}");
+        let executable = crate::emitted::executable().unwrap();
+        let mut full = output["fullCommand"].as_array().unwrap().clone();
+        if output["fullCommandSameExecutableRequired"] == true {
+            full.insert(0, json!(executable));
+        }
+        if output["fullCommandSameConfigRequired"] == true {
+            full.push(json!(config));
+        }
+        assert_eq!(
+            full,
+            vec![
+                json!(executable),
+                json!("work"),
+                json!("resume"),
+                json!("--full"),
+                json!("--config"),
+                json!(config)
+            ]
+        );
+        if config_bytes >= 4_096 {
             assert_eq!(route["sameConfigRequired"], true, "{route}");
             assert_eq!(
                 output["current"]["details"]["grouped"]["sameConfigRequired"], true,
                 "{output}"
             );
+            let grouped = &output["current"]["details"]["grouped"];
+            let mut argv = grouped["command"].as_array().unwrap().clone();
+            if grouped["sameExecutableRequired"] == true {
+                argv.insert(0, json!(executable));
+            }
+            argv.push(json!(config));
+            assert_eq!(
+                argv,
+                vec![
+                    json!(executable),
+                    json!("work"),
+                    json!("expand"),
+                    json!("smw_work"),
+                    json!("ref:detail"),
+                    json!("--json"),
+                    json!("--config"),
+                    json!(config)
+                ]
+            );
             if crate::producer::exitbind_surface() {
-                assert_eq!(output["effectiveAction"]["detail"], grouped, "{output}");
+                assert_eq!(
+                    output["effectiveAction"]["detail"], output["current"]["details"]["grouped"],
+                    "{output}"
+                );
             }
         }
     }

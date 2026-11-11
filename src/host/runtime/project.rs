@@ -159,6 +159,13 @@ pub(super) fn routed_fact_line(source: Source) -> String {
     )
 }
 
+pub(super) fn tight_routed_fact_line(source: Source) -> String {
+    match source {
+        Source::WorkingDirectory => "Config via cwd.".to_owned(),
+        Source::GoalOwner => "Config above: native Goal owner.".to_owned(),
+    }
+}
+
 fn from(source: Source) -> &'static str {
     match source {
         Source::GoalOwner => "native Goal owner",

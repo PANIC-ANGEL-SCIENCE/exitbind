@@ -270,7 +270,33 @@ fn failed_native_inspection_keeps_git_precondition_typed_and_private() {
     // The same Work continues at its check stage: no successor Work was created.
     let after = fixture.value(&["work", "next", &work], b"");
     assert_eq!(after["work"], work.as_str());
-    assert_eq!(after["next"]["action"], "check");
+    assert!(matches!(
+        after["next"]["action"].as_str(),
+        Some("check" | "inspect")
+    ));
+    assert_eq!(after["effectiveAction"]["kind"], "check");
+    let route = json!({
+        "argv": after["fullCommand"],
+        "sameExecutableRequired": after["fullCommandSameExecutableRequired"] == true,
+        "sameConfigRequired": after["fullCommandSameConfigRequired"] == true,
+    });
+    let argv = support::reconstruct_work_command(
+        &route,
+        std::path::Path::new(env!("CARGO_BIN_EXE_exitbind")),
+        &fixture.root.join("exitbind.json"),
+        &fixture.root,
+    );
+    assert!(argv.iter().any(|arg| arg == "--full"), "{argv:?}");
+    assert!(argv.iter().any(|arg| arg == &work), "{argv:?}");
+    let output = support::git_topology::command(&argv[0])
+        .current_dir(&fixture.root)
+        .args(&argv[1..])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", text(&output));
+    let full: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(full["work"], work);
+    assert_eq!(full["next"]["action"], "check");
 }
 
 #[test]

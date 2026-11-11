@@ -18,6 +18,8 @@ const OTHER: &str = "f5b-other-session";
 const CHILD: &str = "f5b-sonic-child";
 const PROFILE: &str = "your.soulmate/agents/sonic/profile.md";
 const PROFILE_BODY: &str = "Sonic implements one bounded change.\n";
+const REVIEWER_PROFILE_BODY: &str =
+    "Review the current artifact and checked evidence; report concrete findings.\n";
 const LENSES: [(&str, &str); 2] = [
     (
         "agent-surface-text",
@@ -113,6 +115,36 @@ impl Fixture {
         phase: Option<(&str, Option<&str>)>,
         reviewer_write: Option<&str>,
     ) -> Self {
+        Self::new_with_reviewer_profile(name, check, write, profile, phase, reviewer_write, None)
+    }
+
+    /// Single-envelope reviewer tests use complete, deliberately small
+    /// instructions; capacity and multipart fixtures retain the real profile.
+    fn new_for_reviewer(
+        name: &str,
+        worker_write: Option<&str>,
+        reviewer_write: Option<&str>,
+    ) -> Self {
+        Self::new_with_reviewer_profile(
+            name,
+            "true",
+            worker_write,
+            PROFILE_BODY,
+            None,
+            reviewer_write,
+            Some(REVIEWER_PROFILE_BODY),
+        )
+    }
+
+    fn new_with_reviewer_profile(
+        name: &str,
+        check: &str,
+        write: Option<&str>,
+        profile: &str,
+        phase: Option<(&str, Option<&str>)>,
+        reviewer_write: Option<&str>,
+        reviewer_profile: Option<&str>,
+    ) -> Self {
         let base = super::support::temp(name);
         let product = base.join("product");
         let store = base.join("session-goals");
@@ -135,6 +167,10 @@ impl Fixture {
         assert!(init.status.success(), "{}", text(&init));
         let config_path = fixture.product.join("exitbind.json");
         let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+        if let Some(reviewer_profile) = reviewer_profile {
+            let path = config["agents"]["reviewer"]["profile"].as_str().unwrap();
+            fs::write(fixture.product.join(path), reviewer_profile).unwrap();
+        }
         config["agents"]["worker"]["profile"] = json!(PROFILE);
         config["agents"]["worker"]["nativeName"] = json!("sonic");
         if let Some(path) = write {

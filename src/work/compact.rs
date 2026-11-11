@@ -329,7 +329,7 @@ pub(crate) fn project(
         let mut emergency = json!({
             "compact": true,
             "continuation": result["continuation"],
-            "current": minimal_current(&response["next"]["current"]),
+            "current": bounded_current_routes(&response["next"]["current"], config_path),
             "status": response["status"],
             "work": response["work"],
             "obligations": {"remaining": response["residual"]["remaining"].as_array().map(|items| items.iter().take(8).cloned().collect::<Vec<_>>()),
@@ -383,7 +383,7 @@ pub(crate) fn project(
             "presentation": minimal_presentation(&response["presentation"]),
             "continuation": result["continuation"],
             "status": response["status"].as_str().unwrap_or("unresolved"),
-            "current": minimal_current(&response["next"]["current"]),
+            "current": bounded_current_routes(&response["next"]["current"], config_path),
             "work": work,
             "next": minimal_inspection_next(response, &result["next"], assignment),
             "nextAction": minimal_next_action(&result["nextAction"]),
@@ -406,6 +406,7 @@ pub(crate) fn project(
         }
         omit_false_recovery_requirements(&mut minimal);
         super::effective_action::insert(&mut minimal, response);
+        preserve_grouped_route_alias(&mut minimal, response);
         retain_small_candidates(response, &mut minimal)?;
         log_tail::retain_if_fits(&mut minimal, log_reference.as_ref(), config_path)?;
         if serialized_len(&minimal)? < MAX_RESPONSE_BYTES {
@@ -456,6 +457,7 @@ pub(crate) fn project(
         }
         omit_false_recovery_requirements(&mut fallback);
         super::effective_action::insert(&mut fallback, response);
+        preserve_grouped_route_alias(&mut fallback, response);
         retain_small_candidates(response, &mut fallback)?;
         log_tail::retain_if_fits(&mut fallback, log_reference.as_ref(), config_path)?;
         if serialized_len(&fallback)? + 1 > MAX_RESPONSE_BYTES {
@@ -464,6 +466,13 @@ pub(crate) fn project(
         return Ok(fallback);
     }
     Ok(result)
+}
+
+fn preserve_grouped_route_alias(output: &mut Value, response: &Value) {
+    let original = &response["next"]["current"]["details"]["grouped"];
+    if original.is_object() && output["effectiveAction"]["detail"] == *original {
+        output["effectiveAction"]["detail"] = output["current"]["details"]["grouped"].clone();
+    }
 }
 
 fn copy_navigation(response: &Value, output: &mut Map<String, Value>) {

@@ -85,6 +85,11 @@ fn deep_context(label: &str, depth: usize) -> (String, String) {
             omitted > 0,
             "fixture must exercise reference omission: {context}"
         );
+        assert!(
+            context.contains("Work's --config <WORK_CONFIG> last"),
+            "fixture must exercise the tight Work route: {context}"
+        );
+        eprintln!("tight SessionStart context: {} bytes", context.len());
     }
     let lead = &facts["lead"];
     let profile_bytes = fs::read(root.join(lead["profilePath"].as_str().unwrap())).unwrap();
@@ -111,6 +116,60 @@ fn deep_context(label: &str, depth: usize) -> (String, String) {
         .unwrap();
     assert!(output.status.success(), "{resume}: {output:?}");
     let _: Value = serde_json::from_slice(&output.stdout).unwrap();
+    if context.contains("Work's --config <WORK_CONFIG> last") {
+        let foreign = project("tight-foreign 'project'");
+        let started = call(
+            &foreign,
+            &[
+                "work",
+                "begin",
+                "change",
+                "--goal",
+                "foreign Work",
+                "--check-command",
+                "true",
+            ],
+        );
+        let work = started["work"].as_str().unwrap();
+        let route = context
+            .split('`')
+            .find(|part| part.starts_with("{\"argv\":[\"work\",\"detail\","))
+            .expect("bounded Work detail descriptor");
+        let mut descriptor: Value = serde_json::from_str(route).unwrap();
+        assert_eq!(descriptor["sameExecutableRequired"], true);
+        assert_eq!(descriptor["sameConfigRequired"], true);
+        let argv = descriptor["argv"].as_array_mut().unwrap();
+        let work_slot = argv.iter_mut().find(|value| **value == "<WORK>").unwrap();
+        *work_slot = json!(work);
+        let quote = |value: &str| format!("'{}'", value.replace('\'', "'\\''"));
+        let config = foreign.join("exitbind.json");
+        let argv = support::reconstruct_work_command(&descriptor, &exe, &config, &root);
+        assert_eq!(argv[1..4], ["work", "detail", work]);
+        assert_eq!(argv[argv.len() - 2], "--config");
+        assert_eq!(argv.last().unwrap(), config.to_str().unwrap());
+        let detail = argv
+            .iter()
+            .map(|value| quote(value))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let output = support::git_topology::command("/bin/sh")
+            .args(["-c", &detail])
+            .current_dir(&root)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{detail}: {output:?}");
+        let detail: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(detail["work"], work);
+        assert_eq!(detail["complete"], true);
+        assert!(context.contains("Read full detail anew"), "{context}");
+        assert!(context.contains("Focus: no authority"), "{context}");
+        assert!(
+            context.contains("continuation.receive bind/prepare"),
+            "{context}"
+        );
+        assert!(context.contains("Keep other-Goal sidecars"), "{context}");
+        assert!(context.contains("no raw-state recovery"), "{context}");
+    }
     let route = format!("{} project context --json --config ", exe.display());
     fs::remove_dir_all(base).unwrap();
     (context, route)

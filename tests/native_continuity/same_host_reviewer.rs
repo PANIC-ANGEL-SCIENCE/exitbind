@@ -1,5 +1,5 @@
 //! Selected reviewer delivery after a checked worker result.
-use super::{argv, run, sha, text, Fixture, CHILD, SESSION};
+use super::{argv, run, sha, text, Fixture, CHILD, REVIEWER_PROFILE_BODY, SESSION};
 use serde_json::{json, Value};
 use std::fs;
 
@@ -9,6 +9,14 @@ fn checked_reviewer_return(fixture: &Fixture, worker_content: &[u8], explicit: b
     let reviewer = &full["next"];
     assert_eq!(reviewer["role"], "reviewer", "{reviewer}");
     let detail = fixture.value(Some(SESSION), &["work", "detail", &fixture.work, "--json"]);
+    assert_eq!(
+        detail["recipientContext"]["profile"]["content"],
+        REVIEWER_PROFILE_BODY
+    );
+    assert_eq!(
+        detail["recipientContext"]["profile"]["sha256"],
+        sha(REVIEWER_PROFILE_BODY.as_bytes())
+    );
     let checks = &detail["sections"]["evidence"]["checkEvidence"];
     assert!(
         checks
@@ -55,6 +63,7 @@ fn checked_reviewer_return(fixture: &Fixture, worker_content: &[u8], explicit: b
         "agent_id":"reviewer-child","agent_type":native}),
         )
         .expect("reviewer start must present complete context");
+    assert!(start.contains(REVIEWER_PROFILE_BODY.trim_end()), "{start}");
     let actor = start
         .split_once("Complete current assignment, evidence and task conditions (verified for this recipient):\n")
         .and_then(|(_, rest)| rest.lines().next())
@@ -102,7 +111,7 @@ fn checked_reviewer_return(fixture: &Fixture, worker_content: &[u8], explicit: b
 
 #[test]
 fn reviewer_after_implicit_completion_receives_exact_checked_facts_and_returns() {
-    let fixture = Fixture::new("reviewer-implicit-check");
+    let fixture = Fixture::new_for_reviewer("reviewer-implicit-check", None, None);
     let worker = fixture.next(Some(SESSION));
     assert_eq!(worker["role"], "worker", "{worker}");
     let content = b"Completed worker result for reviewer.\n";
@@ -125,8 +134,7 @@ fn reviewer_after_implicit_completion_receives_exact_checked_facts_and_returns()
 
 #[test]
 fn reviewer_after_explicit_permit_completion_receives_exact_checked_facts_and_returns() {
-    let fixture =
-        Fixture::new_with_check_and_write("reviewer-permit-check", "true", Some("fixture.txt"));
+    let fixture = Fixture::new_for_reviewer("reviewer-permit-check", Some("fixture.txt"), None);
     fixture.prepare_sonic();
     let start = fixture
         .hook(

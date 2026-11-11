@@ -25,6 +25,7 @@ const GOAL_FACTS_BYTES: usize = 384;
 pub(crate) fn hook_context(
     payload: &serde_json::Map<String, Value>,
     cwd_config_path: Option<&str>,
+    available_bytes: usize,
 ) -> Option<String> {
     let started = Instant::now();
     let session = match session_goal::native::current() {
@@ -88,6 +89,7 @@ pub(crate) fn hook_context(
         .collect::<Vec<_>>();
     let trees = checkout::uncommitted(&roots, checkout::HOOK_TREE_LIMIT, deadline);
     let goal_id = &derived.goal_id;
+    let budget = available_bytes.min(RECOVERY_HOOK_BYTES);
     let short = format!("Exitbind recovered native Goal {goal_id} from its journey.");
     let base = if hinted.no_hint {
         format!(
@@ -101,12 +103,7 @@ pub(crate) fn hook_context(
     // longer opening sentence: shorten in that order to stay in the bound.
     let compose = |base: &str, facts: Option<&str>| {
         let used = base.len() + facts.map_or(0, |line| line.len() + 1) + 1;
-        let works = derived_hook_text(
-            &derived,
-            &trees,
-            RECOVERY_HOOK_BYTES.saturating_sub(used),
-            &executable,
-        );
+        let works = derived_hook_text(&derived, &trees, budget.saturating_sub(used), &executable);
         join(&[Some(base), facts, Some(&works)])
     };
     [
@@ -115,7 +112,7 @@ pub(crate) fn hook_context(
         compose(&short, None),
     ]
     .into_iter()
-    .find(|text| text.len() <= RECOVERY_HOOK_BYTES)
+    .find(|text| text.len() <= budget)
     .or_else(|| Some(compose(&short, None)))
 }
 
