@@ -806,7 +806,7 @@ fn exercise_work_only(c: Case, has_goal: bool) {
             .success(),
         "marker cannot omit its reserved mode"
     );
-    fs::write(c.f.ledger(&work), &verification_bytes).unwrap();
+    fs::write(c.f.ledger(&work), verification_bytes).unwrap();
     let reservation = assert_reservation_writer_bounds(&c.f, &work, 3);
     let held_reservation = reservation.with_extension("held");
     fs::rename(&reservation, &held_reservation).unwrap();
