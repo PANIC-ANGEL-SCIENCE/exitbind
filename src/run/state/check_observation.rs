@@ -93,7 +93,11 @@ fn observation_shape(value: &Value) -> bool {
 }
 
 fn observer(value: &Value) -> bool {
-    exact(value, &[OBSERVER_PID_FIELD, OBSERVER_START_FIELD])
+    (exact(value, &[OBSERVER_PID_FIELD, OBSERVER_START_FIELD])
+        || (exact(
+            value,
+            &[OBSERVER_PID_FIELD, OBSERVER_START_FIELD, "context"],
+        ) && crate::run::observer_context::valid(&value["context"])))
         && value[OBSERVER_PID_FIELD]
             .as_u64()
             .is_some_and(|pid| (1..=u32::MAX as u64).contains(&pid))

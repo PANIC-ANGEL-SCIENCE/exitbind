@@ -42,6 +42,7 @@ pub fn validate_event(event: &Value, previous: Option<&Value>, line: usize) -> R
             | "check_observation"
             | "check_observation_failed"
             | "check_observation_recovered"
+            | "check_observation_caller_lost"
             | "pre_return_admitted"
             | "pre_return_reconciled"
     ) {
@@ -97,6 +98,8 @@ pub fn validate_event(event: &Value, previous: Option<&Value>, line: usize) -> R
         validate_start_version(event, line, version.unwrap_or_default())
     } else if action == "check_observation_recovered" {
         crate::run::check_recovery::validate(event)
+    } else if action == crate::run::lost_observation::ACTION {
+        crate::run::lost_observation::validate(event)
     } else if action == crate::run::pre_return::ownership::ACTION {
         crate::run::pre_return::ownership::validate(event)
     } else if action == "pre_return_reconciled" {

@@ -75,6 +75,7 @@ fn record() -> Value {
         verification_environment_sha256: hash('3'),
         verification_decision_sha256: hash('1'),
         old_accounting: json!({"governor":{"spent":9,"budget":3},"usageAccount":{"status":"unknown","totals":null}}),
+        observation_origin: None,
         decision_sha256: String::new(),
     };
     residual.old.member_sha256 = super::super::journey::member_identity(&old_member);

@@ -39,7 +39,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             let reason = option(a, "reason", "work supersede requires --reason TEXT")?;
             print_work_json(&crate::work::supersede::supersede(l, work, reason)?)
         }
-        "recover-check" | "recover-pre-return" => recovery::command(l, a, action),
+        "recover-check" | "recover-pre-return" | "report-lost-caller" => recovery::command(l, a, action),
         "file-serve" => {
             args::assert_options("work file-serve", a, &["config"])?;
             args::assert_positionals("work file-serve", a, 2)?;

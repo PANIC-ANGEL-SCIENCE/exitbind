@@ -79,6 +79,19 @@ The recovery records reported failure, preserves accounting and earlier observer
 identity, and transfers no check, grant or acceptance. Other Work pins stay as
 selected. See [check recovery](check-recovery.md).
 
+The separate lost-caller report also appends an additive v8 action; new Linux
+admissions can additionally carry versioned observer context. A reader without
+these shapes refuses the affected admission or report rather than accepting it
+as an older failure. Old records without the optional context remain readable.
+Retain a compatible reader for the affected Work and its linked verification and
+Goal lifecycle. Rolling back the default executable does not remove the event or
+make an older reader safe for writes. The report and its evidence are attributed
+to the configured Lead; historical legacy host provenance remains unverified.
+New work-only quarantine markers use their own protocol 3 and record their association mode explicitly.
+Markers without that field retain the existing Goal-bound wire format. Use a compatible
+reader for the new marker; a Work-only verification cannot be converted into a
+native Goal membership or residual by changing readers.
+
 A Lead `environmental` disposition (a failed observed check attested
 environmental) is a disposition decision older readers do not know; they refuse
 the affected ledger. Keep a compatible reader for that Work's remaining

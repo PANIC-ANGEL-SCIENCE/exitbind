@@ -18,6 +18,47 @@ fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
+fn assert_reservation_writer_bounds(f: &Fixture, work: &str, marker_protocol: u64) -> PathBuf {
+    let token = work.strip_prefix("smw_").unwrap();
+    assert_eq!(token.len(), 64);
+    let path = f
+        .root
+        .join(format!(".exitbind/runs/quarantine-{token}.intent.json"));
+    let bytes = fs::read(&path).unwrap();
+    let intent: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(intent["protocol"], 1);
+    assert_eq!(intent["identity"], token);
+    assert_eq!(intent["work"], work);
+    assert_eq!(
+        intent["ledger"],
+        format!(".exitbind/runs/work-{token}.jsonl")
+    );
+    for name in ["identity", "requestSha256", "startIntentSha256"] {
+        let digest = intent[name].as_str().unwrap();
+        assert_eq!(digest.len(), 64);
+        assert!(digest
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()));
+    }
+    let expected_bytes = if marker_protocol == 3 {
+        assert_eq!(intent["associationMode"], "work_only");
+        assert_eq!(intent.as_object().unwrap().len(), 7);
+        472
+    } else {
+        assert!(matches!(marker_protocol, 1 | 2));
+        assert!(intent.get("associationMode").is_none());
+        assert_eq!(intent.as_object().unwrap().len(), 6);
+        442
+    };
+    assert_eq!(bytes, serde_json::to_vec(&intent).unwrap());
+    assert_eq!(bytes.len(), expected_bytes);
+    eprintln!(
+        "marker protocol {marker_protocol}: writer reservation {} bytes",
+        bytes.len()
+    );
+    path
+}
+
 struct Case {
     f: Fixture,
     old: String,
@@ -54,6 +95,39 @@ impl Case {
         verification_command: &str,
         preparation: bool,
     ) -> Self {
+        Self::build_with_origin(
+            distinct,
+            descendant,
+            verification_command,
+            preparation,
+            false,
+        )
+    }
+    fn build_with_origin(
+        distinct: bool,
+        descendant: bool,
+        verification_command: &str,
+        preparation: bool,
+        reported: bool,
+    ) -> Self {
+        Self::build_with_context(
+            distinct,
+            descendant,
+            verification_command,
+            preparation,
+            reported,
+            true,
+        )
+    }
+    fn build_with_context(
+        distinct: bool,
+        descendant: bool,
+        verification_command: &str,
+        preparation: bool,
+        reported: bool,
+        native_goal: bool,
+    ) -> Self {
+        assert!(native_goal || (!distinct && !descendant));
         // Verification preparation freezes checker sources at Work start. A
         // marker file lets the same unchanged checker fail differently on the
         // second observation instead of rewriting its bytes.
@@ -67,10 +141,12 @@ impl Case {
         if preparation {
             f.enable_owned_outputs();
         }
-        f.native_session = Some(format!(
-            "quarantine-{}",
-            f.root.file_name().unwrap().to_string_lossy()
-        ));
+        if native_goal {
+            f.native_session = Some(format!(
+                "quarantine-{}",
+                f.root.file_name().unwrap().to_string_lossy()
+            ));
+        }
         let owner_root = f.root.join(".exitbind/goal-owner");
         let owner_config = if distinct {
             fs::create_dir(&owner_root).unwrap();
@@ -85,23 +161,25 @@ impl Case {
         } else {
             f.root.join("exitbind.json")
         };
-        let incorporated = call_config(
-            &f,
-            &owner_config,
-            &[
-                "goal",
-                "incorporate",
-                "--goal-id",
-                "original-quarantine-goal",
-                "--goal",
-                "Preserve all original outcomes and unknown evidence",
-                "--none-applicable",
-                "findings,blockers,decisions,externalActions",
-                "--json",
-            ],
-            b"",
-        );
-        assert!(incorporated.status.success(), "{incorporated:?}");
+        if native_goal {
+            let incorporated = call_config(
+                &f,
+                &owner_config,
+                &[
+                    "goal",
+                    "incorporate",
+                    "--goal-id",
+                    "original-quarantine-goal",
+                    "--goal",
+                    "Preserve all original outcomes and unknown evidence",
+                    "--none-applicable",
+                    "findings,blockers,decisions,externalActions",
+                    "--json",
+                ],
+                b"",
+            );
+            assert!(incorporated.status.success(), "{incorporated:?}");
+        }
         let feature_config = f.root.join("feature.json");
         let mut configuration = fs::read(f.root.join("exitbind.json")).unwrap();
         configuration.push(b'\n');
@@ -114,12 +192,16 @@ impl Case {
         } else {
             f.begin()
         };
-        let owner_status = call_config(&f, &owner_config, &["goal", "status", "--json"], b"");
-        assert!(owner_status.status.success(), "{owner_status:?}");
-        let original_member = value(&owner_status)["journeyMembers"][0]["work"]
-            .as_str()
-            .unwrap()
-            .to_owned();
+        let original_member = if native_goal {
+            let owner_status = call_config(&f, &owner_config, &["goal", "status", "--json"], b"");
+            assert!(owner_status.status.success(), "{owner_status:?}");
+            value(&owner_status)["journeyMembers"][0]["work"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        } else {
+            old.clone()
+        };
         assert_eq!(old != original_member, descendant);
         // Match legacy journals that already retain earlier observed failures.
         // Only the final unresolved admission is quarantined.
@@ -153,19 +235,25 @@ impl Case {
         let events = f.events(&old);
         let head = events.last().unwrap();
         assert_eq!(head["action"], "check_observation");
-        let mut facts = failure["observation"].clone();
-        facts["termination"] = json!("unknown");
-        facts["groupEnded"] = json!(false);
-        facts["cleanupErrorCount"] = json!(1);
-        let mut unknown = json!({"version":8,"kind":"run","producer":head["producer"],
-            "action":"check_observation_failed","runId":head["runId"],
-            "observation":{"admissionEventSha256":head["eventSha256"],"facts":facts},
-            "previousEventSha256":head["eventSha256"],"timestamp":head["timestamp"]});
-        rehash(&mut unknown);
-        let mut bytes = fs::read(f.ledger(&old)).unwrap();
-        bytes.extend(serde_json::to_vec(&unknown).unwrap());
-        bytes.push(b'\n');
-        fs::write(f.ledger(&old), &bytes).unwrap();
+        if reported {
+            let (_, decision) = super::lost_caller::preview(&f, &old);
+            let report = super::lost_caller::apply(&f, &old, &decision);
+            assert!(report.status.success(), "{report:?}");
+        } else {
+            let mut facts = failure["observation"].clone();
+            facts["termination"] = json!("unknown");
+            facts["groupEnded"] = json!(false);
+            facts["cleanupErrorCount"] = json!(1);
+            let mut unknown = json!({"version":8,"kind":"run","producer":head["producer"],
+                "action":"check_observation_failed","runId":head["runId"],
+                "observation":{"admissionEventSha256":head["eventSha256"],"facts":facts},
+                "previousEventSha256":head["eventSha256"],"timestamp":head["timestamp"]});
+            rehash(&mut unknown);
+            let mut bytes = fs::read(f.ledger(&old)).unwrap();
+            bytes.extend(serde_json::to_vec(&unknown).unwrap());
+            bytes.push(b'\n');
+            fs::write(f.ledger(&old), &bytes).unwrap();
+        }
         let lead = f.next(&old);
         f.give(&old, &lead, "blocked");
         let bytes = fs::read(f.ledger(&old)).unwrap();
@@ -179,7 +267,16 @@ impl Case {
             b"",
         );
         assert_eq!(current["status"], "blocked");
-        assert_eq!(current["checkObservation"]["state"], "failed");
+        assert_eq!(
+            current["checkObservation"]["state"],
+            if reported { "reported_lost" } else { "failed" }
+        );
+        if reported {
+            let diagnostic = f.ok(&["work", "recover-check", &old, "--json"], b"");
+            assert_eq!(diagnostic["status"], "historical_reported_lost_caller");
+            assert_eq!(diagnostic["execution"], "unknown");
+            assert_eq!(diagnostic["checkRecorded"], false);
+        }
         // Prepare the new frozen source before the feature plan is checked.
         // Owned outputs freeze the old Work's checker sources, so its checker
         // stays byte-identical and the verification uses a separate command.
@@ -394,6 +491,12 @@ impl Case {
         self.preview_with_owner(request, true)
     }
     fn preview_with_owner(&self, request: &str, explicit_owner: bool) -> Output {
+        self.preview_mode(request, explicit_owner, false)
+    }
+    fn preview_work_only(&self, request: &str) -> Output {
+        self.preview_mode(request, false, true)
+    }
+    fn preview_mode(&self, request: &str, explicit_owner: bool, work_only: bool) -> Output {
         let detail = self.f.ok(&["work", "detail", &self.old, "--json"], b"");
         let mut args = vec![
             "work",
@@ -417,6 +520,9 @@ impl Case {
         ];
         if explicit_owner {
             args.extend(["--owner-config", self.owner_config.to_str().unwrap()]);
+        }
+        if work_only {
+            args.push("--work-only");
         }
         self.f.call(&args, b"")
     }
@@ -596,6 +702,194 @@ fn quarantine_starts_once_preserves_old_unknown_and_requires_fresh_observed_revi
     exercise_quarantine_lifecycle(Case::with_options(true, true));
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn reported_lost_origin_survives_separate_one_shot_goal_lifecycle() {
+    let c = Case::build_with_origin(true, false, "exec sh checker.sh", false, true);
+    assert!(
+        !c.preview(REQUEST).status.success(),
+        "unaccepted isolation plan must refuse"
+    );
+    assert_eq!(
+        c.f.events(&c.old)
+            .iter()
+            .filter(|event| event["action"] == "check_observation_caller_lost")
+            .count(),
+        1
+    );
+    exercise_quarantine_lifecycle(c);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn work_only_without_a_native_session_preserves_the_original_and_checks_once() {
+    let c = Case::build_with_context(false, false, "exec sh checker.sh", false, true, false);
+    assert!(c.f.native_session.is_none());
+    exercise_work_only(c, false);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn work_only_never_changes_an_existing_goal_or_supplies_goal_relief() {
+    let c = Case::build_with_context(true, false, "exec sh checker.sh", false, true, true);
+    exercise_work_only(c, true);
+}
+
+#[cfg(target_os = "linux")]
+fn exercise_work_only(c: Case, has_goal: bool) {
+    assert!(
+        !c.preview_work_only(REQUEST).status.success(),
+        "unaccepted plan must refuse"
+    );
+    c.accept_feature();
+    assert!(
+        !c.preview_mode(REQUEST, true, true).status.success(),
+        "work-only cannot select a Goal owner"
+    );
+    let feature_source = fs::read(&c.feature_config).unwrap();
+    let mut changed: Value = serde_json::from_slice(&feature_source).unwrap();
+    changed["orchestration"]["lead"] = json!("worker");
+    fs::write(
+        &c.feature_config,
+        serde_json::to_vec_pretty(&changed).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        !c.preview_work_only(REQUEST).status.success(),
+        "stale Lead/plan must refuse"
+    );
+    fs::write(&c.feature_config, feature_source).unwrap();
+    let goal_journal = has_goal.then(|| {
+        let root = c.f.root.join(".exitbind/native-goals");
+        let path = find_named_file(&root, "session-goal.jsonl").expect("native Goal journal");
+        let bytes = fs::read(&path).unwrap();
+        (path, bytes)
+    });
+    let goal_bound = has_goal.then(|| {
+        let p = c.preview(REQUEST);
+        assert!(p.status.success(), "{p:?}");
+        value(&p)
+    });
+    let preview = c.preview_work_only(REQUEST);
+    assert!(preview.status.success(), "{preview:?}");
+    let preview = value(&preview);
+    assert_eq!(preview["associationMode"], "work_only");
+    let applied = c.apply(&preview);
+    assert!(applied.status.success(), "{applied:?}");
+    let applied = value(&applied);
+    let work = applied["work"].as_str().unwrap().to_owned();
+    assert_eq!(applied["associationMode"], "work_only");
+    assert_eq!(applied["sessionLink"]["state"], "not_requested");
+    let work_events = c.f.events(&work);
+    let marker = &work_events[0]["quarantineVerification"];
+    assert_eq!(marker["protocol"], 3);
+    assert_eq!(marker["associationMode"], "work_only");
+    assert_eq!(
+        marker["predecessor"]["observationOrigin"],
+        "configured_lead_reported"
+    );
+    assert_eq!(marker["allowance"]["checks"], 1);
+    assert_eq!(marker["allowance"]["workerMutations"], 0);
+    let verification_bytes = fs::read(c.f.ledger(&work)).unwrap();
+    let mut stripped = work_events[0].clone();
+    stripped["quarantineVerification"]
+        .as_object_mut()
+        .unwrap()
+        .remove("associationMode");
+    rehash(&mut stripped);
+    let mut stripped_bytes = serde_json::to_vec(&stripped).unwrap();
+    stripped_bytes.push(b'\n');
+    fs::write(c.f.ledger(&work), stripped_bytes).unwrap();
+    assert!(
+        !c.f.call(&["work", "detail", &work, "--json"], b"")
+            .status
+            .success(),
+        "marker cannot omit its reserved mode"
+    );
+    fs::write(c.f.ledger(&work), &verification_bytes).unwrap();
+    let reservation = assert_reservation_writer_bounds(&c.f, &work, 3);
+    let held_reservation = reservation.with_extension("held");
+    fs::rename(&reservation, &held_reservation).unwrap();
+    assert!(
+        !c.f.call(&["work", "detail", &work, "--json"], b"")
+            .status
+            .success(),
+        "work-only reservation cannot be missing"
+    );
+    fs::rename(&held_reservation, &reservation).unwrap();
+    let replay = c.apply(&preview);
+    assert!(replay.status.success(), "{replay:?}");
+    assert_eq!(value(&replay)["effect"], "no-change");
+    if let Some(other) = goal_bound {
+        assert!(
+            !c.apply(&other).status.success(),
+            "mode change must not reserve a second verification"
+        );
+        let fresh_other = c.preview(REQUEST);
+        assert!(fresh_other.status.success(), "{fresh_other:?}");
+        let refused = c.apply(&value(&fresh_other));
+        assert!(!refused.status.success(), "{refused:?}");
+        assert!(
+            String::from_utf8_lossy(&refused.stdout)
+                .contains("a different quarantine request already reserved"),
+            "fresh Goal-bound mode must hit the existing admission reservation: {refused:?}"
+        );
+    }
+    assert_eq!(fs::read(c.f.ledger(&c.old)).unwrap(), c.old_bytes);
+    if let Some((path, bytes)) = &goal_journal {
+        assert_eq!(&fs::read(path).unwrap(), bytes);
+    }
+    c.return_frozen(&work);
+    let worker_return =
+        c.f.events(&work)
+            .into_iter()
+            .find(|event| event["action"] == "submit" && event["role"] == "worker")
+            .unwrap();
+    assert_eq!(
+        worker_return["quarantineVerificationAck"]["associationMode"],
+        "work_only"
+    );
+    assert_eq!(
+        worker_return["quarantineVerificationAck"]["quarantineProtocol"],
+        3
+    );
+    c.f.ok(&["work", "check", &work, "--timeout-ms", "2000"], b"");
+    let reviewer = c.f.next(&work);
+    let lead = c.f.give(&work, &reviewer, "approved")["next"].clone();
+    c.f.give(&work, &lead, "accepted");
+    assert_eq!(c.f.next(&work)["status"], "accepted");
+    assert!(!c.f.call(&["work", "check", &work], b"").status.success());
+    assert_eq!(fs::read(c.f.ledger(&c.old)).unwrap(), c.old_bytes);
+    if let Some((path, bytes)) = &goal_journal {
+        let linked = c.f.call(&["work", "link-session", &work, "--json"], b"");
+        assert!(!linked.status.success());
+        let goal = call_config(
+            &c.f,
+            &c.owner_config,
+            &[
+                "goal",
+                "quarantine",
+                &c.old,
+                "--source-config",
+                c.f.root.join("exitbind.json").to_str().unwrap(),
+                "--verification-work",
+                &work,
+                "--request-id",
+                REQUEST,
+                "--reason",
+                REASON,
+                "--json",
+            ],
+            b"",
+        );
+        assert!(
+            !goal.status.success(),
+            "work-only must not create Goal residual: {goal:?}"
+        );
+        assert_eq!(&fs::read(path).unwrap(), bytes);
+    }
+}
+
 #[test]
 fn marked_quarantine_chain_compares_each_recorded_digest_in_its_own_domain() {
     let c = Case::with_owned_outputs(true);
@@ -670,9 +964,33 @@ fn exercise_quarantine_lifecycle(c: Case) {
     let work = response["work"].as_str().unwrap();
     assert_ne!(work, c.old);
     let start = c.f.events(work).remove(0);
+    assert_eq!(start["quarantineVerification"]["protocol"], 1);
+    assert_reservation_writer_bounds(&c.f, work, 1);
+    assert!(start["quarantineVerification"]
+        .get("associationMode")
+        .is_none());
     assert!(start.get("governor").is_none());
     assert_eq!(start["quarantineVerification"]["oldCredited"], false);
     assert_eq!(start["quarantineVerification"]["oldReset"], false);
+    let other_mode = c.preview_work_only(REQUEST);
+    assert!(other_mode.status.success(), "{other_mode:?}");
+    let refused = c.apply(&value(&other_mode));
+    assert!(!refused.status.success(), "{refused:?}");
+    assert!(
+        String::from_utf8_lossy(&refused.stdout)
+            .contains("a different quarantine request already reserved"),
+        "fresh Work-only mode must hit the existing admission reservation: {refused:?}"
+    );
+    let reported =
+        c.f.events(&c.old)
+            .iter()
+            .any(|event| event["action"] == "check_observation_caller_lost");
+    if reported {
+        assert_eq!(
+            start["quarantineVerification"]["predecessor"]["observationOrigin"],
+            "configured_lead_reported"
+        );
+    }
     // Admission advances the owner Goal and therefore the old Work action
     // binding. Refresh navigation; the same request must reuse the same Work.
     assert!(!c.apply(&preview).status.success());
@@ -755,6 +1073,12 @@ fn exercise_quarantine_lifecycle(c: Case) {
         status["quarantineResiduals"]["residuals"][0]["old"]["work"],
         c.old
     );
+    if reported {
+        assert_eq!(
+            status["quarantineResiduals"]["residuals"][0]["observationOrigin"],
+            "configured_lead_reported"
+        );
+    }
     assert_eq!(
         status["quarantineResiduals"]["residuals"][0]["oldMember"]["work"],
         c.original_member

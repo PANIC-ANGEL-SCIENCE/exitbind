@@ -5,6 +5,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments, action: &str) -> Result
     let usage = match action {
         "recover-check" => "work recover-check",
         "recover-pre-return" => "work recover-pre-return",
+        "report-lost-caller" => "work report-lost-caller",
         _ => return Err("unknown work recovery command".into()),
     };
     let missing = format!("{usage} requires WORK");
@@ -16,6 +17,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments, action: &str) -> Result
     let value = match action {
         "recover-check" => crate::work::check_recovery::recover(l, work, binding, apply)?,
         "recover-pre-return" => crate::work::pre_return_recovery::recover(l, work, binding, apply)?,
+        "report-lost-caller" => crate::work::lost_observation::report(l, work, binding, apply)?,
         _ => unreachable!(),
     };
     print_work_json(&value)

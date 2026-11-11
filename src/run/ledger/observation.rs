@@ -159,11 +159,18 @@ impl Observation {
             if (linked && start["carryProtocol"].as_u64() != Some(crate::run::carry::PROTOCOL))
                 || start.get("checkReplacement").is_some()
                 || start.get("preReturnPolicy").is_some()
+                // Reservation state is external to the ledger witness. Re-read
+                // only marked quarantine Works so a cached ledger cannot hide
+                // a changed or missing reservation during this projection.
+                || start.get("quarantineVerification").is_some()
                 || start["configSha256"] != crate::evidence::hash::text(&loaded.source)
                 || events.iter().any(|event| {
                     matches!(
                         event["action"].as_str(),
-                        Some("check_observation_recovered" | "pre_return_reconciled")
+                        Some(
+                            "check_observation_recovered"
+                                | "pre_return_reconciled"
+                        )
                     )
                 })
             {
@@ -257,5 +264,114 @@ impl Observation {
             }
         }
         Ok(self.mode == Mode::Unsupported)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn cached_quarantine_projection_refuses_changed_reservation() {
+        if !crate::compatibility::is_exitbind() {
+            return;
+        }
+        let root = crate::test_root::temp("cached-quarantine-reservation");
+        let config = crate::project::onboarding::init_with_options(
+            crate::project::onboarding::InitOptions {
+                product_root: root.to_str().unwrap(),
+                coffee: false,
+                skip_skills: true,
+                mode: Some("portable"),
+                project_id: None,
+                control_root: None,
+                state_root: None,
+            },
+        )
+        .unwrap();
+        let loaded = crate::config::load(config.to_str()).unwrap();
+        let begun = crate::work::begin(
+            &loaded,
+            crate::work::BeginOptions {
+                workflow: "change",
+                goal: "synthetic cache witness",
+                check_command: "true",
+                boundary: None,
+                harness_receipt: None,
+                proof_origin: None,
+                preserve_requirement: None,
+                preservation_check_command: None,
+                preservation_proof_origin: None,
+                basis: crate::work::BasisOrigin::Caller(None),
+                review_policy: Some("required"),
+                auto_goal_context: false,
+            },
+        )
+        .unwrap();
+        let original = crate::work::resolve(&loaded, begun["work"].as_str().unwrap()).unwrap();
+        let (_, events, _) = crate::run::ledger::load(&loaded, &original).unwrap();
+        let mut start = events[0].clone();
+        let mut marker = crate::run::quarantine::tests::marker();
+        let lead = start["plan"]["stages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|stage| stage["agents"].as_array().into_iter().flatten())
+            .find(|agent| agent["role"] == "lead")
+            .unwrap();
+        marker["leadOwner"] =
+            json!({"agent":lead["name"], "nativeTaskName":lead["nativeTaskName"]});
+        marker["verification"]["configSha256"] = start["configSha256"].clone();
+        marker["verification"]["commandSha256"] = start["checkPolicy"]["commandSha256"].clone();
+        marker["protocol"] = json!(crate::run::quarantine::WORK_ONLY_PROTOCOL);
+        marker["associationMode"] = json!("work_only");
+        crate::run::quarantine::tests::seal(&mut marker);
+        for field in [
+            "supersedes",
+            "checkReplacement",
+            "governor",
+            "governorCarry",
+            "carryProtocol",
+            "governorCarrySha256",
+            "recoveryProtocol",
+            "observationNoveltyProtocol",
+            "preReturnPolicy",
+            "preservation",
+            "projectContinuation",
+            "eventSha256",
+        ] {
+            start.as_object_mut().unwrap().remove(field);
+        }
+        start["quarantineVerification"] = marker.clone();
+        let start = crate::run::state::make_event(start);
+        let token = crate::run::quarantine::one_shot_identity(&marker).unwrap();
+        let ledger_name = format!(".exitbind/runs/work-{token}.jsonl");
+        let ledger_path = loaded.state_root.join(&ledger_name);
+        std::fs::write(&ledger_path, format!("{}\n", start)).unwrap();
+        let intent = crate::run::lifecycle::start_event_intent_sha256(&start).unwrap();
+        let reservation_path = loaded
+            .state_root
+            .join(format!(".exitbind/runs/quarantine-{token}.intent.json"));
+        let reservation = json!({"protocol":1,"identity":token,"requestSha256":crate::evidence::hash::value(&marker),
+            "work":format!("smw_{token}"),"ledger":ledger_name,"startIntentSha256":intent,"associationMode":"work_only"});
+        std::fs::write(&reservation_path, reservation.to_string()).unwrap();
+        let mut observation = Observation::new(&loaded);
+        observation.load(&loaded, &ledger_name).unwrap();
+        assert!(
+            observation.fallback(),
+            "external reservations require targeted uncached reads"
+        );
+        let mut changed = reservation.clone();
+        changed["associationMode"] = json!("other");
+        std::fs::write(&reservation_path, changed.to_string()).unwrap();
+        assert!(observation.load(&loaded, &ledger_name).is_err());
+        assert!(observation.finish(&loaded).is_err());
+        std::fs::write(&reservation_path, reservation.to_string()).unwrap();
+        let mut oversized = Observation::new(&loaded);
+        oversized.load(&loaded, &ledger_name).unwrap();
+        std::fs::write(&reservation_path, vec![b' '; 8192]).unwrap();
+        assert!(oversized.load(&loaded, &ledger_name).is_err());
+        assert!(oversized.finish(&loaded).is_err());
     }
 }

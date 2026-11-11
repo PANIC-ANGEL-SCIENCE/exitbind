@@ -14,6 +14,8 @@ pub(crate) mod check_observation;
 pub(crate) mod check_recovery;
 pub(crate) mod check_replacement;
 mod continuation_effect;
+pub(crate) mod lost_observation;
+pub(crate) mod observer_context;
 pub(crate) use continuation_effect::{recover_continuation_event, saved_continuation_events};
 mod continuation_protocol;
 pub(crate) mod disposition;

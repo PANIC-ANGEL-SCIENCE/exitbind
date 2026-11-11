@@ -164,6 +164,7 @@ const BOOLEAN_OPTIONS: &[&str] = &[
     "require-harness-receipt",
     "session-closed",
     "standalone",
+    "work-only",
     "journey-integration",
     "project",
     "project-goal",

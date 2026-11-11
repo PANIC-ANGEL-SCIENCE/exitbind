@@ -13,7 +13,9 @@ pub(super) fn validate_predecessor(loaded: &Loaded, marker: &Value) -> Result<()
         .ok_or("first verification ledger has no head")?;
     let state = crate::run::state::reduce(&events)?;
     let first_marker = &first_start["quarantineVerification"];
-    if hash::bytes(bytes.as_bytes()) != link["ledgerSha256"]
+    if crate::run::quarantine::association_mode(first_marker)?
+        == crate::run::quarantine::AssociationMode::WorkOnly
+        || hash::bytes(bytes.as_bytes()) != link["ledgerSha256"]
         || first_start["version"] != 8
         || first_start["runId"] != link["runId"]
         || first_start["eventSha256"] != link["startEventSha256"]

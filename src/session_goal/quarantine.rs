@@ -45,6 +45,8 @@ struct Residual {
     verification_environment_sha256: String,
     verification_decision_sha256: String,
     old_accounting: Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    observation_origin: Option<String>,
     decision_sha256: String,
 }
 
@@ -252,6 +254,10 @@ fn validate_state(record: &Value, selected: &ResidualState) -> Result<(), String
                     })
                 })
             || residual.old_accounting.is_null()
+            || residual
+                .observation_origin
+                .as_deref()
+                .is_some_and(|kind| kind != "configured_lead_reported")
             || decision_digest(residual)? != residual.decision_sha256
         {
             return Err("native Goal quarantine residual identity or accounting is invalid".into());
@@ -649,6 +655,7 @@ pub(super) fn current_for_member(
     if fresh.old != residual.old
         || fresh.verification != residual.verification
         || fresh.old_accounting != residual.old_accounting
+        || fresh.observation_origin != residual.observation_origin
         || fresh.verified_artifact_sha256 != residual.verified_artifact_sha256
         || fresh.verification_environment_sha256 != residual.verification_environment_sha256
         || fresh.verification_decision_sha256 != residual.verification_decision_sha256

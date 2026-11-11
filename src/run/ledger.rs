@@ -113,6 +113,13 @@ fn load_at_with_identity(_loaded: &Loaded, ledger: &LedgerPath) -> Result<Observ
             if event["action"] == "check_observation_recovered" {
                 super::check_recovery::validate_prefix(&event, &lines[..index].join("\n"), ledger)?;
             }
+            if event["action"] == super::lost_observation::ACTION {
+                super::lost_observation::validate_prefix(
+                    &event,
+                    &lines[..index].join("\n"),
+                    ledger,
+                )?;
+            }
             if event["action"] == "pre_return_reconciled" {
                 super::pre_return::recovery::validate_prefix(
                     &event,
@@ -128,6 +135,9 @@ fn load_at_with_identity(_loaded: &Loaded, ledger: &LedgerPath) -> Result<Observ
         run_state::reduce(&events)?;
         Ok(events)
     })?;
+    if let Some(start) = events.first() {
+        super::quarantine::admission::validate_recorded_reservation(ledger, start)?;
+    }
     Ok((ledger.clone(), events, source, inode(&metadata)))
 }
 

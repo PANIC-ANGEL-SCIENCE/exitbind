@@ -3,6 +3,13 @@ use super::*;
 
 pub(super) fn project(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
     let marker = &next["packet"]["quarantineVerification"];
+    let work_only = match crate::run::quarantine::association_mode(marker) {
+        Ok(mode) => mode == crate::run::quarantine::AssociationMode::WorkOnly,
+        Err(_) => {
+            return json!({"version":1,"state":"quarantine_mode_invalid","binding":binding,
+            "work":work,"choices":[],"mechanicalAction":Value::Null})
+        }
+    };
     let choices: Vec<_> = next["assignment"]
         .as_str()
         .map_or_else(Vec::new, |assignment| {
@@ -24,8 +31,11 @@ pub(super) fn project(loaded: &Loaded, work: &str, next: &Value, binding: &str) 
                 "executionOptions":{"timeoutMs":{"option":"--timeout-ms","default":1_800_000,
                     "minimum":1,"maximum":crate::run::check_observation::MAX_TIMEOUT_MS}}})
         } else {Value::Null},
-        "meaning":"Return the exact frozen artifact without code mutation. Fresh check, required review and distinct Lead acceptance remain mandatory.",
+        "meaning":if work_only {
+            "Work-only verification covers the frozen artifact, never a Goal membership or residual. Fresh check, required review and distinct Lead acceptance remain mandatory."
+        } else { "Return the exact frozen artifact without code mutation. Fresh check, required review and distinct Lead acceptance remain mandatory." },
         "quarantine":{"predecessor":marker["predecessor"]["work"],
+            "associationMode":if work_only { "work_only" } else { "goal_bound" },
             "observationEventSha256":marker["predecessor"]["observationEventSha256"],
             "oldCredited":false,"oldReset":false,"allowance":marker["allowance"],
             "artifactSha256":marker["verification"]["artifactSha256"],

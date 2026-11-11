@@ -464,6 +464,16 @@ fn forms(
             preview["readOnly"] = json!(true);
             preview["sideEffect"] = json!("no-change; previews an explicit Lead decision for a retained known-ended storage failure; unknown effects remain blocked");
             choices.push(preview);
+            let mut report = choice(
+                loaded,
+                Route::new(["work", "report-lost-caller", work, "--json"]),
+                "preview_lost_caller_report",
+                &[],
+                no_input(),
+            );
+            report["readOnly"] = json!(true);
+            report["sideEffect"] = json!("no-change; previews a configured-Lead report, preserving unknown execution and no credit");
+            choices.push(report);
         }
         // A timed-out observation whose recorded owned group has ended owes a
         // check result exactly as a never-run checker does: the same

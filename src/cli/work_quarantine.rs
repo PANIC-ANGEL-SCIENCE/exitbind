@@ -16,6 +16,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             "config",
             "json",
             "apply",
+            "work-only",
             "current-binding",
             "feature-config",
             "feature-work",
@@ -33,6 +34,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
         positional(a, 1, "work quarantine requires WORK")?,
         crate::work::quarantine::Options {
             followup,
+            work_only: a.flags.contains_key("work-only"),
             owner_config: a.options.get("owner-config").map(String::as_str),
             owner_config_sha256: a.options.get("owner-config-sha256").map(String::as_str),
             feature_config: option(

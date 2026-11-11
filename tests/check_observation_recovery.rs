@@ -322,6 +322,8 @@ fn select_fixture_contract(f: &Fixture) {
 mod admission_and_recovery;
 #[path = "check_observation_recovery/drift_and_retry_limits.rs"]
 mod drift_and_retry_limits;
+#[path = "check_observation_recovery/lost_caller.rs"]
+mod lost_caller;
 #[path = "check_observation_recovery/observer_lifecycle.rs"]
 mod observer_lifecycle;
 #[path = "check_observation_recovery/owned_group_recovery.rs"]

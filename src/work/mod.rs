@@ -6,6 +6,7 @@ mod begin;
 mod check;
 pub(crate) mod check_recovery;
 pub(crate) mod check_replacement;
+pub(crate) mod lost_observation;
 #[cfg(test)]
 pub(crate) use begin::begin;
 pub(crate) use begin::{begin_with_pre_return, BasisOrigin, BeginOptions};

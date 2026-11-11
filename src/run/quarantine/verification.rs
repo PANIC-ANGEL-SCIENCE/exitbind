@@ -17,14 +17,19 @@ pub(crate) fn acknowledgement(marker: &Value, event: &Value) -> Result<Value, St
     {
         return Err("verification completion must acknowledge the exact frozen artifact and inputs without mutation".into());
     }
-    Ok(json!({
+    let mut acknowledgement = json!({
         "protocol":PROTOCOL,"identity":one_shot_identity(marker)?,
         "decisionSha256":marker["decisionSha256"],
         "artifactSha256":frozen["artifactSha256"],"inputsSha256":frozen["inputsSha256"],
         "commandSha256":frozen["commandSha256"],"configSha256":frozen["configSha256"],
         "environmentSha256":frozen["environmentSha256"],
         "stage":event["stage"],"attempt":event["attempt"],"agent":event["agent"]
-    }))
+    });
+    if association_mode(marker)? == AssociationMode::WorkOnly {
+        acknowledgement["associationMode"] = json!("work_only");
+        acknowledgement["quarantineProtocol"] = json!(WORK_ONLY_PROTOCOL);
+    }
+    Ok(acknowledgement)
 }
 
 pub(crate) fn validate_event(state: &Value, event: &Value) -> Result<(), String> {

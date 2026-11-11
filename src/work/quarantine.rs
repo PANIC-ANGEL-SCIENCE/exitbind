@@ -7,6 +7,7 @@ mod followup;
 
 pub(crate) struct Options<'a> {
     pub(crate) followup: bool,
+    pub(crate) work_only: bool,
     pub(crate) feature_config: &'a str,
     pub(crate) feature_work: &'a str,
     pub(crate) artifact_root: Option<&'a str>,
@@ -56,6 +57,13 @@ pub(crate) fn start(
             "a known-ended failed quarantine verification requires work quarantine-followup".into()
         });
     }
+    if followup
+        && (options.work_only
+            || run::quarantine::association_mode(&requested_start["quarantineVerification"])?
+                == run::quarantine::AssociationMode::WorkOnly)
+    {
+        return Err("work-only verification has no quarantine follow-up allowance".into());
+    }
     let original_work = if followup {
         requested_start["quarantineVerification"]["predecessor"]["work"]
             .as_str()
@@ -70,8 +78,6 @@ pub(crate) fn start(
     let old_state = run::state::reduce(&old_events)?;
     if !matches!(old_state["status"].as_str(), Some("running" | "blocked"))
         || old_state.get("quarantineVerification").is_some()
-        || old_state["checkObservation"]["state"] != "failed"
-        || old_state["checkObservation"]["facts"]["termination"] != "unknown"
         || !run::state::check_observation::unresolved(&old_state)
         || old_start["configSha256"] != hash::text(&loaded.source)
         || old_start["version"] != 8
@@ -81,21 +87,9 @@ pub(crate) fn start(
                 .into(),
         );
     }
-    let admission = old_events
-        .iter()
-        .find(|event| {
-            event["action"] == "check_observation"
-                && event["eventSha256"] == old_state["checkObservation"]["eventSha256"]
-        })
-        .ok_or("old Work check admission event is missing")?;
-    let failure = old_events
-        .iter()
-        .rev()
-        .find(|event| {
-            event["action"] == "check_observation_failed"
-                && event["observation"]["admissionEventSha256"] == admission["eventSha256"]
-        })
-        .ok_or("old Work has no durable failed observation event")?;
+    let origin = run::check_observation::unknown_origin(&old_state, &old_events)?;
+    let admission = origin.admission;
+    let failure = origin.event;
 
     if requested_start["configSha256"] != hash::text(&loaded.source)
         || run::state::reduce(&requested_events)?["runId"] != requested_start["runId"]
@@ -115,6 +109,15 @@ pub(crate) fn start(
         return Err(format!("current action form binding is stale; {route}"));
     }
     let lead = configured_lead(&old_start["plan"])?;
+    if options.work_only
+        && (loaded.lead.as_deref() != lead["agent"].as_str()
+            || lead["agent"]
+                .as_str()
+                .and_then(|agent| loaded.agent(agent))
+                .is_none())
+    {
+        return Err("work-only quarantine requires the current configured Lead owner".into());
+    }
     if options.reason.trim().is_empty()
         || options.reason.len() > 1024
         || options.reason.contains('\0')
@@ -140,51 +143,74 @@ pub(crate) fn start(
     {
         return Err("feature configuration changed during quarantine admission".into());
     }
-    let owner_path = match options.owner_config {
-        Some(path) => path,
-        None => loaded
-            .path
-            .to_str()
-            .ok_or("configuration path is not valid UTF-8")?,
-    };
-    let owner_loaded = crate::config::load(Some(owner_path))?;
-    let owner_sha256 = hash::text(&owner_loaded.source);
-    if std::fs::read_to_string(&owner_loaded.path).map_err(|e| e.to_string())?
-        != owner_loaded.source
-    {
-        return Err("native Goal owner configuration changed during quarantine admission".into());
-    }
-    if options.apply && options.owner_config_sha256 != Some(owner_sha256.as_str()) {
-        return Err("--owner-config-sha256 is required and must match the current native Goal owner configuration".into());
-    }
-    let owner_scope = crate::session_goal::native::scope(&owner_loaded, false)?;
-    owner_scope.require_owner()?;
-    if owner_scope.session.is_none() || owner_scope.owner.is_none() {
-        return Err("quarantine requires the current native session and fixed Goal owner".into());
-    }
-    let owner_record = crate::session_goal::read(&owner_scope.root)?
-        .ok_or("the fixed native Goal owner journal is unavailable")?;
-    let old_context =
-        crate::session_goal::association::context_for_work_with_root(loaded, original_work);
-    let old_goal = match old_context.context {
-        crate::session_goal::association::WorkContext::Owner(record)
-        | crate::session_goal::association::WorkContext::Session(record) => record,
-        _ => {
-            return Err("old Work has no verified association with the original native Goal".into())
+    let selected_owner = if options.work_only {
+        if options.owner_config.is_some() || options.owner_config_sha256.is_some() {
+            return Err(
+                "work-only quarantine does not select or change a native Goal owner".into(),
+            );
         }
-    };
-    if old_goal["goalId"] != owner_record["goalId"] {
-        return Err(
-            "current native Goal differs from the original Goal associated with old Work".into(),
-        );
-    }
-    if let Some(root) = old_context.owner_root.as_ref() {
-        if root != &owner_scope.root {
+        None
+    } else {
+        let owner_path = match options.owner_config {
+            Some(path) => path,
+            None => loaded
+                .path
+                .to_str()
+                .ok_or("configuration path is not valid UTF-8")?,
+        };
+        let owner_loaded = crate::config::load(Some(owner_path))?;
+        let owner_sha256 = hash::text(&owner_loaded.source);
+        if std::fs::read_to_string(&owner_loaded.path).map_err(|e| e.to_string())?
+            != owner_loaded.source
+        {
+            return Err(
+                "native Goal owner configuration changed during quarantine admission".into(),
+            );
+        }
+        if options.apply && options.owner_config_sha256 != Some(owner_sha256.as_str()) {
+            return Err("--owner-config-sha256 is required and must match the current native Goal owner configuration".into());
+        }
+        let owner_scope = crate::session_goal::native::scope(&owner_loaded, false)?;
+        owner_scope.require_owner()?;
+        if owner_scope.session.is_none() || owner_scope.owner.is_none() {
+            return Err(
+                "quarantine requires the current native session and fixed Goal owner".into(),
+            );
+        }
+        let owner_record = crate::session_goal::read(&owner_scope.root)?
+            .ok_or("the fixed native Goal owner journal is unavailable")?;
+        let old_context =
+            crate::session_goal::association::context_for_work_with_root(loaded, original_work);
+        let old_goal = match old_context.context {
+            crate::session_goal::association::WorkContext::Owner(record)
+            | crate::session_goal::association::WorkContext::Session(record) => record,
+            _ => {
+                return Err(
+                    "old Work has no verified association with the original native Goal".into(),
+                )
+            }
+        };
+        if old_goal["goalId"] != owner_record["goalId"] {
+            return Err(
+                "current native Goal differs from the original Goal associated with old Work"
+                    .into(),
+            );
+        }
+        if old_context
+            .owner_root
+            .as_ref()
+            .is_some_and(|root| root != &owner_scope.root)
+        {
             return Err(
                 "old Work association belongs to a different native Goal owner root".into(),
             );
         }
-    }
+        let goal_id = owner_record["goalId"]
+            .as_str()
+            .ok_or("native Goal identity is missing")?
+            .to_owned();
+        Some((owner_loaded, owner_sha256, goal_id))
+    };
     let feature_ledger = super::resolve(&feature_loaded, options.feature_work)?;
     let (_, feature_events, _) = run::ledger::load(&feature_loaded, &feature_ledger)?;
     let feature_start = feature_events
@@ -286,13 +312,16 @@ pub(crate) fn start(
 
     let governor = run::carry::accounting(&old_state, &old_start["governor"])?;
     let usage = crate::session_goal::usage::details_for_work(loaded, original_work);
-    let predecessor = json!({
+    let mut predecessor = json!({
         "work": original_work, "ledger": old_ledger, "runId": old_start["runId"],
         "configSha256": old_start["configSha256"], "startEventSha256": old_start["eventSha256"],
         "headEventSha256": old_head["eventSha256"], "ledgerSha256": hash::bytes(old_bytes.as_bytes()),
         "observationEventSha256": failure["eventSha256"], "admissionEventSha256": admission["eventSha256"],
         "accounting": {"governor": governor, "usageAccount": usage}
     });
+    if let Some(kind) = origin.kind.marker_value() {
+        predecessor["observationOrigin"] = json!(kind);
+    }
     let review = json!({
         "work": options.feature_work,
         "startEventSha256": feature_start["eventSha256"], "headEventSha256": feature_head["eventSha256"],
@@ -302,7 +331,8 @@ pub(crate) fn start(
         "environmentSha256": hash::value(environment)
     });
     let mut marker = json!({
-        "protocol": if followup { run::quarantine::FOLLOWUP_PROTOCOL } else { run::quarantine::PROTOCOL }, "requestId": options.request_id, "reason": options.reason,
+        "protocol": if options.work_only { run::quarantine::WORK_ONLY_PROTOCOL } else if followup { run::quarantine::FOLLOWUP_PROTOCOL } else { run::quarantine::PROTOCOL },
+        "requestId": options.request_id, "reason": options.reason,
         "leadOwner": lead, "predecessor": predecessor,
         "verification": {
             "artifactSha256": artifact_sha, "inputsSha256": inputs_sha,
@@ -313,6 +343,9 @@ pub(crate) fn start(
         "allowance": {"checks": 1, "workerMutations": 0, "replans": 0, "replacements": 0},
         "oldCredited": false, "oldReset": false
     });
+    if options.work_only {
+        marker["associationMode"] = json!("work_only");
+    }
     if followup {
         let check = requested_events
             .iter()
@@ -337,30 +370,26 @@ pub(crate) fn start(
     let decision_sha = hash::value(&marker);
     marker["decisionSha256"] = json!(decision_sha);
     let verified = run::quarantine::admission::prepare(loaded, loaded, &feature_loaded, &marker)?;
-    let owner_goal_id = owner_record["goalId"]
-        .as_str()
-        .ok_or("native Goal identity is missing")?;
-    ensure_pending_goal(
-        loaded,
-        &owner_loaded,
-        &owner_sha256,
-        owner_goal_id,
-        &verified,
-    )?;
+    if let Some((owner, owner_sha256, goal_id)) = &selected_owner {
+        ensure_pending_goal(loaded, owner, owner_sha256, goal_id, &verified)?;
+    }
 
     let argv = apply_argv(
         old_work,
         &options,
         loaded,
-        owner_path,
-        &owner_sha256,
+        selected_owner
+            .as_ref()
+            .map(|(owner, sha, _)| (owner.path.as_path(), sha.as_str())),
         followup,
-    );
+    )?;
     if !options.apply {
         return Ok(
             json!({"work": old_work, "verificationWork": verified.work(), "preview": true,
             "decisionSha256": marker["decisionSha256"],
-            "ownerConfigPath": owner_loaded.path, "ownerConfigSha256": owner_sha256,
+            "associationMode": if options.work_only { "work_only" } else { "goal_bound" },
+            "ownerConfigPath": selected_owner.as_ref().map(|(owner, _, _)| &owner.path),
+            "ownerConfigSha256": selected_owner.as_ref().map(|(_, sha, _)| sha),
             "apply": argv.argv_value(),
             "sameConfigRequired": argv.needs_config(), "sameExecutableRequired": argv.needs_executable(),
             "effect": "no-change"}),
@@ -372,14 +401,11 @@ pub(crate) fn start(
         &feature_loaded,
         &verified,
         |work, intent| {
-            ensure_pending_goal(
-                loaded,
-                &owner_loaded,
-                &owner_sha256,
-                owner_goal_id,
-                &verified,
-            )?;
-            let current_scope = crate::session_goal::native::scope(&owner_loaded, false)?;
+            let Some((owner_loaded, owner_sha256, owner_goal_id)) = &selected_owner else {
+                return Ok(());
+            };
+            ensure_pending_goal(loaded, owner_loaded, owner_sha256, owner_goal_id, &verified)?;
+            let current_scope = crate::session_goal::native::scope(owner_loaded, false)?;
             current_scope.require_owner()?;
             let record = crate::session_goal::read(&current_scope.root)?
                 .ok_or("native session Goal disappeared before quarantine admission")?;
@@ -400,6 +426,15 @@ pub(crate) fn start(
             .map(|_| ())
         },
     )?;
+    if options.work_only {
+        let replayed = started["replayed"] == true;
+        return Ok(
+            json!({"work":verified.work(), "started":started, "associationMode":"work_only",
+            "sessionLink":{"state":"not_requested"}, "oldCredited":false, "oldReset":false,
+            "meaning":"Separate artifact verification only; no Goal membership or residual is inferred.",
+            "effect":if replayed { "no-change" } else { "started"}}),
+        );
+    }
     match crate::session_goal::association::link_session(loaded, verified.work()) {
         Ok(link) => Ok(
             json!({"work": verified.work(), "started": started, "sessionLink": link, "effect": "started"}),
@@ -573,10 +608,9 @@ fn apply_argv(
     old_work: &str,
     options: &Options<'_>,
     loaded: &Loaded,
-    owner_config: &str,
-    owner_config_sha256: &str,
+    owner: Option<(&std::path::Path, &str)>,
     followup: bool,
-) -> crate::emitted::Bounded {
+) -> Result<crate::emitted::Bounded, String> {
     let action = if followup {
         "quarantine-followup"
     } else {
@@ -602,15 +636,16 @@ fn apply_argv(
     if let Some(binding) = options.current_binding {
         route = route.words(["--current-binding", binding]);
     }
-    route
-        .words([
-            "--owner-config",
-            owner_config,
-            "--owner-config-sha256",
-            owner_config_sha256,
-            "--apply",
-            "--json",
-        ])
+    if let Some((config, sha)) = owner {
+        let config = config
+            .to_str()
+            .ok_or("owner configuration path is not UTF-8")?;
+        route = route.words(["--owner-config", config, "--owner-config-sha256", sha]);
+    } else {
+        route = route.words(["--work-only"]);
+    }
+    Ok(route
+        .words(["--apply", "--json"])
         .config(&loaded.path)
-        .within(crate::work::compact::MAX_RESPONSE_BYTES - 1024)
+        .within(crate::work::compact::MAX_RESPONSE_BYTES - 1024))
 }

@@ -120,13 +120,24 @@ is recomputed separately.
 
 `work quarantine OLD_WORK` is a distinct, Lead-owned route for one separately
 reviewed verification while preserving a current durably failed unknown
-observation, including on a blocked Work.
+observation or a configured-Lead lost-caller report, including on a blocked Work.
 It requires `--feature-config`, `--feature-work`, the exact frozen `--artifact`,
 `--request-id`, `--reason`, and the original Work's `--current-binding`; preview
-prints the apply command. The accepted plan includes an explicit typed basis for
-the new verification; the original Work's legacy basis is preserved without
-retrofit. The new Work has no mutation, replan or replacement allowance and
-needs its own actual check, required review and Lead acceptance.
+prints the apply command. It requires a separately reviewed and currently
+accepted isolation-plan Work with the same product, state and control roots and
+project identity. The accepted plan includes an explicit typed basis for the new
+verification; the original Work's legacy basis is preserved without retrofit.
+The new Work has no mutation, replan or replacement allowance and needs its own
+actual check, required review and Lead acceptance.
+
+The default Goal-bound route retains its existing owner and native session
+checks. `--work-only` instead verifies the artifact without selecting or changing
+a Goal; it cannot be combined with `--owner-config`. Its protocol-3 marker
+records `associationMode: "work_only"`, and the same original admission reserves
+only one verification across both modes. A work-only verification cannot become
+a native Goal member or supply a Goal quarantine residual, and has no follow-up
+allowance. It does not infer whether the original Work had a Goal association.
+
 A second, dedicated `work quarantine-followup FIRST_WORK` route is available
 once only, and only when that first verification Work has exactly one retained
 observed nonzero check result, optionally followed immediately by its configured
@@ -142,7 +153,8 @@ first checks, a repeated follow-up, and live or retained child effects refuse.
 The follow-up keeps the same verification-only allowance: one check, no worker
 mutations, replans or replacements. It does not credit the first failure or
 original unknown execution.
-Then `goal quarantine OLD_WORK --source-config CONFIG --verification-work WORK
+For a currently accepted Goal-bound verification,
+`goal quarantine OLD_WORK --source-config CONFIG --verification-work WORK
 --request-id ID --reason TEXT` previews an owner-bound, uncredited Goal residual.
 Neither operation resolves or credits the original unknown execution. See
 [separate verification](docs/check-recovery.md#verify-a-separate-artifact-while-preserving-an-unknown-execution)
@@ -391,8 +403,21 @@ previews a configured-Lead decision. Its explicit apply records a reported
 failure only; ordinary Lead repair, a new worker result, checks and required
 review still follow. Unknown effects remain blocked. See
 [check recovery](docs/check-recovery.md) for exact-byte and reader requirements.
-These additive v8 fields/events require a reader that supports the marker;
-older v8 binaries refuse them. Markerless historical ledgers are unchanged.
+
+When the caller of an admitted observation is gone and no native outcome was
+recorded, `work report-lost-caller WORK` previews a distinct configured-Lead
+report. Its explicit apply binds the current admission and retained incident
+evidence, while execution remains unknown and receives no check credit. A
+recorded host, boot or PID-namespace mismatch, live caller or uncertain identity
+refuses. Legacy admissions without context require explicit same-origin-host
+attestation; their historical host provenance remains unverified. The report
+does not supply a retry, repair, permit, acceptance or cleanup proof.
+
+Use a compatible reader from the admission that first records the new observer
+context; the lost-caller event, known-ended recovery event and work-only
+protocol-3 marker also require compatible readers. Older readers refuse these
+shapes, and the version number alone does not establish support. Existing
+markerless historical ledgers remain unchanged.
 See [observation schema](schema/check-observation-v1.schema.json).
 
 This fragment assumes the worker is pending and has written that fresh result

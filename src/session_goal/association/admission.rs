@@ -249,6 +249,15 @@ fn link_admitted(
         if let Some(admission) = super::super::journey::find_admission(previous, work)? {
             validate_admission_for_loaded(loaded, &admission, session, owner)?;
             let (start, start_sha) = verified_start(loaded, work)?;
+            if start.get("quarantineVerification").is_some()
+                && crate::run::quarantine::association_mode(&start["quarantineVerification"])?
+                    == crate::run::quarantine::AssociationMode::WorkOnly
+            {
+                return Err(
+                    "work-only quarantine verification cannot acquire native Goal membership"
+                        .into(),
+                );
+            }
             if crate::run::start_event_intent_sha256(&start)? != admission.start_intent_sha256 {
                 if start.get("supersedes").is_none()
                     || crate::run::native_successor_intent(work, &start)?
@@ -316,6 +325,15 @@ fn link_admitted(
         } else if let Some(member) = journey_member {
             validate_member_for_loaded(loaded, &member, session, owner)?;
             let (start, start_sha) = verified_start(loaded, work)?;
+            if start.get("quarantineVerification").is_some()
+                && crate::run::quarantine::association_mode(&start["quarantineVerification"])?
+                    == crate::run::quarantine::AssociationMode::WorkOnly
+            {
+                return Err(
+                    "work-only quarantine verification cannot acquire native Goal membership"
+                        .into(),
+                );
+            }
             if member["startEventSha256"] != start_sha
                 || crate::evidence::hash::text(start["goal"].as_str().unwrap_or_default())
                     != member["workGoalSha256"]

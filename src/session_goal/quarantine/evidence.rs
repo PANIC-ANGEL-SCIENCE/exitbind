@@ -106,30 +106,11 @@ pub(super) fn exact_quarantine_evidence(
     if old_state.get("quarantineVerification").is_some()
         || !matches!(old_state["status"].as_str(), Some("running" | "blocked"))
         || !crate::run::state::check_observation::unresolved(&old_state)
-        || old_state["checkObservation"]["state"] != "failed"
-        || old_state["checkObservation"]["facts"]["termination"] != "unknown"
     {
         return Err("predecessor is no longer the exact unresolved check observation".into());
     }
-    let observation_admission = old_state["checkObservation"]["eventSha256"]
-        .as_str()
-        .ok_or("predecessor failed observation has no admission identity")?;
-    let admission = old_events
-        .iter()
-        .find(|event| {
-            event["action"] == "check_observation" && event["eventSha256"] == observation_admission
-        })
-        .ok_or("predecessor failed observation admission event is missing")?;
-    if old_events.iter().any(|event| {
-        (event["action"] == "check" && event["observationEventSha256"] == admission["eventSha256"])
-            || (event["action"] == "check_observation_recovered"
-                && event["observation"]["admissionEventSha256"] == admission["eventSha256"])
-    }) {
-        return Err(
-            "current unknown observation admission already has a committed check or recovery"
-                .into(),
-        );
-    }
+    let origin = crate::run::check_observation::unknown_origin(&old_state, &old_events)?;
+    let admission = origin.admission;
     let old_canonical_ledger =
         crate::run::ledger::ledger_path(&source.state_root, &old_ledger, false)?;
     if crate::run::ledger::valid_claim(&crate::run::ledger::claim_path(&old_canonical_ledger))?
@@ -137,13 +118,7 @@ pub(super) fn exact_quarantine_evidence(
     {
         return Err("unknown predecessor has already been superseded".into());
     }
-    let failure = old_events.iter().rev().find(|event| {
-        event["action"] == "check_observation_failed"
-            && event["observation"]["admissionEventSha256"] == admission["eventSha256"]
-            && event["observation"]["facts"]["termination"] == "unknown"
-    });
-    let failure = failure.ok_or("predecessor failed unknown observation event is missing")?;
-    let observation = &failure["eventSha256"];
+    let observation = &origin.event["eventSha256"];
     let (verification_events, _verification_ledger, verification_bytes) =
         events_for(source, &verification_member.work)?;
     let start = verification_events
@@ -153,6 +128,11 @@ pub(super) fn exact_quarantine_evidence(
         .get("quarantineVerification")
         .ok_or("verification Work has no quarantine marker")?;
     crate::run::quarantine::validate_marker(marker, 1)?;
+    if crate::run::quarantine::association_mode(marker)?
+        == crate::run::quarantine::AssociationMode::WorkOnly
+    {
+        return Err("work-only verification cannot supply a Goal quarantine residual".into());
+    }
     if marker["oldCredited"] != false
         || marker["oldReset"] != false
         || marker["predecessor"]["work"] != old_work
@@ -162,6 +142,10 @@ pub(super) fn exact_quarantine_evidence(
         || marker["predecessor"]["ledgerSha256"] != hash::text(&old_bytes)
         || marker["predecessor"]["admissionEventSha256"] != admission["eventSha256"]
         || &marker["predecessor"]["observationEventSha256"] != observation
+        || marker["predecessor"]
+            .get("observationOrigin")
+            .and_then(Value::as_str)
+            != origin.kind.marker_value()
         || marker["predecessor"]["runId"] != old_start["runId"]
         || marker["predecessor"]["configSha256"] != old_start["configSha256"]
         || marker["predecessor"]["configSha256"] != hash::text(&source.source)
@@ -244,7 +228,7 @@ pub(super) fn exact_quarantine_evidence(
             events: &old_events,
             bytes: &old_bytes,
             state: &old_state,
-            check: Some(failure),
+            check: Some(origin.event),
             review: None,
             acceptance: None,
         },
@@ -298,6 +282,7 @@ pub(super) fn exact_quarantine_evidence(
             .ok_or("quarantine decision hash missing")?
             .to_owned(),
         old_accounting,
+        observation_origin: origin.kind.marker_value().map(str::to_owned),
         decision_sha256: String::new(),
     };
     residual.decision_sha256 = decision_digest(&residual)?;

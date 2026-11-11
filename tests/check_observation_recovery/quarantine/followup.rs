@@ -311,6 +311,7 @@ fn quarantine_followup_accepts_reviewed_retained_custody_once_and_replays_exact_
     let applied = c.apply(&value(&preview));
     assert!(applied.status.success(), "{applied:?}");
     let followup = value(&applied)["work"].as_str().unwrap().to_owned();
+    assert_reservation_writer_bounds(&c.f, &followup, 2);
     legacy_reader_refuses_current_quarantine_action(&c, &followup);
     let start = &c.f.events(&followup)[0];
     assert_eq!(start["quarantineVerification"]["protocol"], 2);

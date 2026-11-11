@@ -14,6 +14,30 @@ pub(super) fn inspect(
     let Some(head) = events.last() else {
         return Ok(None);
     };
+    if state["status"] == "blocked"
+        && observation["state"] == "reported_lost"
+        && head["action"] == "submit"
+        && head["outcome"] == "blocked"
+    {
+        if state["configSha256"] != crate::evidence::hash::text(&loaded.source)
+            || std::fs::read(&loaded.path)
+                .map_err(|e| format!("diagnostic configuration is unavailable: {e}"))?
+                != loaded.source.as_bytes()
+        {
+            return Err(
+                "historical diagnostic requires its exact frozen configuration identity".into(),
+            );
+        }
+        let origin = run::check_observation::unknown_origin(state, events)?;
+        return Ok(Some(
+            json!({"work":work,"effect":"no-change","checkRecorded":false,
+            "recoverable":false,"status":"historical_reported_lost_caller",
+            "reference":{"ledger":ledger_name,"ledgerSourceSha256":crate::evidence::hash::text(source),
+                "admissionEventSha256":origin.admission["eventSha256"],"reportEventSha256":origin.event["eventSha256"],"headEventSha256":head["eventSha256"]},
+            "provenance":"configured_lead_reported","execution":"unknown",
+            "meaning":"Inspection only. The caller-loss report is not a native observation or cleanup proof and supplies no check credit, execution or acceptance."}),
+        ));
+    }
     if state["status"] != "blocked"
         || observation["state"] != "failed"
         || facts["termination"] != "unknown"

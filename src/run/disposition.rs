@@ -64,8 +64,10 @@ fn validate_pending(state: &Value, disposition: &Disposition) -> Result<(), Stri
         .get("pendingDisposition")
         .filter(|value| value.is_object())
         .ok_or("Lead disposition is not currently pending")?;
-    if state["pendingDisposition"]["kind"] == "check_observation_failed"
-        && crate::run::state::check_observation::unresolved(state)
+    if matches!(
+        state["pendingDisposition"]["kind"].as_str(),
+        Some("check_observation_failed" | "check_observation_caller_lost")
+    ) && crate::run::state::check_observation::unresolved(state)
     {
         return Err(
             "unresolved check effects block repair and supersession; inspect or stop this Work"

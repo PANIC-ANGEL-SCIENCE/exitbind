@@ -100,7 +100,10 @@ pub(super) fn reject_unknown(
         );
     } else if matches!(
         action,
-        "check_observation" | "check_observation_failed" | "check_observation_recovered"
+        "check_observation"
+            | "check_observation_failed"
+            | "check_observation_recovered"
+            | "check_observation_caller_lost"
     ) {
         return reject_unknown_fields(
             object,

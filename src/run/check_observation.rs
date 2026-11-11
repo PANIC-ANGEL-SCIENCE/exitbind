@@ -6,6 +6,81 @@ use super::*;
 pub(crate) const PROTOCOL: u64 = 1;
 pub(crate) const MAX_TIMEOUT_MS: u64 = 86_400_000;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum UnknownOriginKind {
+    NativeFailure,
+    ConfiguredLeadReport,
+}
+
+pub(crate) struct UnknownOrigin<'a> {
+    pub(crate) kind: UnknownOriginKind,
+    pub(crate) admission: &'a Value,
+    pub(crate) event: &'a Value,
+}
+
+impl UnknownOriginKind {
+    pub(crate) fn marker_value(self) -> Option<&'static str> {
+        match self {
+            Self::NativeFailure => None,
+            Self::ConfiguredLeadReport => Some("configured_lead_reported"),
+        }
+    }
+}
+
+/// The single source for quarantine eligibility and provenance. A report is
+/// distinct from a native failure and never fills unobserved failure facts.
+pub(crate) fn unknown_origin<'a>(
+    state: &Value,
+    events: &'a [Value],
+) -> Result<UnknownOrigin<'a>, String> {
+    let observation = &state["checkObservation"];
+    let kind = match observation["state"].as_str() {
+        Some("failed") if observation["facts"]["termination"] == "unknown" => {
+            UnknownOriginKind::NativeFailure
+        }
+        Some("reported_lost") if observation["provenance"] == "configured_lead_reported" => {
+            UnknownOriginKind::ConfiguredLeadReport
+        }
+        _ => return Err("observation is not a durable unresolved unknown origin".into()),
+    };
+    let admission = events
+        .iter()
+        .find(|event| {
+            event["action"] == "check_observation"
+                && event["eventSha256"] == observation["eventSha256"]
+        })
+        .ok_or("unknown observation admission is missing")?;
+    let event = events
+        .iter()
+        .rev()
+        .find(|event| {
+            event["observation"]["admissionEventSha256"] == admission["eventSha256"]
+                && match kind {
+                    UnknownOriginKind::NativeFailure => {
+                        event["action"] == "check_observation_failed"
+                            && event["observation"]["facts"] == observation["facts"]
+                    }
+                    UnknownOriginKind::ConfiguredLeadReport => {
+                        event["action"] == crate::run::lost_observation::ACTION
+                            && event["eventSha256"] == observation["reportEventSha256"]
+                    }
+                }
+        })
+        .ok_or("unknown observation origin event is missing")?;
+    if events.iter().any(|event| {
+        (event["action"] == "check" && event["observationEventSha256"] == admission["eventSha256"])
+            || (event["action"] == "check_observation_recovered"
+                && event["observation"]["admissionEventSha256"] == admission["eventSha256"])
+    }) {
+        return Err("unknown observation admission has a committed check or recovery".into());
+    }
+    Ok(UnknownOrigin {
+        kind,
+        admission,
+        event,
+    })
+}
+
 /// New marked observations execute only the run's frozen configuration and
 /// its still-current selected contract. Historical runs retain drift warnings.
 fn frozen_config_required(loaded: &Loaded, state: &Value) -> String {
@@ -87,7 +162,9 @@ pub(crate) fn admitted_refusal(
     );
     let event = observation["eventSha256"].as_str().unwrap_or("unknown");
     let on = work.map_or_else(|| "this Work".to_owned(), |work| format!("Work {work}"));
-    if observation["state"] == "running" {
+    if observation["state"] == "reported_lost" {
+        format!("check observation {event} on {on} has a configured-Lead lost-caller report; execution remains unknown and no check was launched. Read it with {detail}")
+    } else if observation["state"] == "running" {
         format!("check observation {event} is running on {on}: admitted, no end recorded yet; no check was launched. Read it with {detail}")
     } else {
         format!("check observation {event} on {on} failed without a check result; no check was launched. Read it and follow the Lead decision with {detail}")
@@ -114,7 +191,8 @@ pub(super) fn admit(
     let details = json!({"binding": identity, "timeoutMs": timeout_ms,
         "perStreamBytes": crate::run_value::MAX_CAPTURE_BYTES, "combinedBytes": 16 * 1_048_576,
         "state": "running",
-        "observer": {"pid": observer.pid, "startTimeTicks": observer.start_time_ticks}});
+        "observer": {"pid": observer.pid, "startTimeTicks": observer.start_time_ticks,
+            "context": crate::run::observer_context::current()}});
     if let Some(current) = state.get("checkObservation").filter(|v| v.is_object()) {
         if current["binding"] != details["binding"] || current["timeoutMs"] != timeout_ms {
             return Err("check observation binding or execution limit changed; inspect the current Work decision".into());
@@ -176,6 +254,18 @@ pub(super) fn fail(
 /// unverifiable recorder is never closed, and an admission recorded by a
 /// version that stored no observer stays open as it was.
 pub(crate) fn observer_ended(observation: &Value) -> bool {
+    if let Some(context) = observation["observer"].get("context") {
+        if !observation["observer"]["startTimeTicks"]
+            .as_u64()
+            .is_some_and(|ticks| ticks > 0)
+            || !crate::run::observer_context::matching(
+                context,
+                &crate::run::observer_context::current(),
+            )
+        {
+            return false;
+        }
+    }
     let Some(pid) = observation["observer"]["pid"]
         .as_u64()
         .and_then(|pid| u32::try_from(pid).ok())

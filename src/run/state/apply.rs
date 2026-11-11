@@ -3,12 +3,22 @@
 use super::*;
 
 pub(super) fn apply_event(state: &mut Value, event: &Value) -> Result<(), String> {
+    // A Lead-reported lost caller never supplies check, retry, mutation, or
+    // repair authority. A terminal Lead return preserves the unknown record.
+    if state["checkObservation"]["state"] == "reported_lost"
+        && !(event["action"] == "submit"
+            && event["role"] == "lead"
+            && matches!(event["outcome"].as_str(), Some("blocked" | "rejected")))
+    {
+        return Err("reported lost observation permits only a terminal Lead return".into());
+    }
     match event["action"].as_str() {
         Some("submit") => apply_submission(state, event),
         Some("govern") => apply_govern(state, event),
         Some("review_policy") => apply_review_policy(state, event),
         Some("check") => check_stage::apply_check(state, event),
         Some("check_observation_recovered") => crate::run::check_recovery::apply(state, event),
+        Some("check_observation_caller_lost") => crate::run::lost_observation::apply(state, event),
         Some("pre_return_admitted") => crate::run::pre_return::ownership::apply(state, event),
         Some("pre_return_reconciled") => crate::run::pre_return::recovery::apply(state, event),
         Some("check_observation" | "check_observation_failed") => {

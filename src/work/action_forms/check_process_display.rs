@@ -19,7 +19,7 @@ pub(super) fn attach(loaded: &Loaded, work: &str, result: &mut Value, next: &Val
                 .unwrap_or(false);
         if retained {
             result["meaning"] = json!(
-                "The process observing this check ended without recording its result and the admission retains a partial capture or an owned verification effect. A retry neither closes nor appends over it: recover a known-ended storage failure with work recover-check, or block this Work."
+                "The process observing this check ended without recording its result and the admission retains a partial capture or an owned verification effect. A retry neither closes nor appends over it. Inspect the known-ended recovery or lost-caller report preview, or block this Work."
             );
         }
         return;

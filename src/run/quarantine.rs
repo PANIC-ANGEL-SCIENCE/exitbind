@@ -14,7 +14,32 @@ pub(crate) use verification::{acknowledgement, validate_event};
 
 pub(crate) const PROTOCOL: u64 = 1;
 pub(crate) const FOLLOWUP_PROTOCOL: u64 = 2;
+pub(crate) const WORK_ONLY_PROTOCOL: u64 = 3;
 pub(crate) const OPERATION_MAX_BYTES: usize = 4096;
+
+/// Missing mode is the existing Goal-bound wire format, never a claim that a
+/// Work has no association. New work-only mode is explicit and exhaustive.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AssociationMode {
+    GoalBound,
+    WorkOnly,
+}
+
+pub(crate) fn association_mode(marker: &Value) -> Result<AssociationMode, String> {
+    let marker = marker
+        .as_object()
+        .ok_or("quarantine marker is not an object")?;
+    match (
+        marker.get("protocol").and_then(Value::as_u64),
+        marker.get("associationMode"),
+    ) {
+        (Some(PROTOCOL | FOLLOWUP_PROTOCOL), None) => Ok(AssociationMode::GoalBound),
+        (Some(WORK_ONLY_PROTOCOL), Some(Value::String(mode))) if mode == "work_only" => {
+            Ok(AssociationMode::WorkOnly)
+        }
+        _ => Err("invalid quarantine association mode".into()),
+    }
+}
 
 /// Validate the command text shared by the producer and persisted marker
 /// reader. The limit is measured in UTF-8 bytes because that is what the
@@ -119,8 +144,18 @@ pub(crate) fn validate_marker(value: &Value, line: usize) -> Result<(), String> 
     if protocol == Some(FOLLOWUP_PROTOCOL) {
         marker_keys.push("followUp");
     }
+    let mode = association_mode(value).map_err(|_| fail())?;
+    if mode == AssociationMode::WorkOnly {
+        marker_keys.push("associationMode");
+    }
+    if protocol == Some(FOLLOWUP_PROTOCOL) && mode == AssociationMode::WorkOnly {
+        return Err(fail());
+    }
     if !exact(value, &marker_keys)
-        || !matches!(protocol, Some(PROTOCOL | FOLLOWUP_PROTOCOL))
+        || !matches!(
+            protocol,
+            Some(PROTOCOL | FOLLOWUP_PROTOCOL | WORK_ONLY_PROTOCOL)
+        )
         || !text(&value["requestId"], 128)
         || !text(&value["reason"], 1024)
         || value["oldCredited"] != false
@@ -134,21 +169,26 @@ pub(crate) fn validate_marker(value: &Value, line: usize) -> Result<(), String> 
     }
     followup::validate_marker(value, line)?;
     let predecessor = &value["predecessor"];
-    if !exact(
-        predecessor,
-        &[
-            "work",
-            "ledger",
-            "runId",
-            "configSha256",
-            "startEventSha256",
-            "headEventSha256",
-            "ledgerSha256",
-            "observationEventSha256",
-            "admissionEventSha256",
-            "accounting",
-        ],
-    ) || !work(&predecessor["work"])
+    let mut predecessor_keys = vec![
+        "work",
+        "ledger",
+        "runId",
+        "configSha256",
+        "startEventSha256",
+        "headEventSha256",
+        "ledgerSha256",
+        "observationEventSha256",
+        "admissionEventSha256",
+        "accounting",
+    ];
+    if predecessor.get("observationOrigin").is_some() {
+        predecessor_keys.push("observationOrigin");
+        if predecessor["observationOrigin"] != "configured_lead_reported" {
+            return Err(fail());
+        }
+    }
+    if !exact(predecessor, &predecessor_keys)
+        || !work(&predecessor["work"])
         || ![
             "runId",
             "configSha256",
@@ -295,15 +335,15 @@ fn work(value: &Value) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
-    fn seal(value: &mut Value) {
+    pub(crate) fn seal(value: &mut Value) {
         value.as_object_mut().unwrap().remove("decisionSha256");
         value["decisionSha256"] = json!(crate::evidence::hash::value(value));
     }
 
-    pub(super) fn marker() -> Value {
+    pub(crate) fn marker() -> Value {
         let hash = "a".repeat(64);
         let mut value = json!({
             "protocol":1,"requestId":"independent-check-1","reason":"Retain unknown effects",
@@ -476,6 +516,44 @@ mod tests {
             changed["predecessor"][field] = json!("c".repeat(64));
             seal(&mut changed);
             assert_ne!(one_shot_identity(&changed).unwrap(), identity);
+        }
+    }
+
+    #[test]
+    fn association_mode_is_strict_and_does_not_change_the_one_shot_identity() {
+        let legacy = marker();
+        assert_eq!(
+            association_mode(&legacy).unwrap(),
+            AssociationMode::GoalBound
+        );
+        let mut isolated = legacy.clone();
+        isolated["protocol"] = json!(WORK_ONLY_PROTOCOL);
+        isolated["associationMode"] = json!("work_only");
+        seal(&mut isolated);
+        validate_marker(&isolated, 1).unwrap();
+        assert_eq!(
+            association_mode(&isolated).unwrap(),
+            AssociationMode::WorkOnly
+        );
+        assert_eq!(
+            one_shot_identity(&legacy).unwrap(),
+            one_shot_identity(&isolated).unwrap()
+        );
+        assert_ne!(legacy["decisionSha256"], isolated["decisionSha256"]);
+        let mut stripped = isolated.clone();
+        stripped.as_object_mut().unwrap().remove("associationMode");
+        seal(&mut stripped);
+        assert!(validate_marker(&stripped, 1).is_err());
+        for invalid in [
+            Value::Null,
+            json!("goal_bound"),
+            json!("other"),
+            json!(false),
+        ] {
+            let mut bad = legacy.clone();
+            bad["associationMode"] = invalid;
+            seal(&mut bad);
+            assert!(validate_marker(&bad, 1).is_err());
         }
     }
 

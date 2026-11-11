@@ -91,36 +91,15 @@ pub(crate) fn prepare(
         || old_head["eventSha256"] != predecessor["headEventSha256"]
         || hash::bytes(old_bytes.as_bytes()) != predecessor["ledgerSha256"]
         || crate::run::check_observation::PROTOCOL != old_start["checkObservationProtocol"]
-        || old_state["checkObservation"]["state"] != "failed"
-        || old_state["checkObservation"]["facts"]["termination"] != "unknown"
         || !crate::run::state::check_observation::unresolved(&old_state)
     {
         return Err("predecessor is no longer the exact unresolved check observation".into());
     }
-    let admission = old_events
-        .iter()
-        .find(|event| {
-            event["action"] == "check_observation"
-                && event["eventSha256"] == predecessor["admissionEventSha256"]
-        })
-        .ok_or("predecessor check admission event is missing")?;
-    let failure = old_events.iter().rev().find(|event| {
-        event["action"] == "check_observation_failed"
-            && event["observation"]["admissionEventSha256"] == admission["eventSha256"]
-    });
-    let Some(failure) = failure else {
-        return Err("predecessor has no durable failed observation event".into());
-    };
-    let expected_observation = &failure["eventSha256"];
-    if expected_observation != &predecessor["observationEventSha256"]
-        || old_events.iter().any(|event| {
-            event["action"] == "check"
-                && event["observationEventSha256"] == admission["eventSha256"]
-        })
-        || old_events.iter().any(|event| {
-            event["action"] == "check_observation_recovered"
-                && event["observation"]["admissionEventSha256"] == admission["eventSha256"]
-        })
+    let origin = crate::run::check_observation::unknown_origin(&old_state, &old_events)?;
+    if origin.event["eventSha256"] != predecessor["observationEventSha256"]
+        || origin.admission["eventSha256"] != predecessor["admissionEventSha256"]
+        || predecessor.get("observationOrigin").and_then(Value::as_str)
+            != origin.kind.marker_value()
     {
         return Err("predecessor observation is not unresolved".into());
     }
@@ -401,8 +380,13 @@ where
         reserve(
             &loaded.state_root,
             &reservation,
-            &json!({"protocol":1,"identity":token,"requestSha256":hash::value(&verified.marker),
-            "work":verified.work,"ledger":verified.ledger,"startIntentSha256":verified.start_intent}),
+            &reservation_value(
+                &token,
+                &verified.marker,
+                &verified.work,
+                &verified.ledger,
+                &verified.start_intent,
+            )?,
         )?;
         match fs::symlink_metadata(path.path) {
             Ok(_) => {
@@ -516,6 +500,61 @@ fn reservation_path(root: &Path, identity: &str) -> PathBuf {
         .join(format!("quarantine-{identity}.intent.json"))
 }
 
+fn reservation_value(
+    identity: &str,
+    marker: &Value,
+    work: &str,
+    ledger: &str,
+    intent: &str,
+) -> Result<Value, String> {
+    let mut value = json!({"protocol":1,"identity":identity,"requestSha256":hash::value(marker),
+        "work":work,"ledger":ledger,"startIntentSha256":intent});
+    if super::association_mode(marker)? == super::AssociationMode::WorkOnly {
+        value["associationMode"] = json!("work_only");
+    }
+    Ok(value)
+}
+
+/// A present reservation is a second durable binding of the exact marker.
+/// Older Goal-bound ledgers without one retain their historical read behavior.
+pub(crate) fn validate_recorded_reservation(
+    ledger: &crate::run::ledger::LedgerPath,
+    start: &Value,
+) -> Result<(), String> {
+    let Some(marker) = start.get("quarantineVerification") else {
+        return Ok(());
+    };
+    let mode = super::association_mode(marker)?;
+    let token = super::one_shot_identity(marker)?;
+    let expected_ledger = format!(".exitbind/runs/work-{token}.jsonl");
+    let expected_work = format!("smw_{token}");
+    let path = reservation_path(&ledger.root, &token);
+    match fs::symlink_metadata(&path) {
+        Err(error)
+            if error.kind() == std::io::ErrorKind::NotFound
+                && mode == super::AssociationMode::GoalBound =>
+        {
+            return Ok(())
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Err("work-only verification reservation is missing".into())
+        }
+        Err(error) => return Err(error.to_string()),
+        Ok(_) => {}
+    }
+    if ledger.expected != ledger.root.join(&expected_ledger) {
+        return Err(
+            "quarantine verification ledger identity does not match its reservation".into(),
+        );
+    }
+    let intent = crate::run::lifecycle::start_event_intent_sha256(start)?;
+    let expected = reservation_value(&token, marker, &expected_work, &expected_ledger, &intent)?;
+    if read_reserved(&path)? != expected {
+        return Err("quarantine verification marker differs from its exact reservation".into());
+    }
+    Ok(())
+}
+
 fn reserve(root: &Path, path: &Path, value: &Value) -> Result<(), String> {
     crate::project::managed_files::ensure_state_directory(
         root,
@@ -560,6 +599,7 @@ fn open_reserved(path: &Path) -> std::io::Result<fs::File> {
 }
 
 fn read_reserved(path: &Path) -> Result<Value, String> {
+    const MAX_RESERVATION_BYTES: u64 = 4096;
     let before = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
     if before.file_type().is_symlink() || !before.is_file() {
         return Err("quarantine intent is not a regular file".into());
@@ -573,11 +613,20 @@ fn read_reserved(path: &Path) -> Result<Value, String> {
     }
     let mut file = options.open(path).map_err(|e| e.to_string())?;
     let opened = file.metadata().map_err(|e| e.to_string())?;
-    if !opened.is_file() || file_identity(&opened) != file_identity(&before) {
+    if !opened.is_file()
+        || opened.len() > MAX_RESERVATION_BYTES
+        || file_identity(&opened) != file_identity(&before)
+    {
         return Err("quarantine intent changed while opening".into());
     }
     let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    (&mut file)
+        .take(MAX_RESERVATION_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > MAX_RESERVATION_BYTES {
+        return Err("quarantine intent exceeds its bounded size".into());
+    }
     let after = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
     if after.file_type().is_symlink()
         || !after.is_file()
