@@ -457,8 +457,25 @@ fn ordinary_action_view_omits_inapplicable_contradiction_and_refuses_stale_retur
     let permit: Value = serde_json::from_slice(&out.stdout).unwrap();
     let output = fixture.run_route(&permit["nextAction"]);
     assert!(output.status.success(), "{}", text(&output));
-    assert!(output.stdout.len() <= 8192, "{} bytes", output.stdout.len());
     let current: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(current["compact"], true);
+    let mut navigation = current.clone();
+    let guidance = navigation.as_object_mut().unwrap().remove("guidance");
+    let navigation_bytes = serde_json::to_vec(&navigation).unwrap().len() + 1;
+    assert!(
+        navigation_bytes <= 8192,
+        "action navigation is {navigation_bytes} bytes"
+    );
+    let guidance_bytes = if let Some(guidance) = guidance {
+        assert!(
+            guidance["usedBytes"].as_u64().unwrap() <= guidance["budgetBytes"].as_u64().unwrap(),
+            "delivered guidance exceeded its recipient budget: {guidance}"
+        );
+        b",\"guidance\":".len() + serde_json::to_vec(&guidance).unwrap().len()
+    } else {
+        0
+    };
+    assert_eq!(navigation_bytes + guidance_bytes, output.stdout.len());
     assert_ne!(current["binding"], before["binding"]);
     assert!(current["effectiveAction"]["currentGrant"].is_object());
     let ledger = format!(

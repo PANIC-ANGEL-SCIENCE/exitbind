@@ -334,8 +334,36 @@ impl Fixture {
     /// which configuration that is.
     fn session_names(&self, context: &str, config: &str, from: &str) {
         let line = format!("Configuration used: the --config path above {from}");
-        assert!(context.contains(&line), "{context}");
+        let (tight, other_full, other_tight) = match from {
+            OWNER_FROM => (
+                "Config above: native Goal owner.",
+                "Configuration used: the --config path above (working directory).",
+                "Config via cwd.",
+            ),
+            CWD_FROM => (
+                "Config via cwd.",
+                "Configuration used: the --config path above (native Goal owner).",
+                "Config above: native Goal owner.",
+            ),
+            _ => panic!("unknown configuration provenance: {from}"),
+        };
+        assert!(
+            context.contains(&line) || context.contains(tight),
+            "{context}"
+        );
+        assert!(!context.contains(other_full), "{context}");
+        assert!(!context.contains(other_tight), "{context}");
         assert!(context.contains(&format!("--config {config}")), "{context}");
+        for operation in [
+            " work resume --json --config ",
+            " project context --json --config ",
+        ] {
+            let route = context
+                .split('`')
+                .find(|part| part.contains(operation))
+                .unwrap_or_else(|| panic!("missing {operation} route: {context}"));
+            assert!(route.ends_with(&format!("--config {config}")), "{route}");
+        }
     }
 
     fn decoy_config(&self) -> String {
@@ -590,7 +618,11 @@ fn a_configuration_offered_by_path_alone_is_never_adopted() {
         fixture.hook(&fixture.decoy, Some(SESSION), payload("SubagentStop")),
         None
     );
-    assert_eq!(fixture.children()[0]["nativeChild"], CHILD);
+    let children = fixture.children();
+    assert_eq!(children.len(), 1, "{children:?}");
+    assert_eq!(children[0]["nativeChild"], CHILD);
+    assert_eq!(children[0]["resultText"], RESULT);
+    assert_eq!(children[0]["origin"]["session"], SESSION);
     assert_eq!(
         files_under(&fixture.decoy),
         decoy_before,
