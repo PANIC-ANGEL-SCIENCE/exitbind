@@ -25,18 +25,36 @@ pub(crate) const COVERAGE: &str = "product-root-files-v1";
 pub(crate) fn covered_file(loaded: &crate::config::Loaded, path: &str) -> Result<bool, String> {
     let root = &loaded.product_root;
     let wanted = root.join(path).canonicalize().map_err(|e| e.to_string())?;
-    let paths = match crate::project::git_preflight::worktree_root(root)? {
-        Some(_) => git_paths(root)?,
-        None => walk_paths(root)?,
+    let mut budget = active_resume_budget();
+    let paths = match tested_paths(root, budget.as_mut()) {
+        Ok(paths) => paths,
+        Err(error) => {
+            if let Some(budget) = budget.as_mut() {
+                record_resume_error(budget, &error);
+            }
+            return Err(error);
+        }
     };
-    Ok(paths
-        .into_iter()
-        .filter(|relative| !excluded(root, &loaded.state_root, relative))
-        .any(|relative| {
-            root.join(relative)
+    if let Some(budget) = budget.as_mut() {
+        if paths.len() > WALK_PATH_LIMIT {
+            budget.mark_limited("fingerprint_path_limit_exceeded");
+            return Err("fingerprint_path_limit_exceeded".into());
+        }
+    }
+    for relative in paths {
+        if let Some(budget) = budget.as_mut() {
+            budget.check().map_err(str::to_owned)?;
+        }
+        if !excluded(root, &loaded.state_root, &relative)
+            && root
+                .join(relative)
                 .canonicalize()
                 .is_ok_and(|candidate| candidate == wanted)
-        }))
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 const EXCLUDED_DIRS: [&str; 3] = [".git", ".exitbind", ".soulmate"];
@@ -88,7 +106,7 @@ pub(crate) fn with_resume_budget<T>(
     operation(budget)
 }
 
-fn active_resume_budget() -> Option<ResumeInputBudget> {
+pub(crate) fn active_resume_budget() -> Option<ResumeInputBudget> {
     ACTIVE_RESUME_BUDGETS.with(|budgets| budgets.borrow().last().cloned())
 }
 
@@ -209,24 +227,7 @@ fn fingerprint_with_exclusions_for_resume(
     let digest = match fingerprint_impl(loaded, Some(budget), excluded) {
         Ok(digest) => digest,
         Err(error) => {
-            let reason = match error.as_str() {
-                "git_listing_deadline_exceeded" => Some("git_listing_deadline_exceeded"),
-                "git_listing_output_limit_exceeded" => Some("git_listing_output_limit_exceeded"),
-                "fingerprint_path_limit_exceeded" => Some("fingerprint_path_limit_exceeded"),
-                "fingerprint_directory_limit_exceeded" => {
-                    Some("fingerprint_directory_limit_exceeded")
-                }
-                "fingerprint_byte_limit_exceeded" => Some("fingerprint_byte_limit_exceeded"),
-                "resume_deadline_exceeded" => Some("resume_deadline_exceeded"),
-                _ => None,
-            };
-            if budget.limited_reason().is_none() {
-                if let Some(reason) = reason {
-                    budget.mark_limited(reason);
-                } else {
-                    budget.mark_unavailable(error.clone());
-                }
-            }
+            record_resume_error(budget, &error);
             return Err(error);
         }
     };
@@ -237,6 +238,25 @@ fn fingerprint_with_exclusions_for_resume(
         state.cached.insert(key, digest.clone());
     }
     Ok(digest)
+}
+
+fn record_resume_error(budget: &mut ResumeInputBudget, error: &str) {
+    let reason = match error {
+        "git_listing_deadline_exceeded" => Some("git_listing_deadline_exceeded"),
+        "git_listing_output_limit_exceeded" => Some("git_listing_output_limit_exceeded"),
+        "fingerprint_path_limit_exceeded" => Some("fingerprint_path_limit_exceeded"),
+        "fingerprint_directory_limit_exceeded" => Some("fingerprint_directory_limit_exceeded"),
+        "fingerprint_byte_limit_exceeded" => Some("fingerprint_byte_limit_exceeded"),
+        "resume_deadline_exceeded" => Some("resume_deadline_exceeded"),
+        _ => None,
+    };
+    if budget.limited_reason().is_none() {
+        if let Some(reason) = reason {
+            budget.mark_limited(reason);
+        } else {
+            budget.mark_unavailable(error.to_owned());
+        }
+    }
 }
 
 pub(crate) fn fingerprint_for_state_resume(
@@ -254,37 +274,7 @@ fn fingerprint_impl(
     excluded_paths: &BTreeSet<String>,
 ) -> Result<String, String> {
     let root = &loaded.product_root;
-    let worktree = if let Some(budget) = budget.as_deref_mut() {
-        match crate::project::git_preflight::worktree_root_bounded(root, budget.deadline()) {
-            Ok(worktree) => worktree,
-            Err(error) => {
-                if error.starts_with("git_classification_deadline_exceeded") {
-                    budget.mark_limited("git_classification_deadline_exceeded");
-                } else if error.starts_with("git_classification_cancelled") {
-                    budget.mark_limited("resume_cancelled");
-                } else if error.starts_with("git_classification_stdout_limit_exceeded")
-                    || error.starts_with("git_classification_stderr_limit_exceeded")
-                {
-                    budget.mark_limited("git_classification_output_limit_exceeded");
-                } else if error.starts_with("git_classification_cleanup_incomplete") {
-                    budget.mark_limited("git_classification_cleanup_incomplete");
-                }
-                return Err(error);
-            }
-        }
-    } else {
-        crate::project::git_preflight::worktree_root(root)?
-    };
-    let mut paths = match worktree {
-        Some(_) => match budget.as_deref_mut() {
-            Some(budget) => git_paths_bounded(root, budget)?,
-            None => git_paths(root)?,
-        },
-        None => match budget.as_deref_mut() {
-            Some(budget) => walk_paths_bounded(root, budget)?,
-            None => walk_paths(root)?,
-        },
-    };
+    let mut paths = tested_paths(root, budget.as_deref_mut())?;
     paths.retain(|path| {
         !excluded(root, &loaded.state_root, path)
             && path
@@ -340,6 +330,46 @@ fn fingerprint_impl(
     Ok(crate::evidence::hash::value(
         &json!({"coverage": COVERAGE, "entries": Value::Array(entries)}),
     ))
+}
+
+/// Enumerate the tested paths with the same cooperative limits for both a
+/// resume fingerprint and a checker-coverage read reached by that resume.
+fn tested_paths(
+    root: &Path,
+    mut budget: Option<&mut ResumeInputBudget>,
+) -> Result<Vec<PathBuf>, String> {
+    let worktree = if let Some(budget) = budget.as_deref_mut() {
+        budget.check().map_err(str::to_owned)?;
+        match crate::project::git_preflight::worktree_root_bounded(root, budget.deadline()) {
+            Ok(worktree) => worktree,
+            Err(error) => {
+                if error.starts_with("git_classification_deadline_exceeded") {
+                    budget.mark_limited("git_classification_deadline_exceeded");
+                } else if error.starts_with("git_classification_cancelled") {
+                    budget.mark_limited("resume_cancelled");
+                } else if error.starts_with("git_classification_stdout_limit_exceeded")
+                    || error.starts_with("git_classification_stderr_limit_exceeded")
+                {
+                    budget.mark_limited("git_classification_output_limit_exceeded");
+                } else if error.starts_with("git_classification_cleanup_incomplete") {
+                    budget.mark_limited("git_classification_cleanup_incomplete");
+                }
+                return Err(error);
+            }
+        }
+    } else {
+        crate::project::git_preflight::worktree_root(root)?
+    };
+    match worktree {
+        Some(_) => match budget.as_deref_mut() {
+            Some(budget) => git_paths_bounded(root, budget),
+            None => git_paths(root),
+        },
+        None => match budget.as_deref_mut() {
+            Some(budget) => walk_paths_bounded(root, budget),
+            None => walk_paths(root),
+        },
+    }
 }
 
 fn hash_file_bounded(

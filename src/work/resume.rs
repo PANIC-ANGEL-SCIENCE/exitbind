@@ -20,7 +20,10 @@ struct SupersessionStatus {
 const MAX_DISCOVERED_WORK_LEDGERS: usize = 128;
 
 pub(crate) fn resume(loaded: &Loaded, history: bool) -> Result<Value, String> {
-    let mut budget = run::inputs::ResumeInputBudget::new();
+    // CLI resume keeps this same budget active through native display refresh;
+    // direct internal calls still own a fresh, independently scoped budget.
+    let mut budget =
+        run::inputs::active_resume_budget().unwrap_or_else(run::inputs::ResumeInputBudget::new);
     // The same cooperative budget covers snapshots and every transitive
     // read-only Goal/Work fingerprint reached while assembling this response.
     let result =

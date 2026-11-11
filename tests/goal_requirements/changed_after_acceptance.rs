@@ -146,3 +146,101 @@ fn named_requirement_projection_obeys_resume_input_budget() {
     );
     assert!(limited["presentation"]["terminal"].is_null());
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn resume_interrupts_delayed_git_listing_for_named_checker_coverage() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let p = Project::new("named-resume-slow-checker-listing");
+    let git = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+        .map(|dir| dir.join("git"))
+        .find(|path| path.is_file())
+        .expect("Git is required for this fixture")
+        .canonicalize()
+        .unwrap();
+    let init = support::git_topology::command(&git)
+        .current_dir(&p.root)
+        .args(["init", "-q"])
+        .output()
+        .unwrap();
+    assert!(init.status.success(), "{init:?}");
+    p.setup();
+    let accepted = p.begin("R1", "sh check.sh R1");
+    p.drive(&accepted, true);
+    p.value(
+        &[
+            "goal",
+            "assign",
+            "--goal-id",
+            "import",
+            "--requirement",
+            "R1",
+            "--result-ref",
+            &accepted,
+        ],
+        None,
+    );
+    let blocked = p.begin("R2", "sh check.sh R2");
+    let next = p.value(&["work", "next", &blocked, "--json", "--full"], None);
+    p.return_stage_with_config(
+        &blocked,
+        &next["next"],
+        "blocked",
+        &p.root.join("exitbind.json"),
+    );
+
+    let wrapper = p._base.join("git-wrapper");
+    fs::create_dir(&wrapper).unwrap();
+    let script = wrapper.join("git");
+    fs::write(
+        &script,
+        "#!/bin/sh\ncase \" $* \" in\n *\" ls-files \"*\" --others \"*)\n  if [ ! -e \"$R65_FIRST\" ]; then : > \"$R65_FIRST\"; elif [ ! -e \"$R65_SECOND\" ]; then : > \"$R65_SECOND\"; sleep 4; : > \"$R65_FINISHED\"; fi;;\nesac\nexec \"$R65_REAL_GIT\" \"$@\"\n",
+    )
+    .unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
+    let first = p._base.join("first");
+    let second = p._base.join("second");
+    let finished = p._base.join("finished");
+    let path = std::env::join_paths(
+        std::iter::once(wrapper).chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+    )
+    .unwrap();
+    let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
+    command
+        .current_dir(&p.root)
+        .args(["work", "resume", "--json", "--config"])
+        .arg(p.root.join("exitbind.json"))
+        .env_remove("CODEX_THREAD_ID")
+        .env_remove("CODEX_SESSION_ID")
+        .env_remove("CLAUDE_CODE_SESSION_ID")
+        .env_remove("EXITBIND_NATIVE_SESSION_ID")
+        .env("EXITBIND_SESSION_GOALS_DIR", &p.fixture_store)
+        .env("EXITBIND_NO_UPDATE_CHECK", "1")
+        .env("PATH", path)
+        .env("R65_REAL_GIT", git)
+        .env("R65_FIRST", &first)
+        .env("R65_SECOND", &second)
+        .env("R65_FINISHED", &finished);
+    let output = support::run(&mut command);
+    assert!(output.status.success(), "{output:?}");
+    let resumed: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(
+        first.exists() && second.exists(),
+        "the delayed checker listing must run"
+    );
+    assert!(
+        !finished.exists(),
+        "the delayed owned Git child must be interrupted"
+    );
+    assert_eq!(resumed["status"], "unresolved", "{resumed}");
+    assert_eq!(resumed["reason"]["code"], "discovery_limited", "{resumed}");
+    assert!(
+        matches!(
+            resumed["discovery"]["limitedReason"].as_str(),
+            Some("git_listing_deadline_exceeded" | "resume_deadline_exceeded")
+        ),
+        "{resumed}"
+    );
+    assert!(resumed["presentation"]["terminal"].is_null());
+}

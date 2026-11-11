@@ -1,7 +1,41 @@
 //! Resume must bound Goal projection as well as its initial Work scan.
 use crate::fixture::Project;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::{fs, io::Write, process::Stdio};
+
+#[cfg(target_os = "linux")]
+struct OpenWatch(std::os::fd::RawFd);
+
+#[cfg(target_os = "linux")]
+impl OpenWatch {
+    fn new(path: &std::path::Path) -> Self {
+        use std::os::unix::ffi::OsStrExt;
+        let path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+        // The owned descriptor is closed in Drop; the watched path belongs to
+        // this isolated fixture and IN_OPEN observes reads without reading it.
+        let fd = unsafe { libc::inotify_init1(libc::IN_NONBLOCK | libc::IN_CLOEXEC) };
+        assert!(fd >= 0, "{}", std::io::Error::last_os_error());
+        let result = unsafe { libc::inotify_add_watch(fd, path.as_ptr(), libc::IN_OPEN) };
+        assert!(result >= 0, "{}", std::io::Error::last_os_error());
+        Self(fd)
+    }
+
+    fn assert_unopened(&self) {
+        let mut events = [0u8; 1024];
+        let count = unsafe { libc::read(self.0, events.as_mut_ptr().cast(), events.len()) };
+        assert!(
+            count == -1 && std::io::Error::last_os_error().kind() == std::io::ErrorKind::WouldBlock,
+            "resume opened the oversized tested input after refusing it; event bytes={count}"
+        );
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for OpenWatch {
+    fn drop(&mut self) {
+        unsafe { libc::close(self.0) };
+    }
+}
 
 fn in_session(project: &Project, session: &str, args: &[&str]) -> Value {
     project.value_in_session("codex", session, &project.session_store, args)
@@ -140,6 +174,8 @@ fn blocked_terminal_goal_projection_obeys_resume_input_limit() {
         .unwrap()
         .set_len(16 * 1024 * 1024 + 1)
         .unwrap();
+    #[cfg(target_os = "linux")]
+    let watch = OpenWatch::new(&project.root.join("large"));
     let limited = in_session(&project, session, &["work", "resume", "--json"]);
     assert_eq!(limited["status"], "unresolved", "{limited}");
     assert_eq!(limited["reason"]["code"], "discovery_limited");
@@ -149,6 +185,25 @@ fn blocked_terminal_goal_projection_obeys_resume_input_limit() {
     );
     assert_eq!(limited["discovery"]["complete"], false);
     assert!(limited["presentation"]["terminal"].is_null());
+    #[cfg(target_os = "linux")]
+    watch.assert_unopened();
+
+    let key = crate::fixture::digest_value(&json!({"host":"codex","identity":session}));
+    let display: Value = serde_json::from_slice(
+        &fs::read(
+            project
+                .session_store
+                .join("display")
+                .join(format!("{key}.json")),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(display["goalId"], "resume-budget");
+    assert_eq!(display["journal"], "session");
+    assert_eq!(display["state"], "open");
+    assert!(display.get("requirements").is_none(), "{display}");
+    assert!(display.get("met").is_none(), "{display}");
 }
 
 #[test]

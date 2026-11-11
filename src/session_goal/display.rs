@@ -63,8 +63,19 @@ pub(crate) fn build(
             "state":"none","revision":Value::Null,"writtenAt":now}),
         );
     };
+    let limited_resume = || {
+        crate::run::inputs::active_resume_budget()
+            .and_then(|mut budget| budget.limited_reason())
+            .is_some()
+    };
+    if limited_resume() {
+        return Ok(metadata_only(&record, journal, host, now));
+    }
     let presentation =
         super::presentation_for_selected(loaded, Some(&record), root, journal == Journal::Project)?;
+    if limited_resume() {
+        return Ok(metadata_only(&record, journal, host, now));
+    }
     let progress = &presentation["goalProgress"];
     let closed = record["closure"]["closed"] == true;
     let requirements = progress["tasks"]
@@ -114,6 +125,16 @@ pub(crate) fn build(
         "currentWork":current_work,"nextAction":next,"lessonCount":lessons,
         "revision":record["revision"],"eventSha256":record["eventSha256"],"writtenAt":now,
     }))
+}
+
+/// The same metadata-only shape used by native recovery when current task
+/// evidence is unavailable. Preserve the selected journal and Goal identity
+/// without presenting historical task counts as a fresh observation.
+fn metadata_only(record: &Value, journal: Journal, host: &str, now: &str) -> Value {
+    json!({"kind":KIND,"version":1,"host":host,"journal":journal.name(),
+        "state":if record["closure"]["closed"] == true {"closed"} else {"open"},
+        "goalId":record["goalId"],"goal":bounded(record["goal"].as_str().unwrap_or_default()),
+        "revision":record["revision"],"eventSha256":record["eventSha256"],"writtenAt":now})
 }
 
 fn closing_route(record: &Value, progress: &Value) -> Value {

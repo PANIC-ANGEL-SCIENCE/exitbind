@@ -299,6 +299,12 @@ fn configured_command(command: &str, a: &Arguments) -> Result<(), String> {
         "run" => run_cli::run_command(&loaded, a),
         "away" => away_command(&loaded, a),
         "migrate" => migrate_command(&loaded, a),
+        "work" if a.positional.first().map(String::as_str) == Some("resume") => {
+            let mut budget = run::inputs::ResumeInputBudget::new();
+            run::inputs::with_resume_budget(&mut budget, |_| {
+                native_display::after_work(&loaded, a, work::work_command(&loaded, a))
+            })
+        }
         "work" => native_display::after_work(&loaded, a, work::work_command(&loaded, a)),
         "project" => project::command(&loaded, a),
         _ => Err(format!("unknown command '{command}'")),
