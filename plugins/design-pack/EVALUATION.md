@@ -20,7 +20,7 @@ These are test briefs and failure conditions, not completed trials or a quality 
 | Matched series | Shared clean assets and coherent screen system, distinct board roles | Same palette but different object identity, or repeated equal phones without new evidence |
 | Local copy/layout correction | Relevant source layer changed, protected image regions compared | Repeated whole-board generation softens the photo while corrected labels mask the loss |
 | Exact output frame | Native dimensions measured; derivative transforms separately identified | Stretched or cropped raster passed off as compliant native output |
-| Korean/Latin typography | Actual words, weight, line silhouette and fallback inspected | Face name substitutes for glyph evidence |
+| Required-script and mixed-script typography | Actual words, weight, line silhouette and fallback inspected | Face name substitutes for glyph evidence |
 | Functional tests pass but central craft goal fails | Work remains in rework with a visible reason and a suitable next construction | Correct clicks, labels or dimensions turn the central aesthetic failure into a nonblocker |
 | Production order is uncertain | Asset-first, composition-first or coupled work chosen from actual risk | A clean-master method becomes a mandate to finalize imagery before composition |
 | Exploratory generation | Brief content, causal visual relationships and real constraints leave room to compose | Unrequested coordinate recipes or accumulated criticism dictate every rectangle |

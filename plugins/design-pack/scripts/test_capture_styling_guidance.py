@@ -1,13 +1,22 @@
 #!/usr/bin/env python3
 """Written capture contracts and synthetic declarations, never image scoring."""
-import json
 from pathlib import Path
-import tempfile
 import unittest
 
-from check_outcome import check
-from test_attitude_guidance import outcome_fixture
-from test_check_run import PNG
+from outcome_test_support import PNG, SyntheticOutcomeCase, add_requirement
+from capture_outcome_fixtures import (
+    capture_fixture,
+    scene_reset_fixture,
+    supporting_artifact_fixture,
+    fashion_fidelity_fixture,
+    material_continuity_fixture,
+    framing_mode_fixture,
+    presentation_fixture,
+    subject_continuity_fixture,
+    outfit_intent_fixture,
+    request_context_fixture
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 GUIDANCE = ROOT / 'skills/mockup-image/references/capture-styling.md'
@@ -111,62 +120,40 @@ class CaptureStylingGuidanceTests(unittest.TestCase):
             self.assertIn(cue, text)
 
 
-def capture_fixture():
-    """Only declaration logic; the PNG signature does not depict a photograph."""
-    data = outcome_fixture()
-    for axis in ('framing-fit', 'lighting-fit', 'styling-fit'):
-        data['requirements'].append({
-            'id': axis, 'category': 'other',
-            'instruction': 'Synthetic brief requires ' + axis + '.',
-            'targets': [{'artifact_id': 'sample', 'location': axis}]})
-        data['checks'].append({
-            'requirement_id': axis, 'artifact_id': 'sample', 'location': axis,
-            'result': 'pass', 'view_ids': ['sample-view'],
-            'observation': 'Synthetic declared ' + axis + '; no visual judgment performed.'})
-    return data
+class IndependentCaptureStylingOutcomes(SyntheticOutcomeCase):
+    fixture = staticmethod(capture_fixture)
+    temp_prefix = 'capture-styling-contract-'
 
-
-class IndependentCaptureStylingOutcomes(unittest.TestCase):
-    def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='capture-styling-contract-')
-        self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
-        (self.root / 'sample.png').write_bytes(PNG)
-        self.data = capture_fixture()
-
-    def result(self):
-        (self.root / 'outcome.json').write_text(json.dumps(self.data))
-        return check(self.root, 'outcome.json')
 
     def test_complete_declared_record_passes_without_visual_claim(self):
         self.assertEqual(self.result(), [])
 
     def test_framing_failure_not_overridden_by_other_passes(self):
-        self.data['checks'][-3].update(result='fail')
+        self.check_for('framing-fit').update(result='fail')
         self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_lighting_failure_not_overridden_by_texture_pass(self):
-        self.data['checks'][-2].update(result='fail')
+        self.check_for('lighting-fit').update(result='fail')
         self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_styling_failure_not_overridden_by_face_pass(self):
-        self.data['checks'][-1].update(result='fail')
+        self.check_for('styling-fit').update(result='fail')
         self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_unreviewed_axes_block_ready(self):
-        for index in (-3, -2, -1):
-            with self.subTest(index=index):
+        for requirement_id in ('framing-fit', 'lighting-fit', 'styling-fit'):
+            with self.subTest(requirement_id=requirement_id):
                 self.data = capture_fixture()
-                self.data['checks'][index].update(result='not-tested', view_ids=[])
+                self.check_for(requirement_id).update(result='not-tested', view_ids=[])
                 self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_missing_declared_check_is_rejected(self):
-        self.data['checks'].pop()
+        self.remove_check('styling-fit')
         self.assertTrue(self.result())
 
     def test_honest_rework_is_valid(self):
         self.data['status'] = 'rework'
-        self.data['checks'][-2].update(result='fail')
+        self.check_for('lighting-fit').update(result='fail')
         self.assertEqual(self.result(), [])
 
     def test_commercial_clean_or_simple_is_not_globally_rejected(self):
@@ -174,14 +161,13 @@ class IndependentCaptureStylingOutcomes(unittest.TestCase):
                             'bright clean room lighting fits the task',
                             'simple fixed outfit fits the task'):
             with self.subTest(declaration=declaration):
-                self.data['checks'][-1]['observation'] = 'Synthetic declared ' + declaration + '.'
+                self.check_for('styling-fit')['observation'] = 'Synthetic declared ' + declaration + '.'
                 self.assertEqual(self.result(), [])
 
     def test_frozen_failure_is_rework_not_edit_authority(self):
         self.data.update(mode='frozen-trial', status='rework')
-        self.data['checks'][-3].update(result='fail')
+        self.check_for('framing-fit').update(result='fail')
         self.assertEqual(self.result(), [])
-
 
 
 # These guards protect written workflow boundaries, not aesthetic behavior.
@@ -270,60 +256,39 @@ class SceneResetGuidanceTests(unittest.TestCase):
             self.assertIn(cue, text)
 
 
-def scene_reset_fixture():
-    data = capture_fixture()
-    for axis in ('reset-subject', 'reset-outfit', 'reset-space', 'scene-coherence'):
-        data['requirements'].append({
-            'id': axis, 'category': 'other',
-            'instruction': 'Synthetic scoped requirement: ' + axis + '.',
-            'targets': [{'artifact_id': 'sample', 'location': axis}]})
-        data['checks'].append({
-            'requirement_id': axis, 'artifact_id': 'sample', 'location': axis,
-            'result': 'pass', 'view_ids': ['sample-view'],
-            'observation': 'Synthetic declared ' + axis + '; no image comparison performed.'})
-    return data
+class IndependentSceneResetOutcomes(SyntheticOutcomeCase):
+    fixture = staticmethod(scene_reset_fixture)
+    temp_prefix = 'scene-reset-contract-'
 
-
-class IndependentSceneResetOutcomes(unittest.TestCase):
-    def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='scene-reset-contract-')
-        self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
-        (self.root / 'sample.png').write_bytes(PNG)
-        self.data = scene_reset_fixture()
-
-    def result(self):
-        (self.root / 'outcome.json').write_text(json.dumps(self.data))
-        return check(self.root, 'outcome.json')
 
     def test_complete_declared_reset_passes_without_visual_claim(self):
         self.assertEqual(self.result(), [])
 
     def test_each_failed_reset_axis_blocks_ready(self):
-        for index in (-4, -3, -2):
-            with self.subTest(index=index):
+        for requirement_id in ('reset-subject', 'reset-outfit', 'reset-space'):
+            with self.subTest(requirement_id=requirement_id):
                 self.data = scene_reset_fixture()
-                self.data['checks'][index].update(result='fail')
+                self.check_for(requirement_id).update(result='fail')
                 self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_component_passes_do_not_override_scene_failure(self):
-        self.data['checks'][-1].update(result='fail')
+        self.check_for('scene-coherence').update(result='fail')
         self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_each_untested_scene_axis_blocks_ready(self):
-        for index in (-4, -3, -2, -1):
-            with self.subTest(index=index):
+        for requirement_id in ('reset-subject', 'reset-outfit', 'reset-space', 'scene-coherence'):
+            with self.subTest(requirement_id=requirement_id):
                 self.data = scene_reset_fixture()
-                self.data['checks'][index].update(result='not-tested', view_ids=[])
+                self.check_for(requirement_id).update(result='not-tested', view_ids=[])
                 self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_missing_scene_check_is_rejected(self):
-        self.data['checks'].pop()
+        self.remove_check('scene-coherence')
         self.assertTrue(self.result())
 
     def test_honest_scene_rework_is_valid(self):
         self.data.update(status='rework')
-        self.data['checks'][-1].update(result='fail')
+        self.check_for('scene-coherence').update(result='fail')
         self.assertEqual(self.result(), [])
 
     def test_retained_explicit_constants_are_not_globally_rejected(self):
@@ -331,14 +296,13 @@ class IndependentSceneResetOutcomes(unittest.TestCase):
                             'current adult life-stage and restrained expression preserved',
                             'a narrow repair preserves the fixed outfit'):
             with self.subTest(declaration=declaration):
-                self.data['checks'][-1]['observation'] = 'Synthetic declared ' + declaration + '.'
+                self.check_for('scene-coherence')['observation'] = 'Synthetic declared ' + declaration + '.'
                 self.assertEqual(self.result(), [])
 
     def test_frozen_scene_failure_is_not_repair_authority(self):
         self.data.update(mode='frozen-trial', status='rework')
-        self.data['checks'][-1].update(result='fail')
+        self.check_for('scene-coherence').update(result='fail')
         self.assertEqual(self.result(), [])
-
 
 
 SUPPORT_CONTRACTS = {
@@ -416,61 +380,30 @@ class SupportingArtifactAndLightGuidanceTests(unittest.TestCase):
             self.assertIn(cue, limits)
 
 
-def supporting_artifact_fixture():
-    # Two synthetic signature-only files exercise binding, not artwork perception.
-    data = capture_fixture()
-    sample_hash = data['artifacts'][0]['sha256']
-    data['artifacts'].append({'id': 'support', 'kind': 'raster',
-                              'path': 'supporting-master.png', 'sha256': sample_hash,
-                              'produced_seq': 3})
-    data['views'].append({'id': 'support-view', 'artifact_id': 'support',
-                          'sha256': sample_hash, 'seq': 4, 'evidence_type': 'image-view',
-                          'view_tool_result_id': 'synthetic-not-executed', 'scale': 'use'})
-    for axis in ('artifact-master', 'depiction-fit', 'legibility-fit',
-                 'exposure-fit', 'capture-response'):
-        target = 'support' if axis == 'artifact-master' else 'sample'
-        data['requirements'].append({'id': axis, 'category': 'other',
-                                     'instruction': 'Synthetic scoped requirement: ' + axis + '.',
-                                     'targets': [{'artifact_id': target, 'location': axis}]})
-        data['checks'].append({'requirement_id': axis, 'artifact_id': target,
-                               'location': axis, 'result': 'pass',
-                               'view_ids': ['support-view' if target == 'support' else 'sample-view'],
-                               'observation': 'Synthetic declared ' + axis + '; no image perception performed.'})
-    return data
+class IndependentSupportingArtifactOutcomes(SyntheticOutcomeCase):
+    fixture = staticmethod(supporting_artifact_fixture)
+    temp_prefix = 'support-light-contract-'
 
-
-class IndependentSupportingArtifactOutcomes(unittest.TestCase):
-    def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='support-light-contract-')
-        self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
-        (self.root / 'sample.png').write_bytes(PNG)
-        (self.root / 'supporting-master.png').write_bytes(PNG)
-        self.data = supporting_artifact_fixture()
-
-    def result(self):
-        (self.root / 'outcome.json').write_text(json.dumps(self.data))
-        return check(self.root, 'outcome.json')
 
     def test_complete_declared_support_record_is_valid_without_visual_claim(self):
         self.assertEqual(self.result(), [])
 
     def test_each_failed_axis_blocks_ready_independently(self):
-        for index in (-5, -4, -3, -2, -1):
-            with self.subTest(index=index):
+        for requirement_id in ('artifact-master', 'depiction-fit', 'legibility-fit', 'exposure-fit', 'capture-response'):
+            with self.subTest(requirement_id=requirement_id):
                 self.data = supporting_artifact_fixture()
-                self.data['checks'][index].update(result='fail')
+                self.check_for(requirement_id).update(result='fail')
                 self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_untested_axis_blocks_ready(self):
-        for index in (-5, -4, -3, -2, -1):
-            with self.subTest(index=index):
+        for requirement_id in ('artifact-master', 'depiction-fit', 'legibility-fit', 'exposure-fit', 'capture-response'):
+            with self.subTest(requirement_id=requirement_id):
                 self.data = supporting_artifact_fixture()
-                self.data['checks'][index].update(result='not-tested', view_ids=[])
+                self.check_for(requirement_id).update(result='not-tested', view_ids=[])
                 self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_missing_depiction_check_is_rejected(self):
-        del self.data['checks'][-4]
+        self.remove_check('depiction-fit')
         self.assertTrue(self.result())
 
     def test_missing_bound_master_file_is_rejected(self):
@@ -483,7 +416,7 @@ class IndependentSupportingArtifactOutcomes(unittest.TestCase):
 
     def test_honest_depiction_rework_is_valid(self):
         self.data.update(status='rework')
-        self.data['checks'][-4].update(result='fail')
+        self.check_for('depiction-fit').update(result='fail')
         self.assertEqual(self.result(), [])
 
     def test_brief_permitted_graphics_and_clean_response_are_not_globally_rejected(self):
@@ -491,14 +424,13 @@ class IndependentSupportingArtifactOutcomes(unittest.TestCase):
                             'small coherent fragment needs no readable words',
                             'clean low-light capture fits the evidence'):
             with self.subTest(observation=observation):
-                self.data['checks'][-3]['observation'] = 'Synthetic declared ' + observation + '.'
+                self.check_for('legibility-fit')['observation'] = 'Synthetic declared ' + observation + '.'
                 self.assertEqual(self.result(), [])
 
     def test_frozen_depiction_failure_remains_rework_without_edit_permission(self):
         self.data.update(mode='frozen-trial', status='rework')
-        self.data['checks'][-4].update(result='fail')
+        self.check_for('depiction-fit').update(result='fail')
         self.assertEqual(self.result(), [])
-
 
 
 FIDELITY_CONTRACTS = {
@@ -568,58 +500,39 @@ class ReferenceFashionFidelityGuidanceTests(unittest.TestCase):
             self.assertIn(cue, text)
 
 
-def fashion_fidelity_fixture():
-    data = capture_fixture()
-    for axis in ('reference-fashion-fit', 'construction-fit', 'garment-visibility'):
-        data['requirements'].append({'id': axis, 'category': 'other',
-                                     'instruction': 'Synthetic scoped requirement: ' + axis + '.',
-                                     'targets': [{'artifact_id': 'sample', 'location': axis}]})
-        data['checks'].append({'requirement_id': axis, 'artifact_id': 'sample',
-                               'location': axis, 'result': 'pass', 'view_ids': ['sample-view'],
-                               'observation': 'Synthetic declared ' + axis + '; no reference comparison performed.'})
-    return data
+class IndependentReferenceFashionOutcomes(SyntheticOutcomeCase):
+    fixture = staticmethod(fashion_fidelity_fixture)
+    temp_prefix = 'reference-fashion-contract-'
 
-
-class IndependentReferenceFashionOutcomes(unittest.TestCase):
-    def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='reference-fashion-contract-')
-        self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
-        (self.root / 'sample.png').write_bytes(PNG)
-        self.data = fashion_fidelity_fixture()
-
-    def result(self):
-        (self.root / 'outcome.json').write_text(json.dumps(self.data))
-        return check(self.root, 'outcome.json')
 
     def test_complete_declared_fidelity_record_passes_without_visual_claim(self):
         self.assertEqual(self.result(), [])
 
     def test_each_failed_fashion_axis_blocks_ready_despite_casting_pass(self):
-        for index in (-3, -2, -1):
-            with self.subTest(index=index):
+        for requirement_id in ('reference-fashion-fit', 'construction-fit', 'garment-visibility'):
+            with self.subTest(requirement_id=requirement_id):
                 self.data = fashion_fidelity_fixture()
-                self.data['checks'][index].update(result='fail')
+                self.check_for(requirement_id).update(result='fail')
                 self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_fashion_pass_does_not_override_casting_failure(self):
-        self.data['checks'][0].update(result='fail')
+        self.check_for('age-fit').update(result='fail')
         self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_untested_fashion_axes_block_ready(self):
-        for index in (-3, -2, -1):
-            with self.subTest(index=index):
+        for requirement_id in ('reference-fashion-fit', 'construction-fit', 'garment-visibility'):
+            with self.subTest(requirement_id=requirement_id):
                 self.data = fashion_fidelity_fixture()
-                self.data['checks'][index].update(result='not-tested', view_ids=[])
+                self.check_for(requirement_id).update(result='not-tested', view_ids=[])
                 self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_missing_visibility_check_is_rejected(self):
-        self.data['checks'].pop()
+        self.remove_check('garment-visibility')
         self.assertTrue(self.result())
 
     def test_honest_fashion_failure_is_valid_rework(self):
         self.data.update(status='rework')
-        self.data['checks'][-3].update(result='fail')
+        self.check_for('reference-fashion-fit').update(result='fail')
         self.assertEqual(self.result(), [])
 
     def test_authorized_simple_or_decorative_choices_are_not_globally_rejected(self):
@@ -627,9 +540,8 @@ class IndependentReferenceFashionOutcomes(unittest.TestCase):
                             'user explicitly asked for simpler styling',
                             'decorative trim is intentional and visually coherent'):
             with self.subTest(observation=observation):
-                self.data['checks'][-3]['observation'] = 'Synthetic declared ' + observation + '.'
+                self.check_for('reference-fashion-fit')['observation'] = 'Synthetic declared ' + observation + '.'
                 self.assertEqual(self.result(), [])
-
 
 
 MATERIAL_CONTRACTS = {
@@ -692,58 +604,39 @@ class MaterialContinuityGuidanceTests(unittest.TestCase):
             self.assertIn(cue, text)
 
 
-def material_continuity_fixture():
-    data = capture_fixture()
-    for axis in ('material-response', 'garment-continuity', 'protected-region'):
-        data['requirements'].append({'id': axis, 'category': 'other',
-                                     'instruction': 'Synthetic scoped requirement: ' + axis + '.',
-                                     'targets': [{'artifact_id': 'sample', 'location': axis}]})
-        data['checks'].append({'requirement_id': axis, 'artifact_id': 'sample',
-                               'location': axis, 'result': 'pass', 'view_ids': ['sample-view'],
-                               'observation': 'Synthetic declared ' + axis + '; no material or pixel inspection performed.'})
-    return data
+class IndependentMaterialContinuityOutcomes(SyntheticOutcomeCase):
+    fixture = staticmethod(material_continuity_fixture)
+    temp_prefix = 'material-continuity-contract-'
 
-
-class IndependentMaterialContinuityOutcomes(unittest.TestCase):
-    def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='material-continuity-contract-')
-        self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
-        (self.root / 'sample.png').write_bytes(PNG)
-        self.data = material_continuity_fixture()
-
-    def result(self):
-        (self.root / 'outcome.json').write_text(json.dumps(self.data))
-        return check(self.root, 'outcome.json')
 
     def test_complete_declared_material_record_passes_without_visual_claim(self):
         self.assertEqual(self.result(), [])
 
     def test_material_and_continuity_failures_block_ready_independently(self):
-        for index in (-3, -2):
-            with self.subTest(index=index):
+        for requirement_id in ('material-response', 'garment-continuity'):
+            with self.subTest(requirement_id=requirement_id):
                 self.data = material_continuity_fixture()
-                self.data['checks'][index].update(result='fail')
+                self.check_for(requirement_id).update(result='fail')
                 self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_repair_pass_does_not_override_protected_region_failure(self):
-        self.data['checks'][-1].update(result='fail')
+        self.check_for('protected-region').update(result='fail')
         self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_untested_material_axes_block_ready(self):
-        for index in (-3, -2, -1):
-            with self.subTest(index=index):
+        for requirement_id in ('material-response', 'garment-continuity', 'protected-region'):
+            with self.subTest(requirement_id=requirement_id):
                 self.data = material_continuity_fixture()
-                self.data['checks'][index].update(result='not-tested', view_ids=[])
+                self.check_for(requirement_id).update(result='not-tested', view_ids=[])
                 self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_missing_protection_check_is_rejected(self):
-        self.data['checks'].pop()
+        self.remove_check('protected-region')
         self.assertTrue(self.result())
 
     def test_honest_continuity_failure_is_valid_rework(self):
         self.data.update(status='rework')
-        self.data['checks'][-2].update(result='fail')
+        self.check_for('garment-continuity').update(result='fail')
         self.assertEqual(self.result(), [])
 
     def test_quiet_finish_or_asymmetric_contact_is_not_globally_rejected(self):
@@ -751,14 +644,13 @@ class IndependentMaterialContinuityOutcomes(unittest.TestCase):
                             'asymmetric shoe contact follows the pose',
                             'panel seam ends intentionally before the hem'):
             with self.subTest(observation=observation):
-                self.data['checks'][-2]['observation'] = 'Synthetic declared ' + observation + '.'
+                self.check_for('garment-continuity')['observation'] = 'Synthetic declared ' + observation + '.'
                 self.assertEqual(self.result(), [])
 
     def test_frozen_continuity_failure_is_not_edit_authority(self):
         self.data.update(mode='frozen-trial', status='rework')
-        self.data['checks'][-2].update(result='fail')
+        self.check_for('garment-continuity').update(result='fail')
         self.assertEqual(self.result(), [])
-
 
 
 FRAMING_MODE_CONTRACTS = {
@@ -830,33 +722,10 @@ class SubjectFramingModeGuidanceTests(unittest.TestCase):
             self.assertIn(cue, limits)
 
 
-def framing_mode_fixture(mode='object-only'):
-    # The schema does not impose portrait-specific requirements on every record.
-    data = outcome_fixture()
-    data['requirements'] = []
-    data['checks'] = []
-    data['contract_source'] = 'Synthetic ' + mode + ' brief; no actual image classification.'
-    for axis in ('subject-mode', 'framing-evidence', 'content-evidence'):
-        data['requirements'].append({'id': axis, 'category': 'other',
-                                     'instruction': 'Synthetic ' + mode + ' requirement: ' + axis + '.',
-                                     'targets': [{'artifact_id': 'sample', 'location': axis}]})
-        data['checks'].append({'requirement_id': axis, 'artifact_id': 'sample',
-                               'location': axis, 'result': 'pass', 'view_ids': ['sample-view'],
-                               'observation': 'Synthetic declared ' + axis + '; no source or output inspection performed.'})
-    return data
+class IndependentSubjectFramingOutcomes(SyntheticOutcomeCase):
+    fixture = staticmethod(framing_mode_fixture)
+    temp_prefix = 'subject-framing-contract-'
 
-
-class IndependentSubjectFramingOutcomes(unittest.TestCase):
-    def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='subject-framing-contract-')
-        self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
-        (self.root / 'sample.png').write_bytes(PNG)
-        self.data = framing_mode_fixture()
-
-    def result(self):
-        (self.root / 'outcome.json').write_text(json.dumps(self.data))
-        return check(self.root, 'outcome.json')
 
     def test_varied_declared_modes_pass_without_visual_claim(self):
         for mode in ('portrait', 'outfit-led', 'wearer-view', 'object-only'):
@@ -872,36 +741,34 @@ class IndependentSubjectFramingOutcomes(unittest.TestCase):
                 self.assertEqual(self.result(), [])
 
     def test_wrong_declared_mode_blocks_ready(self):
-        self.data['checks'][0].update(result='fail', observation='Synthetic unrequested portrait replaces object-only frame.')
+        self.check_for('subject-mode').update(result='fail', observation='Synthetic unrequested portrait replaces object-only frame.')
         self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_hidden_required_portrait_content_blocks_ready(self):
         self.data = framing_mode_fixture('portrait')
-        self.data['checks'][-1].update(result='fail', observation='Synthetic required face evidence absent.')
+        self.check_for('content-evidence').update(result='fail', observation='Synthetic required face evidence absent.')
         self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_untested_mode_or_content_blocks_ready(self):
-        for index in (0, 1, 2):
-            with self.subTest(index=index):
+        for requirement_id in ('subject-mode', 'framing-evidence', 'content-evidence'):
+            with self.subTest(requirement_id=requirement_id):
                 self.data = framing_mode_fixture()
-                self.data['checks'][index].update(result='not-tested', view_ids=[])
+                self.check_for(requirement_id).update(result='not-tested', view_ids=[])
                 self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_missing_content_check_is_rejected(self):
-        self.data['checks'].pop()
+        self.remove_check('content-evidence')
         self.assertTrue(self.result())
 
     def test_honest_framing_failure_is_valid_rework(self):
         self.data.update(status='rework')
-        self.data['checks'][1].update(result='fail')
+        self.check_for('framing-evidence').update(result='fail')
         self.assertEqual(self.result(), [])
 
     def test_frozen_framing_failure_is_not_edit_authority(self):
         self.data.update(mode='frozen-trial', status='rework')
-        self.data['checks'][0].update(result='fail')
+        self.check_for('subject-mode').update(result='fail')
         self.assertEqual(self.result(), [])
-
-
 
 
 POSE_PRESENTATION_CONTRACTS = {
@@ -982,58 +849,35 @@ class PosePresentationGuidanceTests(unittest.TestCase):
             self.assertIn(cue, limits)
 
 
-def presentation_fixture(group=False):
-    # Generic optional declarations: no new image classifier or identity field.
-    data = framing_mode_fixture('task-selected person view')
-    axes = ['pose-distinction', 'presentation-fit', 'personal-detail-fit']
-    if group:
-        axes += ['people-count', 'individual-distinction', 'contact-coherence']
-    for axis in axes:
-        data['requirements'].append({'id': axis, 'category': 'other',
-                                     'instruction': 'Synthetic scoped ' + axis + '.',
-                                     'targets': [{'artifact_id': 'sample', 'location': axis}]})
-        data['checks'].append({'requirement_id': axis, 'artifact_id': 'sample',
-                               'location': axis, 'result': 'pass', 'view_ids': ['sample-view'],
-                               'observation': 'Synthetic declared ' + axis + '; no visual or identity verification.'})
-    return data
+class IndependentPosePresentationOutcomes(SyntheticOutcomeCase):
+    fixture = staticmethod(presentation_fixture)
+    temp_prefix = 'pose-presentation-contract-'
 
-
-class IndependentPosePresentationOutcomes(unittest.TestCase):
-    def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='pose-presentation-contract-')
-        self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
-        (self.root / 'sample.png').write_bytes(PNG)
-        self.data = presentation_fixture()
-
-    def result(self):
-        (self.root / 'outcome.json').write_text(json.dumps(self.data))
-        return check(self.root, 'outcome.json')
 
     def test_complete_declared_presentation_passes_without_visual_claim(self):
         self.assertEqual(self.result(), [])
 
     def test_repeated_pose_failure_not_overridden_by_new_person(self):
-        self.data['checks'][-3].update(result='fail')
+        self.check_for('pose-distinction').update(result='fail')
         self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_presentation_failure_not_overridden_by_identity_label(self):
-        self.data['checks'][-2].update(result='fail')
+        self.check_for('presentation-fit').update(result='fail')
         self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_required_personal_detail_failure_not_rescued_by_story(self):
-        self.data['checks'][-1].update(result='fail')
+        self.check_for('personal-detail-fit').update(result='fail')
         self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_untested_presentation_requirements_block_ready(self):
-        for index in (-3, -2, -1):
-            with self.subTest(index=index):
+        for requirement_id in ('pose-distinction', 'presentation-fit', 'personal-detail-fit'):
+            with self.subTest(requirement_id=requirement_id):
                 self.data = presentation_fixture()
-                self.data['checks'][index].update(result='not-tested', view_ids=[])
+                self.check_for(requirement_id).update(result='not-tested', view_ids=[])
                 self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_missing_personal_detail_check_is_rejected(self):
-        self.data['checks'].pop()
+        self.remove_check('personal-detail-fit')
         self.assertTrue(self.result())
 
     def test_back_view_no_tattoo_or_shared_gesture_not_globally_rejected(self):
@@ -1041,38 +885,37 @@ class IndependentPosePresentationOutcomes(unittest.TestCase):
                             'character chooses no tattoo',
                             'same gesture serves two differently presented characters'):
             with self.subTest(observation=observation):
-                self.data['checks'][-1]['observation'] = 'Synthetic declared ' + observation + '.'
+                self.check_for('personal-detail-fit')['observation'] = 'Synthetic declared ' + observation + '.'
                 self.assertEqual(self.result(), [])
 
     def test_honest_pose_failure_is_valid_rework(self):
         self.data.update(status='rework')
-        self.data['checks'][-3].update(result='fail')
+        self.check_for('pose-distinction').update(result='fail')
         self.assertEqual(self.result(), [])
 
     def test_group_axes_fail_independently(self):
-        for index in (-3, -2, -1):
-            with self.subTest(index=index):
+        for requirement_id in ('people-count', 'individual-distinction', 'contact-coherence'):
+            with self.subTest(requirement_id=requirement_id):
                 self.data = presentation_fixture(group=True)
-                self.data['checks'][index].update(result='fail')
+                self.check_for(requirement_id).update(result='fail')
                 self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_two_or_more_declared_people_not_rejected_by_minimum_three(self):
         for count in (2, 3, 5):
             with self.subTest(count=count):
                 self.data = presentation_fixture(group=True)
-                self.data['checks'][-3]['observation'] = 'Synthetic declared requested count ' + str(count) + '.'
+                self.check_for('people-count')['observation'] = 'Synthetic declared requested count ' + str(count) + '.'
                 self.assertEqual(self.result(), [])
 
     def test_missing_group_contact_check_is_rejected(self):
         self.data = presentation_fixture(group=True)
-        self.data['checks'].pop()
+        self.remove_check('contact-coherence')
         self.assertTrue(self.result())
 
     def test_frozen_pose_failure_is_rework_not_edit_authority(self):
         self.data.update(mode='frozen-trial', status='rework')
-        self.data['checks'][-3].update(result='fail')
+        self.check_for('pose-distinction').update(result='fail')
         self.assertEqual(self.result(), [])
-
 
 
 SUBJECT_CONTINUITY_CONTRACTS = {
@@ -1166,54 +1009,35 @@ class SubjectContinuityGuidanceTests(unittest.TestCase):
             self.assertIn(cue, scenarios)
 
 
-def subject_continuity_fixture():
-    data = framing_mode_fixture('bounded subject repair')
-    for axis in ('subject-continuity', 'capture-continuity', 'protected-regions'):
-        data['requirements'].append({'id': axis, 'category': 'other',
-                                     'instruction': 'Synthetic scoped ' + axis + '.',
-                                     'targets': [{'artifact_id': 'sample', 'location': axis}]})
-        data['checks'].append({'requirement_id': axis, 'artifact_id': 'sample',
-                               'location': axis, 'result': 'pass', 'view_ids': ['sample-view'],
-                               'observation': 'Synthetic declared ' + axis + '; no actual image inspection.'})
-    return data
+class IndependentSubjectContinuityOutcomes(SyntheticOutcomeCase):
+    fixture = staticmethod(subject_continuity_fixture)
+    temp_prefix = 'subject-continuity-contract-'
 
-
-class IndependentSubjectContinuityOutcomes(unittest.TestCase):
-    def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='subject-continuity-contract-')
-        self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
-        (self.root / 'sample.png').write_bytes(PNG)
-        self.data = subject_continuity_fixture()
-
-    def result(self):
-        (self.root / 'outcome.json').write_text(json.dumps(self.data))
-        return check(self.root, 'outcome.json')
 
     def test_complete_declared_subject_record_passes_without_visual_claim(self):
         self.assertEqual(self.result(), [])
 
     def test_subject_failure_not_overridden_by_clothing_or_identity_label(self):
-        self.data['checks'][-3].update(result='fail')
+        self.check_for('subject-continuity').update(result='fail')
         self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_capture_failure_not_overridden_by_geometry_pass(self):
-        self.data['checks'][-2].update(result='fail')
+        self.check_for('capture-continuity').update(result='fail')
         self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_preserved_region_failure_not_overridden_by_face_repair(self):
-        self.data['checks'][-1].update(result='fail')
+        self.check_for('protected-regions').update(result='fail')
         self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_untested_continuity_axes_block_ready(self):
-        for index in (-3, -2, -1):
-            with self.subTest(index=index):
+        for requirement_id in ('subject-continuity', 'capture-continuity', 'protected-regions'):
+            with self.subTest(requirement_id=requirement_id):
                 self.data = subject_continuity_fixture()
-                self.data['checks'][index].update(result='not-tested', view_ids=[])
+                self.check_for(requirement_id).update(result='not-tested', view_ids=[])
                 self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_missing_protection_check_is_rejected(self):
-        self.data['checks'].pop()
+        self.remove_check('protected-regions')
         self.assertTrue(self.result())
 
     def test_legitimate_shadow_support_or_occlusion_not_globally_rejected(self):
@@ -1221,29 +1045,27 @@ class IndependentSubjectContinuityOutcomes(unittest.TestCase):
                             'supporting shoulder remains raised',
                             'intentional partial profile remains hidden'):
             with self.subTest(observation=observation):
-                self.data['checks'][-2]['observation'] = 'Synthetic declared ' + observation + '.'
+                self.check_for('capture-continuity')['observation'] = 'Synthetic declared ' + observation + '.'
                 self.assertEqual(self.result(), [])
 
     def test_honest_subject_failure_is_valid_rework(self):
         self.data.update(status='rework')
-        self.data['checks'][-3].update(result='fail')
+        self.check_for('subject-continuity').update(result='fail')
         self.assertEqual(self.result(), [])
 
     def test_frozen_subject_failure_is_rework_not_edit_authority(self):
         self.data.update(mode='frozen-trial', status='rework')
-        self.data['checks'][-3].update(result='fail')
+        self.check_for('subject-continuity').update(result='fail')
         self.assertEqual(self.result(), [])
 
     def test_optional_detail_requirements_fail_independently(self):
         for axis in ('body-load-fit', 'tattoo-fit', 'accessory-fit', 'palette-fit', 'makeup-fit'):
             with self.subTest(axis=axis):
                 self.data = subject_continuity_fixture()
-                self.data['requirements'].append({'id': axis, 'category': 'other',
-                    'instruction': 'Synthetic explicitly requested ' + axis + '.',
-                    'targets': [{'artifact_id': 'sample', 'location': axis}]})
-                self.data['checks'].append({'requirement_id': axis, 'artifact_id': 'sample',
-                    'location': axis, 'result': 'fail', 'view_ids': ['sample-view'],
-                    'observation': 'Synthetic declared failure; no visual inspection.'})
+                add_requirement(self.data, axis,
+                                instruction='Synthetic explicitly requested ' + axis + '.',
+                                observation='Synthetic declared failure; no visual inspection.',
+                                result='fail')
                 self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_unrequested_adornments_or_makeup_are_not_required_fields(self):
@@ -1257,9 +1079,8 @@ class IndependentSubjectContinuityOutcomes(unittest.TestCase):
                             'character chooses no makeup or piercing',
                             'natural relaxed limb does not show defined muscle'):
             with self.subTest(observation=observation):
-                self.data['checks'][-2]['observation'] = 'Synthetic declared ' + observation + '.'
+                self.check_for('capture-continuity')['observation'] = 'Synthetic declared ' + observation + '.'
                 self.assertEqual(self.result(), [])
-
 
 
 OUTFIT_INTENT_CONTRACTS = {
@@ -1328,58 +1149,39 @@ class CoupledOutfitIntentGuidanceTests(unittest.TestCase):
         self.assertIn('no live generation runs in these tests', limits)
 
 
-def outfit_intent_fixture():
-    data = framing_mode_fixture('outfit-intent repair')
-    for axis in ('outfit-intent', 'personal-detail-coherence', 'graphic-transfer', 'protected-regions'):
-        data['requirements'].append({'id': axis, 'category': 'other',
-            'instruction': 'Synthetic scoped ' + axis + '.',
-            'targets': [{'artifact_id': 'sample', 'location': axis}]})
-        data['checks'].append({'requirement_id': axis, 'artifact_id': 'sample',
-            'location': axis, 'result': 'pass', 'view_ids': ['sample-view'],
-            'observation': 'Synthetic declared ' + axis + '; no actual visual or cultural judgment.'})
-    return data
+class IndependentOutfitIntentOutcomes(SyntheticOutcomeCase):
+    fixture = staticmethod(outfit_intent_fixture)
+    temp_prefix = 'outfit-intent-contract-'
 
-
-class IndependentOutfitIntentOutcomes(unittest.TestCase):
-    def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='outfit-intent-contract-')
-        self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
-        (self.root / 'sample.png').write_bytes(PNG)
-        self.data = outfit_intent_fixture()
-
-    def result(self):
-        (self.root / 'outcome.json').write_text(json.dumps(self.data))
-        return check(self.root, 'outcome.json')
 
     def test_complete_declared_intent_passes_without_visual_claim(self):
         self.assertEqual(self.result(), [])
 
     def test_intent_failure_not_overridden_by_palette_pass(self):
-        self.data['checks'][-4].update(result='fail')
+        self.check_for('outfit-intent').update(result='fail')
         self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_personal_detail_conflict_not_overridden_by_outfit_pass(self):
-        self.data['checks'][-3].update(result='fail')
+        self.check_for('personal-detail-coherence').update(result='fail')
         self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_old_graphic_failure_not_overridden_by_new_story(self):
-        self.data['checks'][-2].update(result='fail')
+        self.check_for('graphic-transfer').update(result='fail')
         self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_protected_subject_failure_not_overridden_by_style_pass(self):
-        self.data['checks'][-1].update(result='fail')
+        self.check_for('protected-regions').update(result='fail')
         self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_untested_coupled_requirements_block_ready(self):
-        for index in (-4, -3, -2, -1):
-            with self.subTest(index=index):
+        for requirement_id in ('outfit-intent', 'personal-detail-coherence', 'graphic-transfer', 'protected-regions'):
+            with self.subTest(requirement_id=requirement_id):
                 self.data = outfit_intent_fixture()
-                self.data['checks'][index].update(result='not-tested', view_ids=[])
+                self.check_for(requirement_id).update(result='not-tested', view_ids=[])
                 self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_missing_graphic_check_is_rejected(self):
-        self.data['checks'].pop(-2)
+        self.remove_check('graphic-transfer')
         self.assertTrue(self.result())
 
     def test_intentional_contrast_or_authorized_material_change_not_globally_rejected(self):
@@ -1387,19 +1189,18 @@ class IndependentOutfitIntentOutcomes(unittest.TestCase):
                             'older personal mark intentionally contrasts with current outfit',
                             'simple garments express the chosen relationship'):
             with self.subTest(observation=observation):
-                self.data['checks'][-3]['observation'] = 'Synthetic declared ' + observation + '.'
+                self.check_for('personal-detail-coherence')['observation'] = 'Synthetic declared ' + observation + '.'
                 self.assertEqual(self.result(), [])
 
     def test_honest_intent_failure_is_valid_rework(self):
         self.data.update(status='rework')
-        self.data['checks'][-4].update(result='fail')
+        self.check_for('outfit-intent').update(result='fail')
         self.assertEqual(self.result(), [])
 
     def test_frozen_intent_failure_is_rework_not_edit_authority(self):
         self.data.update(mode='frozen-trial', status='rework')
-        self.data['checks'][-4].update(result='fail')
+        self.check_for('outfit-intent').update(result='fail')
         self.assertEqual(self.result(), [])
-
 
 
 REQUEST_CONTEXT_CONTRACTS = {
@@ -1469,49 +1270,30 @@ class RequestContextGuidanceTests(unittest.TestCase):
         self.assertIn('A false pass or omitted real requirement can pass', limits)
 
 
-def request_context_fixture():
-    data = framing_mode_fixture('scoped project-context task')
-    for axis in ('request-coverage', 'style-fit', 'item-semantics', 'preserved-requirements'):
-        data['requirements'].append({'id': axis, 'category': 'other',
-            'instruction': 'Synthetic explicitly scoped ' + axis + '.',
-            'targets': [{'artifact_id': 'sample', 'location': axis}]})
-        data['checks'].append({'requirement_id': axis, 'artifact_id': 'sample',
-            'location': axis, 'result': 'pass', 'view_ids': ['sample-view'],
-            'observation': 'Synthetic declared ' + axis + '; no real history, style or application check.'})
-    return data
+class IndependentRequestContextOutcomes(SyntheticOutcomeCase):
+    fixture = staticmethod(request_context_fixture)
+    temp_prefix = 'request-context-contract-'
 
-
-class IndependentRequestContextOutcomes(unittest.TestCase):
-    def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='request-context-contract-')
-        self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
-        (self.root / 'sample.png').write_bytes(PNG)
-        self.data = request_context_fixture()
-
-    def result(self):
-        (self.root / 'outcome.json').write_text(json.dumps(self.data))
-        return check(self.root, 'outcome.json')
 
     def test_complete_declared_context_passes_without_runtime_claim(self):
         self.assertEqual(self.result(), [])
 
     def test_each_failed_active_requirement_blocks_ready(self):
-        for index in (-4, -3, -2, -1):
-            with self.subTest(index=index):
+        for requirement_id in ('request-coverage', 'style-fit', 'item-semantics', 'preserved-requirements'):
+            with self.subTest(requirement_id=requirement_id):
                 self.data = request_context_fixture()
-                self.data['checks'][index].update(result='fail')
+                self.check_for(requirement_id).update(result='fail')
                 self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_untested_required_profile_or_item_behavior_blocks_ready(self):
-        for index in (-3, -2):
-            with self.subTest(index=index):
+        for requirement_id in ('style-fit', 'item-semantics'):
+            with self.subTest(requirement_id=requirement_id):
                 self.data = request_context_fixture()
-                self.data['checks'][index].update(result='not-tested', view_ids=[])
+                self.check_for(requirement_id).update(result='not-tested', view_ids=[])
                 self.assertIn('unmet scoped requirement blocks readiness', self.result())
 
     def test_missing_active_coverage_check_is_rejected(self):
-        self.data['checks'].pop(-4)
+        self.remove_check('request-coverage')
         self.assertTrue(self.result())
 
     def test_photo_only_fixture_does_not_require_copy_or_app_checks(self):
@@ -1526,17 +1308,17 @@ class IndependentRequestContextOutcomes(unittest.TestCase):
                             'task overrides the user default',
                             'optional group capability is not part of this photo'):
             with self.subTest(observation=observation):
-                self.data['checks'][-3]['observation'] = 'Synthetic declared ' + observation + '.'
+                self.check_for('style-fit')['observation'] = 'Synthetic declared ' + observation + '.'
                 self.assertEqual(self.result(), [])
 
     def test_honest_incomplete_context_is_valid_rework(self):
         self.data.update(status='rework')
-        self.data['checks'][-4].update(result='not-tested', view_ids=[])
+        self.check_for('request-coverage').update(result='not-tested', view_ids=[])
         self.assertEqual(self.result(), [])
 
     def test_frozen_context_failure_is_rework_not_edit_authority(self):
         self.data.update(mode='frozen-trial', status='rework')
-        self.data['checks'][-4].update(result='fail')
+        self.check_for('request-coverage').update(result='fail')
         self.assertEqual(self.result(), [])
 
 if __name__ == '__main__':

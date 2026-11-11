@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
 """Written contracts and declared-result fixtures, never visual taste evaluation."""
-import hashlib
 import json
 from pathlib import Path
 import tempfile
 import unittest
 
 from check_outcome import check
-from test_check_run import PNG
+from outcome_test_support import PNG, outcome_fixture
 
 ROOT = Path(__file__).resolve().parents[1]
 GUIDANCE = ROOT / 'skills/mockup-image/references/model-direction.md'
-HASH = hashlib.sha256(PNG).hexdigest()
 
 # Exact passages protect guidance from accidental deletion. They cannot establish
 # that the maker followed it or that an unseen image has the intended attitude.
@@ -110,28 +108,6 @@ class AttitudeGuidanceTests(unittest.TestCase):
                     'The existing optional outcome schema is unchanged',
                     'No generation is performed by the package tests'):
             self.assertIn(cue, validation)
-
-
-def outcome_fixture():
-    """Only declared-result logic: the PNG signature fixture is not a portrait."""
-    axes = ('age-fit', 'attitude', 'capture')
-    return {
-        'schema_version': 1, 'mode': 'ordinary', 'status': 'ready-for-user-review',
-        'contract_source': 'Synthetic brief: independently assess age fit, chosen stance and capture.',
-        'requirements': [
-            {'id': axis, 'category': 'other', 'instruction': 'Synthetic task requires ' + axis + '.',
-             'targets': [{'artifact_id': 'sample', 'location': axis}]} for axis in axes],
-        'artifacts': [{'id': 'sample', 'kind': 'raster', 'path': 'sample.png',
-                       'sha256': HASH, 'produced_seq': 1}],
-        'views': [{'id': 'sample-view', 'artifact_id': 'sample', 'sha256': HASH,
-                   'seq': 2, 'evidence_type': 'image-view',
-                   'view_tool_result_id': 'synthetic-not-executed', 'scale': 'use'}],
-        'checks': [
-            {'requirement_id': axis, 'artifact_id': 'sample', 'location': axis,
-             'result': 'pass', 'observation': 'Synthetic declared ' + axis + '; no visual judgment performed.',
-             'view_ids': ['sample-view']} for axis in axes],
-        'sequence': None,
-    }
 
 
 class IndependentOutcomeTests(unittest.TestCase):

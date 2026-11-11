@@ -22,12 +22,14 @@ IMAGE_RUN = 'skills/mockup-image/templates/image-run.json'
 OUTCOME = 'skills/design-pack/templates/outcome-review.json'
 MANIFESTS = ('plugin.json', '.claude-plugin/plugin.json', '.codex-plugin/plugin.json')
 EXPECTED = {
-    'README.md', 'LICENSE', 'VALIDATION.md', 'EVALUATION.md', *MANIFESTS,
+    'README.md', 'CHANGELOG.md', 'LICENSE', 'VALIDATION.md', 'EVALUATION.md', *MANIFESTS,
     'scripts/check_image_run.py', 'scripts/test_check_image_run.py', IMAGE_RUN,
     'scripts/test_age_casting_guidance.py', 'scripts/test_attitude_guidance.py',
     'scripts/test_expression_guidance.py',
     'scripts/test_capture_styling_guidance.py',
     'scripts/test_garment_structure_guidance.py',
+    'scripts/test_typography_guidance.py', 'scripts/test_outcome_test_support.py',
+    'scripts/outcome_test_support.py', 'scripts/capture_outcome_fixtures.py',
     'scripts/test_mirror_selfie_guidance.py',
     'scripts/check_outcome.py', 'scripts/test_check_outcome.py', OUTCOME,
     'skills/mockup-image/references/generation-contract.md',

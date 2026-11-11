@@ -15,7 +15,10 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_age_casting_guidance.py
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_attitude_guidance.py
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_expression_guidance.py
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_capture_styling_guidance.py
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_garment_structure_guidance.py
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_mirror_selfie_guidance.py
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_typography_guidance.py
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_outcome_test_support.py
 python3 scripts/package.py --output /absolute/private/output/design-pack.zip
 ```
 
@@ -172,3 +175,7 @@ These tests protect written guidance and declared outcome logic. They do not ret
 Written-contract guards cover pre-generation construction reasoning, generic color/category fallback, visible support-to-edge continuity, private source boundaries and simple-garment counterexamples. Synthetic optional outcome records separate garment-silhouette, garment-construction and preserved-regions; missing, failed or untested required declarations block readiness. These are lexical and declared-record tests, not pattern reconstruction, material simulation or visual fashion scoring. A false pass or omitted real requirement can pass. Actual references, call inputs and output pixels still require inspection; no live generation or demonstrated aesthetic gain is claimed.
 
 Private-fashion tests cover written loading/precedence/status boundaries and synthetic declared profile-read checks. They do not implement or exercise a real host loader, access private accounts, authenticate a read or establish downstream execution. Actual runtime profile integration remains separately untested.
+
+## Maintenance coverage (0.7.24)
+
+The typography suite protects concrete required-script methods and public-only usability in the written guidance; it does not inspect rendered text. Shared outcome support tests exercise independent fixture values, unambiguous requirement lookup, order independence and existing readiness refusal. They do not prove maker consumption or aesthetic improvement.

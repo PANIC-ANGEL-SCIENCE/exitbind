@@ -12,7 +12,7 @@ Cover only applicable states, but do so explicitly: default, hover, focus, press
 
 Use semantic controls and clear names. Preserve expected keyboard behavior, visible focus and logical focus movement. A modal needs a coherent focus lifecycle. Forms need persistent labels and errors attached to the affected field; include how to recover without losing work. Do not communicate status by color alone.
 
-For chat/editor experiences, check composition input (including CJK IME), text selection, multiline editing, streaming updates, scroll anchoring and whether automatic scrolling steals the user's position. These are behavioral checks, not a mandate to reproduce any branded UI.
+For chat/editor experiences, check composition input (including composition input methods for supported languages), text selection, multiline editing, streaming updates, scroll anchoring and whether automatic scrolling steals the user's position. These are behavioral checks, not a mandate to reproduce any branded UI.
 
 ## Layout and design system
 

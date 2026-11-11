@@ -26,7 +26,7 @@ Keep filled records and captures outside the reusable pack. Do not publish priva
 
 - Source-grounded or provisional; visual-access limits:
 - Composition hypothesis and tested relationships suited to this content; exact values only where useful:
-- Actual Hangul/Latin/numeral content; candidate families/real weights/role sizes:
+- Actual required languages/scripts/numeral content; candidate families/real weights/role sizes:
 - Identical-size comparison, optical adjustment/reason; specimen locators (ordinary iteration):
 - Verified face/script fallback, rights and loading limits:
 - Brand promise → relationship → tokens/components/states → adaptation:
