@@ -13,8 +13,45 @@ fn digest(text: &str) -> String {
     format!("{:x}", Sha256::digest(text.as_bytes()))
 }
 
+fn checked_old_reader(
+    selected: Option<std::ffi::OsString>,
+) -> Result<Option<std::ffi::OsString>, String> {
+    let Some(reader) = selected else {
+        return Ok(None);
+    };
+    let output = support::git_topology::command(&reader)
+        .args(["version", "--json"])
+        .env("EXITBIND_NO_UPDATE_CHECK", "1")
+        .output()
+        .map_err(|error| format!("selected lost-caller old reader cannot run: {error}"))?;
+    if !output.status.success() {
+        return Err("selected lost-caller old reader version command failed".into());
+    }
+    let version: Value = serde_json::from_slice(&output.stdout)
+        .map_err(|error| format!("selected lost-caller old reader version is invalid: {error}"))?;
+    if version["name"] != "exitbind" || version["version"].as_str().is_none() {
+        return Err("selected lost-caller old reader is not an Exitbind executable".into());
+    }
+    Ok(Some(reader))
+}
+
+#[test]
+fn declared_unusable_lost_caller_old_readers_are_rejected() {
+    use std::os::unix::ffi::OsStringExt;
+
+    assert!(checked_old_reader(None).unwrap().is_none());
+    for path in [
+        std::ffi::OsString::new(),
+        std::ffi::OsString::from("/bin/false"),
+        std::ffi::OsString::from("/bin/true"),
+        std::ffi::OsString::from_vec(b"/nonexistent-lost-caller-reader-\xff".to_vec()),
+    ] {
+        assert!(checked_old_reader(Some(path)).is_err());
+    }
+}
+
 fn start() -> (Fixture, String, String, std::process::Child) {
-    let f = Fixture::new("printf run >> .exitbind/launches; printf retained > .exitbind/effect; while [ ! -f .exitbind/release ]; do sleep 0.1; done; printf finished > .exitbind/finished\n");
+    let f = Fixture::new("printf '%s' \"$PPID\" > .exitbind/capsule-pid; printf run >> .exitbind/launches; printf retained > .exitbind/effect; while [ ! -f .exitbind/release ]; do sleep 0.1; done; printf finished > .exitbind/finished\n");
     let started = f.ok(
         &[
             "work",
@@ -107,13 +144,49 @@ fn release(f: &Fixture) {
     }
 }
 
+/// Read only the fixture capsule's exact PID/start marker; no process is signalled.
+#[cfg(target_os = "linux")]
+fn capsule_state(pid: u32) -> Option<(u64, char, u64)> {
+    let stat = match fs::read_to_string(format!("/proc/{pid}/stat")) {
+        Ok(stat) => stat,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(error) => panic!("cannot inspect fixture capsule: {error}"),
+    };
+    let (_, fields) = stat
+        .rsplit_once(") ")
+        .expect("invalid fixture capsule stat");
+    let fields: Vec<_> = fields.split_whitespace().collect();
+    Some((
+        fields[19].parse().expect("invalid capsule start marker"),
+        fields[0].chars().next().expect("missing capsule state"),
+        fields[17].parse().expect("invalid capsule thread count"),
+    ))
+}
+
+#[cfg(target_os = "linux")]
+fn wait_for_capsule_end(pid: u32, start: u64) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        match capsule_state(pid) {
+            None => return,
+            Some((actual, _, _)) if actual != start => return,
+            Some((_, 'Z' | 'X', threads)) if threads <= 1 => return,
+            _ => {}
+        }
+        assert!(Instant::now() < deadline, "fixture capsule did not end");
+        std::thread::sleep(Duration::from_millis(25));
+    }
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn real_lost_caller_is_reported_without_native_facts_retry_or_credit() {
+    let old_reader = checked_old_reader(std::env::var_os("EXITBIND_LOST_CALLER_OLD_READER"))
+        .expect("explicitly selected lost-caller old reader is unusable");
     let (f, work, worker_assignment, mut caller) = start();
     let _release = ReleaseOnDrop(f.root.to_path_buf());
     let prefix = fs::read(f.ledger(&work)).unwrap();
-    if let Ok(old) = std::env::var("EXITBIND_LOST_CALLER_OLD_READER") {
+    if let Some(old) = old_reader {
         let older = support::git_topology::command(old)
             .current_dir(&f.root)
             .args([
@@ -147,6 +220,16 @@ fn real_lost_caller_is_reported_without_native_facts_retry_or_credit() {
         "live caller must refuse"
     );
     assert_eq!(fs::read(f.ledger(&work)).unwrap(), prefix);
+    let capsule_pid: u32 = fs::read_to_string(f.root.join(".exitbind/capsule-pid"))
+        .unwrap()
+        .parse()
+        .unwrap();
+    let (capsule_start, capsule_status, _) = capsule_state(capsule_pid).unwrap();
+    assert!(!matches!(capsule_status, 'Z' | 'X'));
+    let command = fs::read(format!("/proc/{capsule_pid}/cmdline")).unwrap();
+    assert!(command
+        .split(|byte| *byte == 0)
+        .any(|arg| arg == b"--exitbind-observer-capsule-v1"));
     caller.kill().unwrap();
     caller.wait().unwrap();
     let retained = fs::read(f.root.join(".exitbind/effect")).unwrap();
@@ -343,6 +426,45 @@ fn real_lost_caller_is_reported_without_native_facts_retry_or_credit() {
     assert_eq!(fs::read(f.ledger(&work)).unwrap(), saved);
     assert_eq!(fs::read(f.root.join(".exitbind/launches")).unwrap(), b"run");
     release(&f);
+    wait_for_capsule_end(capsule_pid, capsule_start);
+    assert_eq!(fs::read(f.ledger(&work)).unwrap(), saved);
+    let after = f.events(&work);
+    assert_eq!(after.len(), events.len());
+    assert_eq!(after.last().unwrap()["eventSha256"], report["eventSha256"]);
+    assert_eq!(
+        after
+            .iter()
+            .filter(|event| event["action"] == "check")
+            .count(),
+        0
+    );
+    assert_eq!(
+        after
+            .iter()
+            .filter(|event| event["action"] == "check_observation_caller_lost")
+            .count(),
+        1
+    );
+    let inspected = f.ok(
+        &[
+            "run",
+            "inspect",
+            &format!(".exitbind/runs/work-{}.jsonl", &work[4..]),
+            "--json",
+        ],
+        b"",
+    );
+    assert_eq!(inspected["checkObservation"]["state"], "reported_lost");
+    assert_eq!(
+        inspected["checkObservation"]["provenance"],
+        "configured_lead_reported"
+    );
+    assert_eq!(
+        inspected["checkObservation"]["reportEventSha256"],
+        report["eventSha256"]
+    );
+    assert!(inspected["checkObservation"].get("facts").is_none());
+    assert_eq!(f.next(&work)["packet"]["context"]["loop"], before);
 }
 
 #[cfg(target_os = "linux")]
@@ -453,6 +575,8 @@ fn concurrent_conflicting_reporters_cannot_append_twice() {
 #[cfg(target_os = "linux")]
 #[test]
 fn legacy_host_attestation_is_explicit_and_old_reader_refuses_new_event() {
+    let old_reader = checked_old_reader(std::env::var_os("EXITBIND_LOST_CALLER_OLD_READER"))
+        .expect("explicitly selected lost-caller old reader is unusable");
     let (f, work, _, mut caller) = start();
     let _release = ReleaseOnDrop(f.root.to_path_buf());
     caller.kill().unwrap();
@@ -470,7 +594,6 @@ fn legacy_host_attestation_is_explicit_and_old_reader_refuses_new_event() {
         original.push(b'\n');
     }
     fs::write(f.ledger(&work), &original).unwrap();
-    let old_reader = std::env::var("EXITBIND_LOST_CALLER_OLD_READER").ok();
     if let Some(old) = &old_reader {
         let before = support::git_topology::command(old)
             .current_dir(&f.root)

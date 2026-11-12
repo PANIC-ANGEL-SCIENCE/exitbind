@@ -246,6 +246,7 @@ fn pending_effects(pending_operation: bool, state: &Value, detail: &Value) -> Ve
         Some("failed") if observation["facts"]["termination"] == "unknown" => {
             effects.push("check_observation|failed_unknown_termination".to_owned())
         }
+        Some("reported_lost") => effects.push("check_observation|reported_lost_unknown".to_owned()),
         _ => {}
     }
     if let Some(operation) = detail["effectiveAction"]["currentGrant"]["operation"].as_str() {
@@ -362,6 +363,26 @@ fn bounded(value: Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reported_lost_observation_remains_a_pending_unknown_effect() {
+        let detail = json!({});
+        let observation = |state: &str, termination: Option<&str>| json!({"checkObservation":{"state":state,"facts":{"termination":termination}}});
+        assert_eq!(
+            pending_effects(false, &observation("reported_lost", None), &detail),
+            ["check_observation|reported_lost_unknown"]
+        );
+        assert_eq!(
+            pending_effects(false, &observation("running", None), &detail),
+            ["check_observation|running_or_unknown"]
+        );
+        assert_eq!(
+            pending_effects(false, &observation("failed", Some("unknown")), &detail),
+            ["check_observation|failed_unknown_termination"]
+        );
+        assert!(pending_effects(false, &observation("failed", Some("ended")), &detail).is_empty());
+        assert!(pending_effects(false, &json!({}), &detail).is_empty());
+    }
 
     #[test]
     fn pending_effects_and_next_actions_stay_bounded_and_never_drop_unknowns() {
