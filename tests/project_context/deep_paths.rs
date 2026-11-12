@@ -1,6 +1,117 @@
 //! R55 session-summary budget with deep paths (re-review 9dd1dca).
 use super::*;
 use sha2::{Digest, Sha256};
+use std::os::unix::fs::PermissionsExt;
+
+fn assert_tight_mandatory_core(context: &str) {
+    for clause in [
+        "Preserve the existing root host conversation; project context only augments it.",
+        "Do not replace, reset, fork, or request compaction for role loading or handoff.",
+        "Keep recent user corrections and rejected approaches with reasons; refer frozen-run conflicts to the existing lead for explicit supersession.",
+        "Native conversational recall differs from durable role memory.",
+        "Print non-null Work/Goal `presentation.terminal` verbatim on its own line.",
+        "Print a Goal's `presentation.terminal` once per `completionEvent.id` from the normal closure response; do not poll status.",
+        "Recover lost closure replies via their exact read-only routes.",
+        "No model was selected or launched; declarations are not an OS sandbox.",
+    ] {
+        assert!(context.contains(clause), "missing {clause}: {context}");
+    }
+}
+
+fn assert_active_goal_context(base: &Path, root: &Path, exe: &Path, profile: &str) {
+    let session = "deep-context-goal-session";
+    let store = base.join("session-store");
+    fs::create_dir(&store).unwrap();
+    fs::set_permissions(&store, fs::Permissions::from_mode(0o700)).unwrap();
+    let native = |program: &Path| {
+        let mut command = support::git_topology::command(program);
+        command
+            .current_dir(root)
+            .env("CODEX_THREAD_ID", session)
+            .env("EXITBIND_SESSION_GOALS_DIR", &store)
+            .env("EXITBIND_NO_UPDATE_CHECK", "1");
+        command
+    };
+    let goal = native(exe)
+        .args([
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "deep-context-goal",
+            "--goal",
+            "Preserve the synthetic native recovery context",
+            "--obligation",
+            "Keep the verified Goal and Work routes",
+            "--json",
+            "--config",
+        ])
+        .arg(root.join("exitbind.json"))
+        .output()
+        .unwrap();
+    assert!(goal.status.success(), "{goal:?}");
+
+    let mut command = native(exe);
+    command
+        .arg("hook-run")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut process = support::spawn(&mut command).unwrap();
+    process
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(
+            json!({"hook_event_name":"SessionStart", "session_id":session, "cwd":root})
+                .to_string()
+                .as_bytes(),
+        )
+        .unwrap();
+    let output = process.wait_with_output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let context = value["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    let (base_text, _) = context
+        .split_once("\nExitbind recovered native Goal ")
+        .expect("the active Goal recovery follows the project context");
+    assert!(
+        base_text.len() <= 3072,
+        "{} bytes: {context}",
+        base_text.len()
+    );
+    assert!(context.len() <= 4096, "{} bytes: {context}", context.len());
+    assert!(
+        context.contains("Config above: native Goal owner."),
+        "{context}"
+    );
+    assert!(context.contains(profile), "{context}");
+    assert_tight_mandatory_core(context);
+
+    let facts = context
+        .split_once("Current project facts: `")
+        .and_then(|(_, rest)| rest.split_once('`'))
+        .map(|(route, _)| route)
+        .expect("the exact project facts route is present");
+    let resume = context
+        .split('`')
+        .find(|part| part.contains(" work resume --json"))
+        .expect("the exact Work resume route is present");
+    for route in [facts, resume] {
+        let output = native(Path::new("/bin/sh"))
+            .args(["-c", route])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{route}: {output:?}");
+        let _: Value = serde_json::from_slice(&output.stdout).unwrap();
+    }
+    eprintln!(
+        "active Goal SessionStart: base {} bytes, aggregate {} bytes",
+        base_text.len(),
+        context.len()
+    );
+}
 
 /// R55: with a deep checkout and a deep executable path, the session context
 /// still fits 3072 bytes, keeps the mandatory core (the full sentence, or its
@@ -117,6 +228,7 @@ fn deep_context(label: &str, depth: usize) -> (String, String) {
     assert!(output.status.success(), "{resume}: {output:?}");
     let _: Value = serde_json::from_slice(&output.stdout).unwrap();
     if context.contains("Work's --config <WORK_CONFIG> last") {
+        assert_tight_mandatory_core(&context);
         let foreign = project("tight-foreign 'project'");
         let started = call(
             &foreign,
@@ -170,6 +282,9 @@ fn deep_context(label: &str, depth: usize) -> (String, String) {
         assert!(context.contains("Keep other-Goal sidecars"), "{context}");
         assert!(context.contains("no raw-state recovery"), "{context}");
     }
+    if depth == 3 && root.to_str().unwrap().len() > 250 {
+        assert_active_goal_context(&base, &root, &exe, &profile);
+    }
     let route = format!("{} project context --json --config ", exe.display());
     fs::remove_dir_all(base).unwrap();
     (context, route)
@@ -215,4 +330,52 @@ fn deep_paths_keep_the_session_context_bounded_with_its_core() {
         "{deepest}"
     );
     assert!(deepest.contains("Lead profile:"), "{deepest}");
+}
+
+#[test]
+fn session_start_refuses_when_complete_mandatory_routes_cannot_fit() {
+    let base = support::temp("project-context-over-budget");
+    let deep = |name: &str| {
+        (0..5).fold(base.join(name), |path, index| {
+            path.join(format!("long-{index:02}-{}", "x".repeat(80)))
+        })
+    };
+    let root = deep("project");
+    fs::create_dir_all(&root).unwrap();
+    support::git_topology::repository(&root);
+    let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
+        .args(["init", "--mode", "portable", "--root"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(init.status.success(), "{init:?}");
+
+    let exe = deep("bin").join("exitbind");
+    fs::create_dir_all(exe.parent().unwrap()).unwrap();
+    support::place_executable(Path::new(env!("CARGO_BIN_EXE_exitbind")), &exe);
+    let mut command = support::git_topology::command(&exe);
+    command
+        .arg("hook-run")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut process = support::spawn(&mut command).unwrap();
+    process
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(
+            json!({"hook_event_name":"SessionStart", "cwd":root})
+                .to_string()
+                .as_bytes(),
+        )
+        .unwrap();
+    let output = process.wait_with_output().unwrap();
+    assert!(!output.status.success(), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("complete mandatory session context and routes exceed 3072 bytes"),
+        "{output:?}"
+    );
 }

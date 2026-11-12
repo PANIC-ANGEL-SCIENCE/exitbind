@@ -546,7 +546,12 @@ fn minimal_session_summary(lead: &str, facts: &Value, omit_duplicate: bool) -> S
     } else {
         "Exitbind plan-only project context."
     };
-    format!("{title}\n{label}{MANDATORY_SESSION_CORE}")
+    let core = if omit_duplicate {
+        MANDATORY_SESSION_CORE_TIGHT
+    } else {
+        MANDATORY_SESSION_CORE
+    };
+    format!("{title}\n{label}{core}")
 }
 
 fn session_base(summary: &str, direct: &str, receive: &str, line: &str, required: &str) -> String {
@@ -560,6 +565,8 @@ const DIRECT_WORK_COMPACT: &str = "For small, low-consequence reversible edits, 
 const DIRECT_WORK_TIGHT: &str = "Minor reversible edits: do not run Exitbind commands, initialize a project or ask workflow/review; the Lead classifies effects, not filenames. Reuse scoped authority/review decisions; ask only new choices.";
 
 const MANDATORY_SESSION_CORE: &str = "Preserve the existing root host conversation; project context only augments it. Do not replace, reset, fork, or request compaction of it for role loading or handoff. Keep recent user corrections and rejected approaches with their rationale; refer frozen-run conflicts to the existing lead for explicit supersession. Native conversational recall is distinct from durable role memory. When a Work or Goal response carries a non-null `presentation.terminal`, print that value on a line of its own exactly as given. For a Goal `completionEvent`, print once per event ID; consume the normal closure response without status polling. Recover a lost closure reply through its exact read-only route. No model was selected or launched; declarations are not an OS sandbox.";
+// Keep all mandatory semantics when only the final tight fallback can fit.
+const MANDATORY_SESSION_CORE_TIGHT: &str = "Preserve the existing root host conversation; project context only augments it. Do not replace, reset, fork, or request compaction for role loading or handoff. Keep recent user corrections and rejected approaches with reasons; refer frozen-run conflicts to the existing lead for explicit supersession. Native conversational recall differs from durable role memory. Print non-null Work/Goal `presentation.terminal` verbatim on its own line. Print a Goal's `presentation.terminal` once per `completionEvent.id` from the normal closure response; do not poll status. Recover lost closure replies via their exact read-only routes. No model was selected or launched; declarations are not an OS sandbox.";
 
 fn retry_busy<T>(action: impl Fn() -> Result<T, String>) -> Result<T, String> {
     for _ in 0..20 {
