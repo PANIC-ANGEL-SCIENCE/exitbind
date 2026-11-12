@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "design-pack",
-  "version": "0.7.25",
+  "version": "0.7.26",
   "description": "Portable design judgment and production methods across disciplines. Skills only; no private reference catalog or external app required.",
   "author": {
     "name": "Design Pack contributors"

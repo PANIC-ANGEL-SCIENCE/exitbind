@@ -117,3 +117,5 @@ At whole view inspect atmosphere, silhouette and composition. At intended use si
 After a revision compare both changed and protected regions to the original. Resolve a degraded photo from its clean source instead of accepting sharper labels as overall improvement. Verify export dimensions, transparency, profile and compression where supported; disclose unavailable checks. A large raster is not proof of detail.
 
 Deliver actual output, intended crop/use, source/revision identity, rights limits and observed defects. Ordinary work repairs within authority; [first pass](../../design-pack/references/first-pass.md) freezes and reports read-only when explicitly selected. A prompt-only specification is useful but is not a generated or visually approved image.
+
+For background removal, subject isolation or transparent PNG delivery, read [background removal](background-removal.md). Choose within authorized capabilities, preserve original detail and distinguish alpha-only extraction from retouching or approximate transparency.

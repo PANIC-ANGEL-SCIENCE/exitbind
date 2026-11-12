@@ -15,6 +15,7 @@ Load only the methods needed for the current uncertainty. A small edit does not 
 | Reusable UI contracts, customization and source/docs/test parity | [Components](components.md), [component brief](../templates/component-brief.md) |
 | Icon meaning, artwork, optical fit and control semantics | [Iconography](iconography.md) |
 | Product flow, real states, responsive UI and refinement | [Interface](interface.md), [interface craft](interface-craft.md) |
+| Background removal, subject isolation and transparent image assets | [Background removal](../../mockup-image/references/background-removal.md) |
 | Image deliverable, photographic direction and placement | [Mockup Image](../../mockup-image/SKILL.md) |
 | Identity, graphic/print, packaging and editorial | [Communication design](communication-design.md) |
 | Information relationships and data graphics | [Diagrams](diagrams.md) |

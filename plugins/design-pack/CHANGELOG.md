@@ -7,6 +7,10 @@ publication, host activation, visual improvement or user acceptance. Each entry
 retains the limits stated when it was written. Current methods live in the
 linked skills and references; historical notes do not replace them.
 
+## 0.7.26
+
+Add selective background-removal and subject-isolation guidance: source-preserving alpha extraction, connected-background candidate comparison, protected details, local mask repair, approximate translucency, multi-background review and reopened transparent export checks. Distinguish RGB fidelity from composite quality and generated reinterpretation; preserve authority, source and metadata boundaries. New routes, lexical guards and synthetic declarations do not prove actual image quality or automatic host use.
+
 ## 0.7.25
 
 Add framework-neutral component and icon methods: shipped-versus-draft source lookup, anatomy and behavioral ownership, deliberate customization layers, semantic icon selection, optical family studies and accessible controls. Connect existing production/craft routes and add an optional compact brief. Preserve local expression and required-script scope; no upstream stack, assets, numeric style defaults or private profiles are bundled. Written-contract and declared-outcome checks do not establish actual maker uptake, visual improvement or host activation.

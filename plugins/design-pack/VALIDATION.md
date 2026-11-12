@@ -17,6 +17,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_expression_guidance.py
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_capture_styling_guidance.py
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_garment_structure_guidance.py
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_mirror_selfie_guidance.py
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_background_removal_guidance.py
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_component_icon_guidance.py
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_typography_guidance.py
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_outcome_test_support.py
@@ -184,3 +185,7 @@ The typography suite protects concrete required-script methods and public-only u
 ## Component and icon coverage
 
 Written-contract tests protect routing, source-status distinctions, customization boundaries, semantic icon versus artwork/control separation, optical review and task-sized evidence. Synthetic outcome cases independently exercise component-behavior, icon-meaning, icon-optical-fit and icon-accessibility declarations, including missing/failed/untested checks and honest rework. These tests do not execute a UI library, inspect pixels, audit real accessibility or prove an agent consumed the methods. A falsely declared pass can pass. Actual-component, use-size and device/assistive-technology evidence remain separate.
+
+## Background-removal coverage
+
+Five new structural mutation cases remove the method or its entry/production/generation/index routes. Written-contract checks protect alpha-only fidelity, local-mask and translucent-material distinctions, multi-background export review and authorization limits. Synthetic declarations independently exercise subject-detail, alpha-edge, translucency and export-transparency requirements. Failed, missing or untested required declarations block readiness; honest rework and a task without translucent material remain valid. These checks do not segment an image, compare RGB pixels, decode an export, inspect edges or prove a maker used the method. False declarations and omitted real requirements can still pass; actual images and destination verification require separate evidence.
