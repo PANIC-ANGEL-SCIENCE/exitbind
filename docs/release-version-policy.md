@@ -1,8 +1,8 @@
 # Release series and compatibility
 
-Source candidate tag: v0.31.26
+Source candidate tag: v0.31.27
 
-The source version is 0.31.26. Its release commit carries the tag of the same
+The source version is 0.31.27. Its release commit carries the tag of the same
 name, and the release workflow publishes that tag's assets; a source version or
 passing CI alone does not establish an official release. Source metadata,
 schemas, installation defaults and current-version mentions in the
@@ -26,8 +26,18 @@ Every version mention in the tracked documentation is listed in
 Cargo package version, and `pinned` mentions keep a historical version with a
 reason (a historical fact, a minimum version or a closed maintenance packet).
 The same inventory lists the lock file, plugin manifests, schemas, the example
-manifest and the installer default. A release commit changes the version in
-`Cargo.toml`, runs
+manifest and the installer default. Before changing release files, inspect the
+pending synchronization paths for the selected version:
+
+```sh
+python3 tooling/repository/release/sync-doc-versions.py --plan-json --version "$TARGET_VERSION" --root .
+```
+
+The read-only JSON plan validates the same inventory as `--apply` and lists
+files whose current mentions would change from the present checkout. It does
+not include the separate edits to `Cargo.toml` and `CHANGELOG.md`, or other
+release work; account for those paths explicitly. Recompute the plan if its
+inputs change. A release commit changes the version in `Cargo.toml`, runs
 `python3 tooling/repository/release/sync-doc-versions.py --apply` to rewrite
 every `current` mention, and adds its CHANGELOG entry; no other version edit is
 manual. The entry's first line is `Release:` followed by the release tag's URL

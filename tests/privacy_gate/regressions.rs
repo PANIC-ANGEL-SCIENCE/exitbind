@@ -73,6 +73,9 @@ fn privacy_python_code_is_recognized_in_candidate_tracked_and_both_history_sides
     let old = group("1");
     let new = group("2");
     assert!(super::credential_assignment(&old));
+    let boundary_receiver = format!("{} = marker.group(1)\n", key());
+    fs::write(root.join("example.py"), boundary_receiver).unwrap();
+    assert!(scan(&root).is_empty());
     fs::write(root.join("example.py"), format!("{old}\n")).unwrap();
     assert!(scan(&root).is_empty());
 
@@ -148,6 +151,8 @@ fn privacy_python_shape_does_not_hide_config_literals_or_other_expressions() {
         ),
         ("example.py", format!("{line} # {name} = {literal}\n")),
         ("example.py", format!("{line}; {name} = \"{literal}\"\n")),
+        ("example.py", format!("é = 1; {line}\n")),
+        ("example.py", format!("{}\n", group("10"))),
         ("example.py", format!("{}\n", group("123456789012"))),
         (
             "example.py",
@@ -163,6 +168,28 @@ fn privacy_python_shape_does_not_hide_config_literals_or_other_expressions() {
         fs::create_dir(&folder).unwrap();
         fs::write(folder.join(file), contents).unwrap();
         assert!(flagged(&scan(&folder), "candidate-file"), "case {index}");
+    }
+}
+
+#[test]
+fn privacy_deleted_python_string_and_ini_history_remain_scanned() {
+    let line = group("1");
+    let cases = [
+        (
+            "example.py",
+            format!("fixture = \"\"\"\n{line}\n\"\"\"\n"),
+            "clean = True\n",
+        ),
+        ("settings.ini", format!("{line}\n"), "clean\n"),
+    ];
+    for (path, contents, clean) in cases {
+        let root = super::temp("privacy-integration-deleted");
+        git(&root, &["init", "-q"]);
+        fs::write(root.join(path), contents).unwrap();
+        commit(&root);
+        fs::write(root.join(path), clean).unwrap();
+        commit(&root);
+        assert!(flagged(&scan(&root), "git-history:patches"));
     }
 }
 

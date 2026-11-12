@@ -1,0 +1,35 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "design-pack",
+  "version": "0.7.25",
+  "description": "Portable design judgment and production methods across disciplines. Skills only; no private reference catalog or external app required.",
+  "author": {
+    "name": "Design Pack contributors"
+  },
+  "license": "MIT",
+  "keywords": [
+    "design",
+    "briefing",
+    "research",
+    "art-direction",
+    "accessibility",
+    "handoff"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Design Pack",
+        "shortDescription": "Carry design intent into finished visual work",
+        "longDescription": "Portable design judgment and production methods across disciplines. Skills only; no private reference catalog or external app required.",
+        "developerName": "Design Pack contributors",
+        "category": "Productivity",
+        "capabilities": [
+          "Read"
+        ],
+        "defaultPrompt": [
+          "Use Design Pack to choose a reasoned visual direction, make the work and refine its actual composition, type, imagery and states."
+        ]
+      }
+    }
+  }
+}

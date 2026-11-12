@@ -45,8 +45,11 @@ every `current` version mention to the candidate version through the
 marked prerelease and cannot replace the latest stable release. A failed release
 or unknown dispatch stays a distinct result requiring inspection.
 
-When stable promotion is selected, first prepare its final coherent version on
-the integration branch: change the `Cargo.toml` version, run
+When stable promotion is selected, first inspect the selected target version's
+[read-only synchronization plan](release-version-policy.md#version-mentions)
+before editing release files. Account separately for `Cargo.toml`, `CHANGELOG.md`
+and any other intended work. Then prepare the final coherent version on the
+integration branch: change the `Cargo.toml` version, run
 `python3 tooling/repository/release/sync-doc-versions.py --apply` and add the
 CHANGELOG entry. Run the release workflow manually on that branch with
 mode `stable-readiness`. This checks Linux, native Apple Silicon and Intel Macs,

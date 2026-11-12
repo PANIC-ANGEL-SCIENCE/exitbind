@@ -194,8 +194,19 @@ def main():
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true", help="fail on stale or unlisted mentions (default)")
     mode.add_argument("--apply", action="store_true", help="rewrite current mentions from Cargo.toml")
+    mode.add_argument("--plan-json", action="store_true", help="print a read-only target-version write plan as JSON")
+    parser.add_argument("--version", help="target version for --plan-json")
     args = parser.parse_args()
+    if args.plan_json and not args.version:
+        parser.error("--plan-json requires --version")
+    if not args.plan_json and args.version is not None:
+        parser.error("--version requires --plan-json")
     root = args.root.resolve()
+    if args.plan_json:
+        changes = plan(root, args.version)
+        print(json.dumps({"schemaVersion": 1, "targetVersion": args.version,
+                          "requiredWritePaths": sorted(changes)}))
+        return 0
     version = package_version(root)
     changes = plan(root, version)
     current, pinned = inventory_size(root)

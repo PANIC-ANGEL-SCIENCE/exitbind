@@ -202,3 +202,180 @@ fn unlisted_stale_or_unexplained_mentions_fail_the_inventory_check() {
         "pinned line changed without the inventory",
     );
 }
+
+fn sync_args(root: &Path, args: &[&str]) -> Output {
+    super::support::git_topology::command("python3")
+        .arg("-B")
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join(TOOL))
+        .args(args)
+        .arg("--root")
+        .arg(root)
+        .output()
+        .unwrap()
+}
+
+/// Compare every fixture file's bytes and modification time without printing it.
+fn fixture_snapshot(
+    root: &Path,
+) -> std::collections::BTreeMap<std::path::PathBuf, (Vec<u8>, std::time::SystemTime)> {
+    fn collect(
+        root: &Path,
+        directory: &Path,
+        result: &mut std::collections::BTreeMap<
+            std::path::PathBuf,
+            (Vec<u8>, std::time::SystemTime),
+        >,
+    ) {
+        for entry in fs::read_dir(directory).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if path == root.join(".git") {
+                continue;
+            }
+            let kind = entry.file_type().unwrap();
+            assert!(!kind.is_symlink(), "fixture must not contain symlinks");
+            if kind.is_dir() {
+                collect(root, &path, result);
+            } else if kind.is_file() {
+                result.insert(
+                    path.strip_prefix(root).unwrap().to_owned(),
+                    (
+                        fs::read(&path).unwrap(),
+                        fs::metadata(&path).unwrap().modified().unwrap(),
+                    ),
+                );
+            }
+        }
+    }
+    let mut result = std::collections::BTreeMap::new();
+    collect(root, root, &mut result);
+    result
+}
+
+fn direct_plan_paths(root: &Path, version: &str) -> Value {
+    let code = r#"import importlib.util, json, sys
+from pathlib import Path
+spec = importlib.util.spec_from_file_location('sync_doc_versions', sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+print(json.dumps(sorted(module.plan(Path(sys.argv[2]), version=sys.argv[3]))))
+"#;
+    let output = super::support::git_topology::command("python3")
+        .args(["-B", "-c", code])
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join(TOOL))
+        .arg(root)
+        .arg(version)
+        .output()
+        .unwrap();
+    expect_success(output.clone());
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
+#[test]
+fn future_version_cli_plan_matches_the_api_without_writing() {
+    let fixture = inventoried_fixture();
+    let before = fixture_snapshot(&fixture.0);
+    let status = git(
+        &fixture.0,
+        &["status", "--porcelain=v1", "--untracked-files=all"],
+    );
+    expect_success(status.clone());
+    let output = sync_args(&fixture.0, &["--plan-json", "--version", BUMPED]);
+    expect_success(output.clone());
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["schemaVersion"], 1);
+    assert_eq!(value["targetVersion"], BUMPED);
+    let paths = value["requiredWritePaths"].as_array().unwrap();
+    assert!(
+        !paths.is_empty(),
+        "a future version must name pending files"
+    );
+    let path_names: Vec<_> = paths.iter().map(|path| path.as_str().unwrap()).collect();
+    let mut sorted = path_names.clone();
+    sorted.sort_unstable();
+    sorted.dedup();
+    assert_eq!(path_names, sorted, "paths must be sorted and unique");
+    assert!(path_names.contains(&"Cargo.lock"));
+    assert!(!path_names.contains(&"Cargo.toml"));
+    assert!(!path_names.contains(&"CHANGELOG.md"));
+    assert_eq!(
+        value["requiredWritePaths"],
+        direct_plan_paths(&fixture.0, BUMPED)
+    );
+    assert!(
+        before == fixture_snapshot(&fixture.0),
+        "planning changed fixture files"
+    );
+    assert_eq!(
+        status.stdout,
+        git(
+            &fixture.0,
+            &["status", "--porcelain=v1", "--untracked-files=all"]
+        )
+        .stdout
+    );
+    expect_success(sync(&fixture.0, "--check"));
+}
+
+#[test]
+fn version_plan_cli_rejects_bad_targets_and_other_modes_without_writing() {
+    let fixture = inventoried_fixture();
+    let before = fixture_snapshot(&fixture.0);
+    let cases: &[&[&str]] = &[
+        &["--plan-json"],
+        &["--plan-json", "--version", ""],
+        &["--plan-json", "--version", "v1.2.3"],
+        &["--plan-json", "--version", "1.2.03"],
+        &["--check", "--version", BUMPED],
+        &["--apply", "--version", BUMPED],
+        &["--version", BUMPED],
+    ];
+    for args in cases {
+        let output = sync_args(&fixture.0, args);
+        expect_failure(output.clone(), "invalid plan/version mode");
+        assert!(
+            output.stdout.is_empty(),
+            "a rejected plan must not emit JSON"
+        );
+        assert!(
+            before == fixture_snapshot(&fixture.0),
+            "rejected mode changed fixture files"
+        );
+    }
+}
+
+#[test]
+fn version_plan_cli_rejects_invalid_inventory_without_writing() {
+    let fixture = inventoried_fixture();
+    let inventory_path = fixture.0.join(INVENTORY);
+    let text = fs::read_to_string(&inventory_path).unwrap();
+    let mut changed: Value = serde_json::from_str(&text).unwrap();
+    changed["documents"]["CONTRIBUTING.md"][0]["reason"] = Value::from(" ");
+    fs::write(&inventory_path, changed.to_string()).unwrap();
+    let before = fixture_snapshot(&fixture.0);
+    let output = sync_args(&fixture.0, &["--plan-json", "--version", BUMPED]);
+    expect_failure(output.clone(), "unexplained pinned inventory rule");
+    assert!(
+        output.stdout.is_empty(),
+        "invalid inventory must not emit a plan"
+    );
+    assert!(
+        before == fixture_snapshot(&fixture.0),
+        "invalid inventory changed fixture files"
+    );
+
+    fs::write(&inventory_path, text).unwrap();
+    fs::write(fixture.0.join("docs/unlisted.md"), "New claim in 1.2.3.\n").unwrap();
+    expect_success(git(&fixture.0, &["add", "docs/unlisted.md"]));
+    let before = fixture_snapshot(&fixture.0);
+    let output = sync_args(&fixture.0, &["--plan-json", "--version", BUMPED]);
+    expect_failure(output.clone(), "unlisted tracked version mention");
+    assert!(
+        output.stdout.is_empty(),
+        "unlisted mention must not emit a plan"
+    );
+    assert!(
+        before == fixture_snapshot(&fixture.0),
+        "unlisted mention changed fixture files"
+    );
+}

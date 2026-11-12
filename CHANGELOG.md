@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.31.27
+
+Release: https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/tag/v0.31.27 — the tag sits on this entry's release commit, and the page lists its assets once they are published.
+
+- Bound cooperative Work and Goal resume projections, including native display
+  refresh, and report incomplete discovery when currentness cannot be proved.
+- Let the configured Lead report a lost check caller without creating a passing
+  observation or changing the original accounting. Legacy same-host assertions
+  remain explicit and historically unverified; recorded context mismatches refuse.
+  A separate work-only verification uses an independently reviewed current plan
+  and gives neither original check credit nor Goal quarantine relief.
+- Require a compatible reader from admission of the new observer context and for
+  the lost-caller event and work-only marker. Select the exact compatible reader
+  for the affected Work and retain its configuration and ledger history.
+- Preserve useful Work recovery routes and owner context in bounded native and
+  compact presentations while retaining existing authority and return checks.
+- Add the independently versioned Design Pack 0.7.25 candidate for design and
+  mockup workflows. Its structural checks do not establish host activation or
+  visual quality.
+- Expose a read-only target-version synchronization plan before release edits;
+  separately account for the Cargo manifest, changelog and other intended work.
+
 ## 0.31.26
 
 Release: https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/tag/v0.31.26 — the tag sits on this entry's release commit, and the page lists its assets once they are published.
