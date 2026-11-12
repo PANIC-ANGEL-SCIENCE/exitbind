@@ -119,14 +119,13 @@ pub(super) fn run(
 #[cfg(all(test, unix))]
 mod tests {
     use super::run;
-    use std::process::Command;
     use std::time::Duration;
 
     #[test]
     fn privacy_owned_child_drains_both_directions_and_observes_eof() {
         let input = vec![b'x'; 128 * 1024];
         let output = run(
-            Command::new("/bin/cat"),
+            crate::support::git_topology::command("/bin/cat"),
             &input,
             input.len(),
             Duration::from_secs(3),
@@ -137,7 +136,7 @@ mod tests {
 
     #[test]
     fn privacy_owned_child_output_over_limit_is_not_accepted() {
-        let mut command = Command::new("/bin/sh");
+        let mut command = crate::support::git_topology::command("/bin/sh");
         command.args(["-c", "printf 12345678"]);
         assert!(run(command, b"", 4, Duration::from_secs(3)).is_none());
     }
