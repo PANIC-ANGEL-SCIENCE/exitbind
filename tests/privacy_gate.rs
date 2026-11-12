@@ -1,4 +1,11 @@
 use std::collections::BTreeSet;
+#[path = "privacy_gate/patch.rs"]
+mod patch_context;
+#[cfg(test)]
+#[path = "privacy_gate/regressions.rs"]
+mod privacy_regressions;
+#[path = "privacy_gate/context.rs"]
+mod python_context;
 mod support;
 use std::ffi::OsStr;
 use std::fs;
@@ -12,8 +19,25 @@ const GITHUB_COMMITTER_EMAIL: &str = "noreply@github.com";
 
 type Findings = BTreeSet<(String, String)>;
 
+const CREDENTIAL_KEYS: &[&str] = &[
+    "api_key",
+    "api-key",
+    "access_token",
+    "access-token",
+    "auth_token",
+    "auth-token",
+    "password",
+    "secret",
+    "token",
+];
+
 fn scan(root: &Path) -> Findings {
+    scan_with_options(root, python_context::Options::default())
+}
+
+fn scan_with_options(root: &Path, options: python_context::Options) -> Findings {
     let mut findings = Findings::new();
+    let mut context = python_context::Engine::new(root, options);
     let inside_git =
         git(root, &["rev-parse", "--is-inside-work-tree"]).is_some_and(|bytes| bytes == b"true\n");
     let marker = root.join(".git").exists();
@@ -42,7 +66,7 @@ fn scan(root: &Path) -> Findings {
                 } else {
                     "untracked-file"
                 };
-                scan_file(root, &path, source, &mut findings);
+                scan_file(root, &path, source, &mut findings, &mut context);
             }
         } else {
             add(&mut findings, "scan-incomplete", "git-file-enumeration");
@@ -69,6 +93,7 @@ fn scan(root: &Path) -> Findings {
                 "--no-ext-diff",
                 "--no-textconv",
                 "--no-color",
+                "--full-index",
                 "--format=",
                 "-p",
             ],
@@ -79,7 +104,7 @@ fn scan(root: &Path) -> Findings {
             None => add(&mut findings, "scan-incomplete", "git-history-metadata"),
         }
         match patches {
-            Some(bytes) => scan_patch(&bytes, &mut findings),
+            Some(bytes) => scan_patch(&bytes, &mut findings, &mut context),
             None => add(&mut findings, "scan-incomplete", "git-history-patches"),
         }
     } else {
@@ -90,7 +115,7 @@ fn scan(root: &Path) -> Findings {
         collect_files(root, root, &mut files, &mut findings);
         files.sort();
         for path in files {
-            scan_file(root, &path, "candidate-file", &mut findings);
+            scan_file(root, &path, "candidate-file", &mut findings, &mut context);
         }
     }
     findings
@@ -126,7 +151,13 @@ fn collect_files(root: &Path, directory: &Path, files: &mut Vec<PathBuf>, findin
     }
 }
 
-fn scan_file(root: &Path, relative: &Path, source: &str, findings: &mut Findings) {
+fn scan_file(
+    root: &Path,
+    relative: &Path,
+    source: &str,
+    findings: &mut Findings,
+    context: &mut python_context::Engine<'_>,
+) {
     scan_path(relative, source, findings);
     if private_filename(relative) {
         return;
@@ -144,7 +175,15 @@ fn scan_file(root: &Path, relative: &Path, source: &str, findings: &mut Findings
     }
     match fs::read(path) {
         Ok(bytes) if !bytes.iter().take(8192).any(|byte| *byte == 0) => {
-            scan_text(&String::from_utf8_lossy(&bytes), source, findings)
+            let text = String::from_utf8_lossy(&bytes);
+            let offsets = if relative.extension() == Some(OsStr::new("py"))
+                && std::str::from_utf8(&bytes).is_ok()
+            {
+                context.direct_offsets(&text)
+            } else {
+                BTreeSet::new()
+            };
+            scan_text_with_offsets(&text, source, findings, &offsets)
         }
         Ok(_) => {}
         Err(_) => add(findings, "scan-incomplete", source),
@@ -159,6 +198,15 @@ fn scan_path(path: &Path, source: &str, findings: &mut Findings) {
 }
 
 fn scan_text(text: &str, source: &str, findings: &mut Findings) {
+    scan_text_with_offsets(text, source, findings, &BTreeSet::new());
+}
+
+fn scan_text_with_offsets(
+    text: &str,
+    source: &str,
+    findings: &mut Findings,
+    offsets: &BTreeSet<usize>,
+) {
     if private_home(text) {
         add(findings, "private-home-path", source);
     }
@@ -191,7 +239,7 @@ fn scan_text(text: &str, source: &str, findings: &mut Findings) {
     if credential_signature(text) {
         add(findings, "credential-token-signature", source);
     }
-    if credential_assignment(text) {
+    if credential_assignment_with_offsets(text, offsets) {
         add(findings, "credential-assignment", source);
     }
 }
@@ -245,21 +293,16 @@ fn has_prefixed_token(text: &str, prefix: &str, minimum: usize) -> bool {
 }
 
 fn credential_assignment(text: &str) -> bool {
+    credential_assignment_with_offsets(text, &BTreeSet::new())
+}
+
+fn credential_assignment_with_offsets(text: &str, offsets: &BTreeSet<usize>) -> bool {
     let lower = text.to_ascii_lowercase();
-    [
-        "api_key",
-        "api-key",
-        "access_token",
-        "access-token",
-        "auth_token",
-        "auth-token",
-        "password",
-        "secret",
-        "token",
-    ]
-    .iter()
-    .any(|key| {
+    CREDENTIAL_KEYS.iter().any(|key| {
         lower.match_indices(key).any(|(index, _)| {
+            if offsets.contains(&index) {
+                return false;
+            }
             let tail = lower[index + key.len()..].trim_start();
             let Some(value) = tail.strip_prefix(':').or_else(|| tail.strip_prefix('=')) else {
                 return false;
@@ -574,9 +617,13 @@ fn scan_metadata(bytes: &[u8], ignored_commit: Option<&[u8]>, findings: &mut Fin
     }
 }
 
-fn scan_patch(bytes: &[u8], findings: &mut Findings) {
+fn scan_patch(bytes: &[u8], findings: &mut Findings, context: &mut python_context::Engine<'_>) {
     let patch = String::from_utf8_lossy(bytes);
-    scan_text(&patch, "git-history:patches", findings);
+    let offsets = std::str::from_utf8(bytes)
+        .ok()
+        .map(|text| context.patch_offsets(text))
+        .unwrap_or_default();
+    scan_text_with_offsets(&patch, "git-history:patches", findings, &offsets);
     for line in patch
         .lines()
         .filter(|line| line.starts_with("diff --git a/"))
