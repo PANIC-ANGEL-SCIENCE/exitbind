@@ -348,7 +348,7 @@ mod tests {
         let token = crate::run::quarantine::one_shot_identity(&marker).unwrap();
         let ledger_name = format!(".exitbind/runs/work-{token}.jsonl");
         let ledger_path = loaded.state_root.join(&ledger_name);
-        std::fs::write(&ledger_path, format!("{}\n", start)).unwrap();
+        std::fs::write(ledger_path, format!("{}\n", start)).unwrap();
         let intent = crate::run::lifecycle::start_event_intent_sha256(&start).unwrap();
         let reservation_path = loaded
             .state_root
