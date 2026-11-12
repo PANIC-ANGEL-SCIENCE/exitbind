@@ -75,6 +75,26 @@ pub(super) fn apply(f: &Fixture, work: &str, decision: &Value) -> Output {
     )
 }
 
+fn assert_drift(output: &Output, classification: &str, work: &str) {
+    assert!(!output.status.success(), "{output:?}");
+    let refusal = value(output);
+    assert_eq!(refusal["classification"], classification, "{refusal}");
+    let bound = refusal["boundSha256"].as_str().unwrap();
+    let current = refusal["currentSha256"].as_str().unwrap();
+    assert_eq!(bound.len(), 64, "{refusal}");
+    assert_eq!(current.len(), 64, "{refusal}");
+    assert_ne!(bound, current, "{refusal}");
+    assert_eq!(refusal["nextAction"]["readOnly"], true, "{refusal}");
+    let command = refusal["nextAction"]["command"].as_array().unwrap();
+    assert!(
+        command
+            .windows(3)
+            .any(|words| words == ["work", "detail", work]),
+        "{refusal}"
+    );
+    assert!(command.iter().any(|word| word == "--config"), "{refusal}");
+}
+
 fn release(f: &Fixture) {
     fs::write(f.root.join(".exitbind/release"), b"release").unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -93,7 +113,7 @@ fn real_lost_caller_is_reported_without_native_facts_retry_or_credit() {
     let (f, work, worker_assignment, mut caller) = start();
     let _release = ReleaseOnDrop(f.root.to_path_buf());
     let prefix = fs::read(f.ledger(&work)).unwrap();
-    if let Ok(old) = std::env::var("EXITBIND_PRE_RETURN_OLD_READER") {
+    if let Ok(old) = std::env::var("EXITBIND_LOST_CALLER_OLD_READER") {
         let older = support::git_topology::command(old)
             .current_dir(&f.root)
             .args([
@@ -116,6 +136,12 @@ fn real_lost_caller_is_reported_without_native_facts_retry_or_credit() {
     }
     let (view, mut decision) = preview(&f, &work);
     assert_eq!(view["legacyHostAttestationRequired"], false);
+    let offered = &view["apply"]["command"];
+    assert!(serde_json::to_vec(offered).unwrap().len() <= 16 * 1024);
+    assert!(!f
+        .emitted(offered, &serde_json::to_vec(&decision).unwrap())
+        .status
+        .success());
     assert!(
         !apply(&f, &work, &decision).status.success(),
         "live caller must refuse"
@@ -126,6 +152,15 @@ fn real_lost_caller_is_reported_without_native_facts_retry_or_credit() {
     let retained = fs::read(f.root.join(".exitbind/effect")).unwrap();
     let lead = f.next(&work);
     let before = lead["packet"]["context"]["loop"].clone();
+    let changed_input = f.root.join("new-product-input.txt");
+    fs::write(&changed_input, b"changed input").unwrap();
+    assert_drift(
+        &apply(&f, &work, &decision),
+        "lost_caller_inputs_changed",
+        &work,
+    );
+    assert_eq!(fs::read(f.ledger(&work)).unwrap(), prefix);
+    fs::remove_file(changed_input).unwrap();
     let invalid = [
         ("/approved", json!(false)),
         ("/currentBinding", json!("a".repeat(64))),
@@ -138,10 +173,18 @@ fn real_lost_caller_is_reported_without_native_facts_retry_or_credit() {
     for (pointer, replacement) in invalid {
         let mut bad = decision.clone();
         *bad.pointer_mut(pointer).unwrap() = replacement;
-        assert!(
-            !apply(&f, &work, &bad).status.success(),
-            "must refuse {pointer}"
-        );
+        let refused = apply(&f, &work, &bad);
+        if matches!(
+            pointer,
+            "/currentBinding"
+                | "/snapshot/admissionEventSha256"
+                | "/hostContext/bootSha256"
+                | "/reporter/executableSha256"
+        ) {
+            assert_drift(&refused, "lost_caller_decision_changed", &work);
+        } else {
+            assert!(!refused.status.success(), "must refuse {pointer}");
+        }
         assert_eq!(fs::read(f.ledger(&work)).unwrap(), prefix);
     }
     // The alternate fixture binary reports the same version/commit but has
@@ -201,7 +244,11 @@ fn real_lost_caller_is_reported_without_native_facts_retry_or_credit() {
     assert!(replay.status.success(), "{replay:?}");
     assert_eq!(value(&replay)["effect"], "no-change");
     decision["reason"] = json!("a different decision");
-    assert!(!apply(&f, &work, &decision).status.success());
+    assert_drift(
+        &apply(&f, &work, &decision),
+        "lost_caller_decision_changed",
+        &work,
+    );
     assert!(!f.call(&["work", "check", &work], b"").status.success());
     assert!(!f
         .call(
@@ -423,7 +470,7 @@ fn legacy_host_attestation_is_explicit_and_old_reader_refuses_new_event() {
         original.push(b'\n');
     }
     fs::write(f.ledger(&work), &original).unwrap();
-    let old_reader = std::env::var("EXITBIND_PRE_RETURN_OLD_READER").ok();
+    let old_reader = std::env::var("EXITBIND_LOST_CALLER_OLD_READER").ok();
     if let Some(old) = &old_reader {
         let before = support::git_topology::command(old)
             .current_dir(&f.root)
@@ -443,7 +490,7 @@ fn legacy_host_attestation_is_explicit_and_old_reader_refuses_new_event() {
         );
     } else {
         eprintln!(
-            "COVERAGE UNAVAILABLE: set EXITBIND_PRE_RETURN_OLD_READER to a pinned older executable"
+            "COVERAGE UNAVAILABLE: set EXITBIND_LOST_CALLER_OLD_READER to a pinned older executable"
         );
     }
     let (view, mut decision) = preview(&f, &work);

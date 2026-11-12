@@ -5,6 +5,8 @@ Integrity	src/work/check_recovery.rs	recovery decision or original observed inpu
 Integrity	src/work/check_recovery.rs	recovery replay differs from the current committed decision
 Integrity	src/work/check_recovery.rs	recovery requires the original observed inputs; no execution was launched
 Identity	src/work/check_recovery/diagnostic.rs	historical diagnostic requires its exact frozen configuration identity
+# Both historical diagnostic variants require the original frozen identity before reading their respective retained records.
+Identity	src/work/check_recovery/diagnostic.rs	historical diagnostic requires its exact frozen configuration identity
 RoutedInText	src/work/check_replacement.rs	current action form binding is stale; {route} and follow current.details.grouped
 LeadPreparation	src/work/check_replacement.rs	predecessor configuration is stale; check replacement requires the current project configuration
 LeadPreparation	src/work/supersede.rs	native Work supersession requires the unchanged predecessor configuration

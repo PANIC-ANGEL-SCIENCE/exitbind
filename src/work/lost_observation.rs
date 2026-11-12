@@ -2,6 +2,27 @@
 use super::*;
 use crate::run::{ledger, lost_observation as protocol};
 
+/// Only the facts that the preview fixes, excluding the Lead's decision and evidence.
+fn decision_facts(decision: &Value, option_binding: Option<&str>) -> Value {
+    json!({"work":decision["work"], "agent":decision["agent"],
+        "assignment":decision["assignment"], "snapshot":decision["snapshot"],
+        "hostContext":decision["hostContext"], "reporter":decision["reporter"],
+        "currentBinding":decision["currentBinding"], "optionBinding":option_binding})
+}
+
+fn decision_refusal(loaded: &Loaded, work: &str, bound: &Value, current: &Value) -> String {
+    crate::drift::refusal(
+        crate::drift::Class::LostCallerDecision,
+        &hash::value(bound),
+        Some(&hash::value(current)),
+        None,
+        crate::drift::Route::WorkDetail {
+            work,
+            config: &loaded.path,
+        },
+    )
+}
+
 pub(crate) fn report(
     loaded: &Loaded,
     work: &str,
@@ -35,10 +56,21 @@ pub(crate) fn report(
         details::ensure_current_config(loaded)?;
         run::check_observation::assert_current(loaded, &state)?;
         run::artifact::assert_current(loaded, &state)?;
-        if state["checkObservation"]["binding"]["inputsSha256"]
-            != run::inputs::fingerprint_for_state(loaded, &state)?
-        {
-            return Err("lost-caller reporting requires the original current inputs; no execution was launched".into());
+        let bound_inputs = state["checkObservation"]["binding"]["inputsSha256"]
+            .as_str()
+            .ok_or("lost-caller admission input binding is missing")?;
+        let current_inputs = run::inputs::fingerprint_for_state(loaded, &state)?;
+        if bound_inputs != current_inputs {
+            return Err(crate::drift::refusal(
+                crate::drift::Class::LostCallerInputs,
+                bound_inputs,
+                Some(&current_inputs),
+                None,
+                crate::drift::Route::WorkDetail {
+                    work,
+                    config: &loaded.path,
+                },
+            ));
         }
         let head = events.last().ok_or("missing lost-caller head")?;
         let host = run::observer_context::current();
@@ -59,7 +91,13 @@ pub(crate) fn report(
                 || !run::observer_context::matching(&d["hostContext"], &host)
                 || d["reporter"] != reporter
             {
-                return Err("lost-caller replay differs from the recorded decision".into());
+                let recorded = &head["observation"]["decision"];
+                let bound = json!({"decision":recorded, "work":work,
+                    "optionBinding":recorded["currentBinding"],
+                    "hostContext":recorded["hostContext"], "reporter":recorded["reporter"]});
+                let current = json!({"decision":d, "work":work,
+                    "optionBinding":binding, "hostContext":host, "reporter":reporter});
+                return Err(decision_refusal(loaded, work, &bound, &current));
             }
             return Ok((Some(head.clone()), true, Value::Null));
         }
@@ -87,18 +125,18 @@ pub(crate) fn report(
             "approved":false, "reason":crate::emitted::slot("REASON"), "currentBinding":current_binding,
             "snapshot":snapshot, "hostContext":host, "reporter":reporter, "legacySameOriginAttested":false, "evidence":[]});
         if !apply {
-            let command = super::action_forms::command(
-                loaded,
-                crate::emitted::Route::new([
-                    "work",
-                    "report-lost-caller",
-                    work,
-                    "--apply",
-                    "--current-binding",
-                    current_binding.as_str(),
-                    "--json",
-                ]),
-            );
+            let command = crate::emitted::Route::new([
+                "work",
+                "report-lost-caller",
+                work,
+                "--apply",
+                "--current-binding",
+                current_binding.as_str(),
+                "--json",
+            ])
+            .config(&loaded.path)
+            .within(16 * 1024)
+            .argv_json();
             return Ok((
                 None,
                 false,
@@ -119,9 +157,12 @@ pub(crate) fn report(
             || d["currentBinding"] != current_binding
             || d["currentBinding"].as_str() != binding
         {
-            return Err(
-                "lost-caller decision, current context or original inputs are stale".into(),
-            );
+            return Err(decision_refusal(
+                loaded,
+                work,
+                &decision_facts(d, binding),
+                &decision_facts(&template, Some(&current_binding)),
+            ));
         }
         let observer = &state["checkObservation"]["observer"];
         match observer.get("context") {

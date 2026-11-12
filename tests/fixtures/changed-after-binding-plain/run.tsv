@@ -43,6 +43,9 @@ LeadPreparation	src/run/governor_recovery.rs	carried owner recovery evidence dif
 LeadPreparation	src/run/governor_recovery.rs	owner recovery assignment hash does not match the canonical pending worker
 LeadPreparation	src/run/governor_recovery.rs	owner recovery current configuration identity does not match
 Integrity	src/run/ledger.rs	superseded predecessor provenance mismatch
+# Input validation and replay integrity: supplied evidence must match its own digest; an event must bind the ledger prefix it records.
+Validation	src/run/lost_observation.rs	incident evidence must contain one to four bounded UTF-8 texts and their exact SHA-256 digests
+Integrity	src/run/lost_observation.rs	lost-caller report does not bind the exact Work and ledger prefix
 Transient	src/run/ledger/observation.rs	carry observation configuration changed during projection
 Transient	src/run/lifecycle.rs	configuration changed while starting; reload configuration
 Transient	src/run/lifecycle.rs	quarantine verification inputs or configuration changed before start
@@ -73,6 +76,8 @@ Transient	src/run/quarantine/admission.rs	quarantine admission changed after its
 LeadPreparation	src/run/quarantine/admission.rs	quarantine start intent is stale against current configuration or inputs
 LeadPreparation	src/run/quarantine/admission.rs	quarantine verification artifact, command, or current inputs changed
 Integrity	src/run/quarantine/admission.rs	quarantine verification plan differs from its accepted isolation review
+# Internal persisted-record consistency, not comparison to a newly supplied decision.
+Integrity	src/run/quarantine/admission.rs	quarantine verification marker differs from its exact reservation
 Integrity	src/run/quarantine/admission/followup.rs	follow-up check event differs from the exact bound failed observation
 Integrity	src/run/quarantine/verification.rs	verification admission differs from its frozen inputs or command
 TypedRunDrift	src/run/reducer.rs	artifact drift detected:

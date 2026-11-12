@@ -51,6 +51,10 @@ pub(crate) enum Class {
     PreReturnRecoveryEvidence,
     /// A pre-return recovery decision no longer matches its preview or replay.
     PreReturnRecoveryDecision,
+    /// A lost-caller report no longer has the original observed inputs.
+    LostCallerInputs,
+    /// A lost-caller decision no longer matches its preview or replay.
+    LostCallerDecision,
     /// A forward repair needs the frozen configuration.
     RepairConfiguration,
     /// The selected architecture contract bytes differ.
@@ -182,6 +186,18 @@ pub(crate) const MEMBERS: &[Member] = &[
         classification: "pre_return_recovery_decision_changed",
         message: "pre-return recovery decision does not match its bound state",
         meaning: "inspect the current Work and follow its current recovery action; do not repeat the interrupted execution",
+    },
+    Member {
+        class: Class::LostCallerInputs,
+        classification: "lost_caller_inputs_changed",
+        message: "lost-caller reporting requires the original observed inputs; no execution was launched",
+        meaning: "inspect the current Work and preserve the unknown observation; do not retry the interrupted execution",
+    },
+    Member {
+        class: Class::LostCallerDecision,
+        classification: "lost_caller_decision_changed",
+        message: "lost-caller decision does not match its bound preview or recorded decision",
+        meaning: "inspect the current Work and preserve the unknown observation; do not retry the interrupted execution",
     },
     Member {
         class: Class::RepairConfiguration,
