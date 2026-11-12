@@ -17,6 +17,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_expression_guidance.py
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_capture_styling_guidance.py
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_garment_structure_guidance.py
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_mirror_selfie_guidance.py
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_component_icon_guidance.py
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_typography_guidance.py
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_outcome_test_support.py
 python3 scripts/package.py --output /absolute/private/output/design-pack.zip
@@ -179,3 +180,7 @@ Private-fashion tests cover written loading/precedence/status boundaries and syn
 ## Maintenance coverage (0.7.24)
 
 The typography suite protects concrete required-script methods and public-only usability in the written guidance; it does not inspect rendered text. Shared outcome support tests exercise independent fixture values, unambiguous requirement lookup, order independence and existing readiness refusal. They do not prove maker consumption or aesthetic improvement.
+
+## Component and icon coverage
+
+Written-contract tests protect routing, source-status distinctions, customization boundaries, semantic icon versus artwork/control separation, optical review and task-sized evidence. Synthetic outcome cases independently exercise component-behavior, icon-meaning, icon-optical-fit and icon-accessibility declarations, including missing/failed/untested checks and honest rework. These tests do not execute a UI library, inspect pixels, audit real accessibility or prove an agent consumed the methods. A falsely declared pass can pass. Actual-component, use-size and device/assistive-technology evidence remain separate.

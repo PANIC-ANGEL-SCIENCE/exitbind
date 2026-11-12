@@ -12,7 +12,7 @@ from urllib.parse import unquote
 ROOT = Path(__file__).resolve().parents[1]
 REFS = ('aesthetic-construction brand-system briefing color communication-design '
         'design-judgment diagrams direction discovery elements exitbind first-pass '
-        'interface-craft interface lifecycle memory methods motion-sound physical-design '
+        'components iconography interface-craft interface lifecycle memory methods motion-sound physical-design '
         'reference-analysis reference-roles roles screen-production portfolio-presentation spatial typography validation visual-methods').split()
 ENTRY = 'skills/design-pack/SKILL.md'
 JUDGMENT = 'skills/design-pack/references/design-judgment.md'
@@ -28,7 +28,7 @@ EXPECTED = {
     'scripts/test_expression_guidance.py',
     'scripts/test_capture_styling_guidance.py',
     'scripts/test_garment_structure_guidance.py',
-    'scripts/test_typography_guidance.py', 'scripts/test_outcome_test_support.py',
+    'scripts/test_component_icon_guidance.py', 'scripts/test_typography_guidance.py', 'scripts/test_outcome_test_support.py',
     'scripts/outcome_test_support.py', 'scripts/capture_outcome_fixtures.py',
     'scripts/test_mirror_selfie_guidance.py',
     'scripts/check_outcome.py', 'scripts/test_check_outcome.py', OUTCOME,
@@ -42,7 +42,7 @@ EXPECTED = {
     'skills/mockup-image/templates/image-brief.md',
     *(f'skills/design-pack/references/{name}.md' for name in REFS),
     *(f'skills/design-pack/templates/{name}.md' for name in
-      ('brief', 'project-profile', 'handoff', 'brand-system', 'reference-session', 'presentation-brief')),
+      ('brief', 'project-profile', 'handoff', 'brand-system', 'reference-session', 'presentation-brief', 'component-brief')),
 }
 LINK = re.compile(r'\[([^\]]*)\]\(([^)]*)\)')
 REMOTE = re.compile(r'(?:https?|ftp)://[^\s<>"\']+', re.I)

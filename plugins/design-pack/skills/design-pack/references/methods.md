@@ -12,6 +12,8 @@ Load only the methods needed for the current uncertainty. A small edit does not 
 | Contextual color roles and state pairings | [Color](color.md), [elements](elements.md) |
 | Brand meaning through tokens, components and adaptation | [Brand system](brand-system.md), [template](../templates/brand-system.md) |
 | App screen or UI mockup, from visual inputs to reviewed output | [Screen production](screen-production.md) |
+| Reusable UI contracts, customization and source/docs/test parity | [Components](components.md), [component brief](../templates/component-brief.md) |
+| Icon meaning, artwork, optical fit and control semantics | [Iconography](iconography.md) |
 | Product flow, real states, responsive UI and refinement | [Interface](interface.md), [interface craft](interface-craft.md) |
 | Image deliverable, photographic direction and placement | [Mockup Image](../../mockup-image/SKILL.md) |
 | Identity, graphic/print, packaging and editorial | [Communication design](communication-design.md) |

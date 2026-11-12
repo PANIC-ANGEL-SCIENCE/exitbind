@@ -378,7 +378,7 @@
     ],
     "plugins/design-pack/README.md": [
       {
-        "pinned": "# Design Pack 0.7.24 candidate",
+        "pinned": "# Design Pack 0.7.25 candidate",
         "reason": "Independent Design Pack candidate or historical guidance version; not the Exitbind Cargo release version."
       }
     ],
@@ -453,6 +453,10 @@
       }
     ],
     "plugins/design-pack/CHANGELOG.md": [
+      {
+        "pinned": "## 0.7.25",
+        "reason": "Independent Design Pack candidate or historical guidance version; not the Exitbind Cargo release version."
+      },
       {
         "pinned": "## 0.7.24",
         "reason": "Independent Design Pack candidate or historical guidance version; not the Exitbind Cargo release version."

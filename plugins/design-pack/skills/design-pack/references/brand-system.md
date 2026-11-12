@@ -101,3 +101,5 @@ At narrow width, move image above facts when side-by-side layout loses readable 
 For a single component fix, keep the current brand decision and trace only the affected role, state, consumer and check. For a new small identity, use a one-page chain and a few representative applications. For a multi-product system, add ownership, mode/version/consumer mapping and migration where actually needed. Do not demand a logo redesign, full token library or research study for every task.
 
 A requested local silhouette or naming language becomes a project contract only at its stated scope. Do not promote it to a global token without real shared consumers and authority. In imagery, styling tokens alone cannot establish a person's participation or the brand's cultural meaning; review the lived action/context relationship without inferring membership from appearance.
+
+For reusable UI changes, use [components](components.md) to resolve anatomy, supported customization and real behavior. Use [iconography](iconography.md) when symbols, icon families or icon-bearing controls change; do not impose these routes on unrelated local edits.

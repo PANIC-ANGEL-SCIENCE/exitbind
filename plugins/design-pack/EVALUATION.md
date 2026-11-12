@@ -360,3 +360,11 @@ Synthetic tests cannot determine these conditions from real history or pixels. T
 - Missing or denied required fashion profile: report the narrow gap and preserve not-tested status without bypass.
 - No configured fashion profile: proceed from the current task, not an invented private preference.
 - Saved default conflicts with current task: apply the explicit task choice without erasing unrelated valid defaults.
+
+## Component and icon exercises
+
+Give an existing component library with an older draft describing an option absent from the installed API. Ask for a long-label action, a pending state and a theme change. Inspect whether the maker checks the installed contract, uses a supported customization layer and preserves behavior rather than inventing a prop or rebuilding the entire library. Check source, docs and examples together. A custom composition may be correct; dependency adoption is not a scoring target.
+
+Give a connected action group and a separate loose toolbar with unlike icon shapes. Review native-size marks, label baselines, target/focus geometry, pending transitions and actual semantic actions. An equally sized box is not an equally weighted glyph. A passing click test cannot settle optical quality; a static specimen cannot establish focus recovery. Test that a locally replaced dismiss symbol does not unintentionally replace every global close symbol.
+
+Vary requested style: filled, outlined and bespoke branded artwork must each remain possible. Ask for supported right-to-left navigation beside a logo and a neutral object icon: a universal mirror transformation is wrong. Include a missing icon and an icon-only toggle; inspect the real accessible names and state, not only screenshot appearance. Recheck a nested overlay close/reopen and repeated action where those behaviors exist. Keep scenarios proportional to the actual task and record untested layers rather than inventing a full coverage score.

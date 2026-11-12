@@ -1,4 +1,4 @@
-# Design Pack 0.7.24 candidate
+# Design Pack 0.7.25 candidate
 
 A skills-only design partner for turning real content and inspected references into deliberate visual work. It covers interfaces, portfolio presentations, brand, editorial, diagrams, objects, spaces, fashion, motion, sound and 3D. Start at [Design Pack](skills/design-pack/SKILL.md) and load only relevant [methods](skills/design-pack/references/methods.md).
 
@@ -6,6 +6,7 @@ A skills-only design partner for turning real content and inspected references i
 
 New or substantially rejected directions need construction, not another page of adjectives. The core routes use actual-content thumbnails, type/crop studies and state strips to resolve uncertainty, then inspect the artifact at thumbnail, use and source-detail scales. Ordinary first drafts include refinement. Only an explicitly untouched evaluation uses [first pass](skills/design-pack/references/first-pass.md).
 
+- [Components](skills/design-pack/references/components.md) and [iconography](skills/design-pack/references/iconography.md): source-aware UI contracts, supported customization, meaningful symbols and actual-size optical review without adopting a required library.
 - [Screen production](skills/design-pack/references/screen-production.md): develop the product relationship and meaningful action/state changes alongside the presentation when they affect one another.
 - [Portfolio presentation](skills/design-pack/references/portfolio-presentation.md): compose distinct narrative/evidence roles, not repeated hardware by default.
 - [Mockup Image](skills/mockup-image/SKILL.md): preserve clean asset masters and repair the relevant source layer, avoiding needless whole-board raster degradation.
@@ -34,6 +35,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_expression_guidance.py
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_capture_styling_guidance.py
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_garment_structure_guidance.py
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_mirror_selfie_guidance.py
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_component_icon_guidance.py
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_typography_guidance.py
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_outcome_test_support.py
 python3 scripts/package.py --output /absolute/private/output/design-pack.zip

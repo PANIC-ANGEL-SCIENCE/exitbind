@@ -16,7 +16,7 @@ Allocate space to meaning before boxes. Choose a grid, content-led alignment, ty
 
 ## Icons and form
 
-Compare perceived icon weight, baseline and silhouette at use size. Keep stable targets around optically adjusted marks. Match symbols to real actions; labels help when meaning is uncertain. Curves, cuts, borders and silhouettes can carry identity without making every control identical. Test the actual nested edges, crop and focus state through [interface craft](interface-craft.md).
+Compare perceived icon weight, baseline and silhouette at use size. Keep stable targets around optically adjusted marks. Match symbols to real actions; labels help when meaning is uncertain. Curves, cuts, borders and silhouettes can carry identity without making every control identical. Test the actual nested edges, crop and focus state through [interface craft](interface-craft.md). Use [iconography](iconography.md) for semantic roles, family geometry, native-size optical study and accessible integration; use [components](components.md) for reusable control contracts.
 
 ## Image and material
 

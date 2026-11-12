@@ -37,3 +37,5 @@ Name the source of truth for tokens, copy and component behavior. Record depreca
 For a bounded state workbench, difficult-input fixture or image-overlay investigation, read [interface-craft.md](interface-craft.md). For generating or selecting the image itself, route to [Mockup Image](../../mockup-image/SKILL.md). A static fixture is not evidence of live transitions or backend behavior.
 
 For a new or substantially changed reusable system, [brand-system.md](brand-system.md) defines promotion criteria, primitive/semantic/component contracts, variant/state/mode distinctions and change governance. Use it to preserve meaning across consumers rather than create a token for every local value.
+
+For reusable UI changes, use [components](components.md) to resolve anatomy, supported customization and real behavior. Use [iconography](iconography.md) when symbols, icon families or icon-bearing controls change; do not impose these routes on unrelated local edits.
