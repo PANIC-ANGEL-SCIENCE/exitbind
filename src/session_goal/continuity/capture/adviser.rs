@@ -1,3 +1,5 @@
+// Resolves the adviser selected for native child capture.
+// Refuses an adviser no longer configured for that role; see `src/session_goal/continuity/capture.rs`.
 use crate::config::Loaded;
 use serde_json::Value;
 use std::collections::BTreeSet;

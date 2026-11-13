@@ -1,3 +1,5 @@
+// Observes simple script inputs named by a check command.
+// Shell syntax remains unknown rather than interpreted; see `src/project/readiness.rs`.
 //! Conservative observations of a check command's directly named script.
 //!
 //! Shell syntax and interpreter options are intentionally not guessed. This

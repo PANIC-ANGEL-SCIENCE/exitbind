@@ -1,3 +1,5 @@
+// Dispatches Goal commands and their bounded read routes.
+// Refuses recovery outside the original Goal owner context; see `src/cli/mod.rs`.
 //! Canonical goal commands and bounded observational routes.
 
 use super::goal_action::{Admission, GoalAction};

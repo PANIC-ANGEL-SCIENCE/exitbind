@@ -53,6 +53,26 @@ forms again. Bound both each displayed item and their combined batch to the
 host's output budget. A batch of individually valid responses can still exceed
 that budget; serialize those reads or retain them before projecting a summary.
 
+Successful begin, return, check and permit responses can carry the next
+recipient's full current detail in `currentDelivery`, together with current
+forms. `begin --detail` returns that detail as the response itself. When the
+detail says `complete: true`, consume it rather than issuing
+another detail read solely to discover the next action. A new recipient,
+binding, instruction source or evidence source still requires its applicable
+current bytes; the response may therefore deliver them again after a permit.
+If the complete delivery or a complete command cannot fit the readable response
+bound, the response says so and retains the supported read-only recovery path.
+
+`beginPreparation` is an observation and, for an empty starter, an inert
+boundary proposal. It does not execute the check or amend the configuration.
+Review and explicitly select proposed paths and commands before applying them
+through the supported setup or successor route.
+
+The displayed `beforeEditing` form describes an advisory Work permit for a
+direct host workspace. Mediated managed file effects and a selected controlled
+launch use their existing grant and successful preflight requirements. A
+displayed advisory label does not grant authority or bypass either check.
+
 In grouped detail, `sections.assignment.projection.residualRecoveryAliases`
 maps each removed equal `residual.context.recovery` field to its source field
 in `residual.context`. Only fields actually removed appear in that map;
@@ -83,6 +103,13 @@ discarded or change that host's limit.
 
 After acquiring the complete current assignment and required instructions, use
 `work detail WORK --view action --json` for routine state and action inspection.
+This diagnostic view keeps its existing compact navigation budget; it is not a
+replacement for the complete delivery above. Each command that it does expose
+is complete. When a whole command cannot fit, the view marks it unavailable
+instead of emitting an argv prefix for the reader to repair.
+The optional expert `fillRoute` is a `templatePrefix`, not an executable
+`argv`: a choice and its documented values must be selected first. Ordinary
+execution uses the complete command on the selected choice.
 It also carries the guidance bodies and lessons delivered to the current
 recipient for its phase, each with its read route; read them before dependent
 work. It still marks instructions incomplete (profile, rules, assignment and
@@ -97,6 +124,14 @@ Without complete capture, use exact expansion pages and verify every required
 byte. Start with one complete `--detail` response, then use the action view for
 routine navigation and expand changed required sections as needed. Never treat
 a truncated model-visible projection as complete delivery.
+
+For `work resume` in a Git worktree, the tested-input identity retains the
+existing SHA-256 format. Exitbind can hash clean blob bytes from Git and reads
+actual worktree bytes for changed or uncertain paths; staging or committing
+unchanged content does not itself change that identity. This relies on the
+normal trusted Git index and status observations, not a claim that a Git
+SHA-1 object name has SHA-256 collision resistance. The non-Git walk limits
+remain separate; Git listing, byte and request-time limits still apply.
 
 For a compact completion response, close the whole conversation Goal with
 `goal close --direct --goal-id ID --view event --json`. The response carries the

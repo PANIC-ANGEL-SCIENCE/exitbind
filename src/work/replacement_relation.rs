@@ -1,3 +1,5 @@
+// Projects the check-replacement relation on Work detail.
+// Refuses a relation changed during the read; see `src/work/mod.rs`.
 //! The check-replacement relation shown on a Work's detail: a successor
 //! verified against its committed start marker (or the one submit being
 //! previewed), or a predecessor verified through its supersession claim and

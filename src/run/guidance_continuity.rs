@@ -1,3 +1,5 @@
+// Separates checked inputs from launch-only guidance in run state.
+// Refuses a guidance hash without its protocol marker; see `src/run/mod.rs`.
 //! Versioned separation between verification inputs and launch-only guidance.
 //!
 //! The marker is opt-in on new start events. Absence intentionally selects the

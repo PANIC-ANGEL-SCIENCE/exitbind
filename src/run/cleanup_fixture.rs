@@ -1,3 +1,5 @@
+// Supports the isolated reaping test fixture and its transport.
+// Bounds fixture capture; see `src/run/cleanup_tests.rs`.
 //! Test-only ownership and bounded transport for the isolated reaping fixture.
 use super::super::capture::process_group_exists;
 use std::{

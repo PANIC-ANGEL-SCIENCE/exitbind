@@ -1,3 +1,5 @@
+// Stores and validates canonical Goal journal lines.
+// Refuses change paths that do not match the record; see `src/session_goal.rs`.
 //! Stored form of one canonical Goal journal line.
 //!
 //! The hash chain and every record validator cover the logical (complete)

@@ -1,3 +1,5 @@
+// Projects non-check observation facts into run state.
+// Refuses invalid observation events; see `src/run/state.rs`.
 //! Validate and project non-check observation facts; never mutate check credit.
 use super::*;
 

@@ -1,3 +1,5 @@
+// Owns the governed Work facade and current-action operations.
+// Refuses worker operations for a non-current assignment; see `src/work/action_forms.rs`.
 //! Governed work façade.
 
 pub(crate) mod action;
@@ -33,7 +35,7 @@ pub(crate) mod pre_return_recovery;
 pub(crate) mod quarantine;
 pub(crate) mod readable;
 mod recovery;
-mod refreshed_action;
+pub(crate) mod refreshed_action;
 mod replacement_relation;
 pub(crate) mod response_recovery;
 mod resume;

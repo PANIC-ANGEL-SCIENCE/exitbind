@@ -1,3 +1,5 @@
+// Resolves current packet-bound Worker evidence for a reviewer.
+// Requires one to eight Worker results; see `src/work/native_action.rs`.
 //! Resolve complete packet-bound worker evidence for a reviewer.
 
 use super::*;

@@ -1,3 +1,5 @@
+// Captures controlled child output with bounded cleanup.
+// A prelaunch hold prevents the child launch; see `src/run/capture.rs`.
 //! Owned captured-child polling and bounded cleanup, including external holds.
 use super::*;
 

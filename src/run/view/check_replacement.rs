@@ -1,3 +1,5 @@
+// Builds the recorded replacement path for a defective check contract.
+// Requires an explicit classification and reason; see `src/run/view.rs`.
 use super::*;
 
 /// Continue an explicitly defective frozen check contract under the same

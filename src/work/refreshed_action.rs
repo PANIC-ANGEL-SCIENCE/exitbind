@@ -1,8 +1,10 @@
+// Attaches verified current delivery or bounded navigation after a mutation.
+// Cannot change the recorded effect; see `src/work/readable.rs`.
 //! Bound navigation after a committed mutation; no extra state transition.
 use crate::config::Loaded;
 use serde_json::{json, Value};
 
-pub(super) fn attach(loaded: &Loaded, work: &str, next: &Value, response: &mut Value) {
+pub(crate) fn attach(loaded: &Loaded, work: &str, next: &Value, response: &mut Value) {
     let Some(binding) = next["current"]["binding"].as_str() else {
         return;
     };
@@ -11,6 +13,24 @@ pub(super) fn attach(loaded: &Loaded, work: &str, next: &Value, response: &mut V
         || response["diagnostic"].is_object()
     {
         return;
+    }
+    // A successful transition can deliver the next actor's verified current
+    // context with its forms. The old compact route remains the truthful
+    // fallback when current detail cannot be delivered within its own bound.
+    if let Ok(mut delivery) = super::readable::current(loaded, work) {
+        if delivery["binding"] == binding && delivery["complete"] == true {
+            super::readable::public_delivery(&mut delivery);
+            let mut candidate = response.clone();
+            candidate.as_object_mut().unwrap().remove("effectiveAction");
+            candidate["current"] = next["current"].clone();
+            candidate["actionForms"] = delivery["actionForms"].clone();
+            candidate["currentDelivery"] = delivery;
+            candidate = super::effective_action::attach(&candidate);
+            if size(&candidate) <= super::readable::MAX_GROUPED_BYTES {
+                *response = candidate;
+                return;
+            }
+        }
     }
     let mut candidate = response.clone();
     candidate.as_object_mut().unwrap().remove("effectiveAction");

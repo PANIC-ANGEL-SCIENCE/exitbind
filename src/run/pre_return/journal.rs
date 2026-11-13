@@ -1,3 +1,5 @@
+// Stores and validates bounded pre-return attempt records.
+// Requires private journal directory permissions; see `src/run/pre_return.rs`.
 //! Bounded durable storage and integrity checks for pre-return attempts.
 
 use crate::config::Loaded;

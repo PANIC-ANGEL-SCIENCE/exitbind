@@ -1,3 +1,5 @@
+// Replaces existing private protocol records atomically.
+// Refuses records changed since observation; see `src/run/ledger.rs`.
 //! Atomic replacement of an existing private protocol record.
 
 use super::{open_read_nofollow, open_stage, stage_path, verify_opened, LedgerPath};

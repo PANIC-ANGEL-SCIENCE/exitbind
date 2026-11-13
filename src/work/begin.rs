@@ -1,3 +1,5 @@
+// Creates governed Work and its named-goal coverage binding.
+// Refuses unavailable governed activation; see `src/work/start_delivery.rs`.
 //! Governed Work creation and named-goal coverage binding.
 
 use super::*;
@@ -57,6 +59,8 @@ pub(crate) fn begin_with_pre_return(
             "work begin refused before recording a Work: {refusal}"
         ));
     }
+    let preparation =
+        crate::project::readiness::work_preparation(loaded, Some(options.check_command));
     // `work begin` is the governed activation boundary. Direct, harmless work
     // never enters this path. Availability is read from the loaded project
     // preconditions before any ledger mutation; the final boolean means those
@@ -182,7 +186,7 @@ pub(crate) fn begin_with_pre_return(
         Ok(()) => json!({"updated": true, "authority": "none"}),
         Err(error) => focus::recovery(loaded, &work, &error),
     };
-    Ok(json!({"work": work, "next": next, "focus": focus}))
+    Ok(json!({"work": work, "next": next, "focus": focus, "beginPreparation": preparation}))
 }
 
 #[cfg(test)]

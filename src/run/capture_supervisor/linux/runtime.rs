@@ -1,3 +1,5 @@
+// Owns the child tree inside an exclusive Linux observer process.
+// Refuses a failed subreaper acquisition; see `src/run/capture_supervisor/linux.rs`.
 //! Single child-tree owner, entered only by a fresh exclusive process.
 use super::*;
 use std::io::Write;

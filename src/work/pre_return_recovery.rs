@@ -1,3 +1,5 @@
+// Previews Lead decisions for interrupted pre-return work.
+// Requires exactly the previewed decision fields; see `src/work/mod.rs`.
 //! Configured-Lead preview and exact decision for interrupted pre-return work.
 use super::*;
 use crate::run::{ledger, pre_return::recovery as protocol};

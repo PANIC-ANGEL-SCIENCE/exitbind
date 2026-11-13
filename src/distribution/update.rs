@@ -1,3 +1,5 @@
+// Discovers and installs supported distribution updates.
+// Bounds release metadata responses; see `src/distribution/mod.rs`.
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};

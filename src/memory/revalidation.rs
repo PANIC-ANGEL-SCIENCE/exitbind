@@ -1,3 +1,5 @@
+// Revalidates compatible configuration lineage after Lead review.
+// Refuses missing Lead authority or reason; see `src/memory/mod.rs`.
 //! Explicit Lead review of compatible configuration lineage. Work is never imported.
 use super::ledger::*;
 use crate::{

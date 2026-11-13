@@ -1,3 +1,5 @@
+// Assesses continuation compatibility with named requirements.
+// Exact requirement text and configured checks are needed; see `src/session_goal/continuity.rs`.
 //! Read-only compatibility assessment for named continuation requirements.
 
 use serde_json::{json, Value};

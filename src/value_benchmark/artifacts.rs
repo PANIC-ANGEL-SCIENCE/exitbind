@@ -1,3 +1,5 @@
+// Resolves and writes value-benchmark output artifacts.
+// Refuses empty output paths; see `src/value_benchmark.rs`.
 use super::*;
 
 pub(super) fn fixture_artifacts(

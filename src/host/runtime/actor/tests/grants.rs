@@ -1,3 +1,5 @@
+// Tests actor delivery of current grants and completed history.
+// History cases do not require a current grant; see `src/host/runtime/actor/tests.rs`.
 use super::*;
 
 fn offered() -> (Value, GrantOffer) {

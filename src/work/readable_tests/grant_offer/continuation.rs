@@ -1,3 +1,5 @@
+// Tests grant offers after project-continuation admission.
+// A changed selected mandate suppresses the prior offer; see `src/work/readable_tests/grant_offer.rs`.
 //! Actual project selection/admission, followed by the canonical form owner.
 use super::*;
 use crate::project::continuation;

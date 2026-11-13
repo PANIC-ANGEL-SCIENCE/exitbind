@@ -1,3 +1,5 @@
+// Resolves governor permits and replans for current assignments.
+// Requires Work identity bound to the ledger; see `src/run/mod.rs`.
 use super::*;
 
 pub(crate) struct AssignmentIdentity {

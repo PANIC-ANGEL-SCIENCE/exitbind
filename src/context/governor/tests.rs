@@ -1,3 +1,5 @@
+// Tests shared governor budgets and carried counters.
+// Cases keep prior authority out of carry; see `src/context/governor.rs`.
 use super::*;
 
 fn mutation(previous: Option<&Value>, n: u64, evidence: Option<&str>) -> Value {

@@ -1,3 +1,5 @@
+// Renders the current role profile and verified assignment context.
+// Refuses presentation/proof mismatches; see `src/host/runtime.rs`.
 //! Render the current role profile and any verified assignment association.
 use serde_json::{json, Value};
 use std::path::Path;

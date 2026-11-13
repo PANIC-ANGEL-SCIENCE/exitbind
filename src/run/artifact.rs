@@ -1,3 +1,5 @@
+// Validates typed run artifacts and their immutable bytes.
+// Refuses unsupported artifact roots; see `src/run/mod.rs`.
 //! Typed run-artifact evidence and immutable-byte revalidation.
 
 use crate::{config, config::Loaded};

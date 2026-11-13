@@ -1,3 +1,5 @@
+// Tests scoped Work and Goal command help.
+// Checks subcommand syntax and legacy project selection; see `src/cli/help.rs`.
 use super::scoped_help;
 
 #[test]

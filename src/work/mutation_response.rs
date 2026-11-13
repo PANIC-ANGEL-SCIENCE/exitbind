@@ -1,3 +1,5 @@
+// Builds default check and return mutation responses.
+// Its next hint requires expansion; see `src/work/mod.rs`.
 //! Default `work check` and `work return` JSON contract. `effect` records
 //! whether a ledger event was committed or a worker result was held. `result`
 //! is the checker's observed outcome; `outcome` is a role return or refusal.

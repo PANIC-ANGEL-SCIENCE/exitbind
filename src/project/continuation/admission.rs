@@ -1,3 +1,5 @@
+// Reserves exact continuation task claims before Work starts.
+// Refuses plans outside the Lead read boundary; see `src/project/continuation/mod.rs`.
 //! Exact task claims are reserved before starting an ordinary Work.
 use super::*;
 use crate::session_goal::requirements::{self, ContractScope, PrepareRequest};

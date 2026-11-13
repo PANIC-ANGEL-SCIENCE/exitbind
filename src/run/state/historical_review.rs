@@ -1,3 +1,5 @@
+// Replays historical reviewer ordering for selected older producers.
+// Does not extend that exception to current producers; see `src/run/state.rs`.
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
 

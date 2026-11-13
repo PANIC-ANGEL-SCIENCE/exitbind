@@ -1,3 +1,5 @@
+// Builds a native Codex request for the current assignment.
+// Refuses a non-Codex host and invalid timeout; see `src/work/native_action.rs`.
 use super::{result, Options, ReviewEvidence};
 use crate::config::Loaded;
 use crate::evidence::hash;
@@ -327,7 +329,7 @@ fn native_lifecycle_guidance(
     if controlled_effects {
         guidance.push_str(" A controlled read-only Worker uses only the host pre-issued current grant through the managed file MCP tool; do not request or execute a new permit in the child. Checks requiring temporary writes stay on the existing parent check route, with no child filesystem permission or exemption from final checks.");
     } else if role == "worker" && sandbox == Some("workspace-write") {
-        guidance.push_str(" An ordinary workspace-write Worker retains the existing governor-authorized `work permit` route where offered for implementation changes; this does not transfer result submission or parent check and acceptance progression to the child.");
+        guidance.push_str(" For ordinary workspace-write the existing governor-authorized `work permit` route is advisory: the host may allow equivalent direct writes. Managed file effects still require allowed:true; a selected controlled-effects launch requires a pre-issued grant and an actual successful protection preflight. The permit does not transfer result submission or parent check and acceptance progression to the child.");
     } else if sandbox == Some("read-only") {
         guidance.push_str(" This read-only child leaves checks requiring temporary writes to the existing parent check route; this grants no child filesystem permission and does not exempt the task from final checks.");
     } else if sandbox.is_none() {
@@ -446,6 +448,7 @@ mod tests {
             ordinary_worker.contains("run the parent check, replan, or record parent acceptance")
         );
         assert!(ordinary_worker.contains("existing governor-authorized `work permit` route"));
+        assert!(ordinary_worker.contains("route is advisory"));
 
         let controlled_worker = native_lifecycle_guidance("worker", true, Some("read-only"));
         assert!(controlled_worker.contains("host pre-issued current grant"));

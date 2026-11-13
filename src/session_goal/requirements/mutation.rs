@@ -1,3 +1,5 @@
+// Applies revisioned requirement intake and Work coverage mapping.
+// Refuses commas in requirement IDs; see `src/session_goal/requirements.rs`.
 //! Revisioned intake, explicit coverage and idempotent Work mapping.
 
 use super::*;

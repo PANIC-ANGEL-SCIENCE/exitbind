@@ -1,3 +1,5 @@
+// Reads accepted result references for Goal projections.
+// Requires a UTF-8 run ledger path; see `src/run/mod.rs`.
 //! Read-only accepted result reference evidence for historical and current goal projections.
 
 use super::*;

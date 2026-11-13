@@ -331,6 +331,11 @@ fn managed_permit_edit_and_lost_reply_recover_one_saved_result_without_reexecuti
     use sha2::{Digest, Sha256};
     for mode in ["matching", "unmatched", "pre-input"] {
         let f = Fixture::new(false, false);
+        let public = f.ok(&["work", "detail", &f.work, "--json"], b"");
+        assert_eq!(
+            public["actionForms"]["beforeEditing"]["enforcement"],
+            "advisory"
+        );
         let capture = support::temp("managed-permit-packet");
         let packet_path = capture.join("packet.json");
         let relative = format!(".exitbind/runs/work-{}.jsonl", &f.work[4..]);
@@ -409,6 +414,12 @@ print(json.dumps({'type':'turn.completed','status':'completed','usage':{'input_t
                 .next()
                 .expect("completed native journal");
             let packet = fs::read(&packet_path).unwrap();
+            let native_packet: Value = serde_json::from_slice(&packet).unwrap();
+            assert_eq!(native_packet["currentAction"]["beforeEditing"]["meaning"],
+                "obtain allowed:true before editing; repeat this exact request ID only to recover its response; this form grants no host permission");
+            assert!(native_packet["currentAction"]["beforeEditing"]
+                .get("enforcement")
+                .is_none());
             assert_eq!(
                 journal["permitDeliveryProof"]["requiredFactsSha256"],
                 format!("{:x}", Sha256::digest(packet)),

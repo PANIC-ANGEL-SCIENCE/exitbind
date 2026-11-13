@@ -1,3 +1,5 @@
+// Records owner-bound, uncredited Goal quarantine residuals.
+// Refuses invalid endpoint identities; see `src/session_goal.rs`.
 //! Owner-bound, uncredited Goal residuals for unresolved Works that receive a
 //! separately authorized quarantine verification.
 

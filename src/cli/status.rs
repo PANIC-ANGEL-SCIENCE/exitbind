@@ -1,3 +1,5 @@
+// Presents read-only Goal and run status, including themed output.
+// Refuses unsupported Goal status views; see `src/cli/mod.rs`.
 //! Read-only goal and run status surfaces, including optional themed display.
 
 use super::*;

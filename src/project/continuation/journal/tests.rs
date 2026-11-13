@@ -1,3 +1,5 @@
+// Tests secure continuation-journal append and readback.
+// Capacity cases refuse before changing the file; see `src/project/continuation/journal.rs`.
 use super::*;
 use crate::{evidence::hash, project::onboarding};
 use serde_json::{json, Value};

@@ -1,3 +1,5 @@
+// Observes a secure file digest using bounded descriptor reads.
+// Refuses bytes or identity changed during observation; see `src/project/path.rs`.
 //! Two descriptor reads with a fixed buffer; no retained guard content.
 use super::*;
 

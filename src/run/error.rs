@@ -1,3 +1,5 @@
+// Models Run-start configuration and evidence drift diagnostics.
+// An unavailable current digest is represented as null; see `src/run/mod.rs`.
 use serde_json::{json, Value};
 
 /// Stable, goal-free diagnostics for a run-start configuration mismatch.

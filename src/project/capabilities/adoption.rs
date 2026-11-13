@@ -1,3 +1,5 @@
+// Registers reviewed capabilities through the existing configuration writer.
+// Requires a confined descriptor and reviewed decision; see `src/project/capabilities.rs`.
 //! Bounded reviewed registration through the existing configuration writer.
 use super::*;
 use std::fs;

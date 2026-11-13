@@ -1,3 +1,5 @@
+// Builds value-benchmark results from recorded scenario evidence.
+// Refuses a mismatched expected scenario; see `src/value_benchmark.rs`.
 use super::*;
 
 pub(super) fn build_result(

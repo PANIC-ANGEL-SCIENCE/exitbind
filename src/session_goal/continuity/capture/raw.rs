@@ -1,3 +1,5 @@
+// Inspects captured, uncredited host observations.
+// Reports an unavailable observation index; see `src/session_goal/continuity/capture.rs`.
 //! Exact inspection of a captured but uncredited host observation.
 
 use crate::{config::Loaded, evidence::hash};

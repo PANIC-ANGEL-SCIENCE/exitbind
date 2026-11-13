@@ -1,3 +1,5 @@
+// Builds current Worker recovery and held-result forms.
+// An unverifiable time amendment exposes no Work action; see `src/work/action_forms.rs`.
 //! Current worker recovery forms over the existing governor and held owners.
 use super::*;
 

@@ -1,3 +1,5 @@
+// Submits role results against the selected run assignment.
+// Requires an agent name; see `src/run/mod.rs`.
 use super::*;
 
 type ArtifactProducer<'a> = Box<dyn FnOnce() -> Result<String, String> + 'a>;

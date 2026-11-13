@@ -1,3 +1,5 @@
+// Previews and applies a configured-Lead lost-caller report.
+// Bounds the reported decision bytes; see `src/work/mod.rs`.
 //! Preview and explicitly apply a configured-Lead lost-caller report.
 use super::*;
 use crate::run::{ledger, lost_observation as protocol};

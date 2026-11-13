@@ -1,3 +1,5 @@
+// Projects validated memory and project-lesson guidance.
+// Refuses eligible guidance without a source path; see `src/project/agent_context.rs`.
 //! One validated, ordered projection of eligible memory and project lessons.
 use super::phase_guidance;
 use crate::{config::Loaded, evidence::hash, memory, project::path};

@@ -1,3 +1,5 @@
+// Applies reviewed architecture selections through the configuration owner.
+// Requires a reviewed decision and bounded reason; see `src/project/architecture.rs`.
 //! Apply an explicitly declared reviewed selection through the existing
 //! project configuration owner; preview is read-only, never approval evidence.
 use super::*;

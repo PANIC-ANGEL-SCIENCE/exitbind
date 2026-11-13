@@ -1,3 +1,5 @@
+// Retains Work candidate summaries in compact responses.
+// Drops non-empty candidate details when they exceed the budget; see `src/work/compact.rs`.
 use serde_json::{json, Map, Value};
 
 use super::{copy_if_present, serialized_len, MAX_RESPONSE_BYTES};

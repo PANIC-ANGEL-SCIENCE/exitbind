@@ -1,3 +1,5 @@
+// Admits governor recovery information from a validated observed check.
+// Refuses reopening a blocked governor by observation; see `src/context.rs`.
 //! Recovery information admitted only from a validated observed check.
 //!
 //! The run reducer constructs these records from its current checked event.

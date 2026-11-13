@@ -1,3 +1,5 @@
+// Checks native admission and controls cleanup of owned processes.
+// Signals only after observing the owned child alive; see `src/host/codex_exec.rs`.
 //! Eligibility at native admission and bounded observation of owned cleanup.
 use super::{process, Observation, ProcessIdentity, ProcessLiveness, Request, RunError};
 use serde_json::{json, Value};

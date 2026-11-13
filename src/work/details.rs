@@ -1,3 +1,5 @@
+// Expands current Work sections against recipient-bound detail.
+// Refuses check preparation changed with assignment; see `src/work/mod.rs`.
 //! Current bindings and read-only, recipient-bound grouped section expansion.
 //!
 //! A reference selects bytes derived from the current validated snapshot. It

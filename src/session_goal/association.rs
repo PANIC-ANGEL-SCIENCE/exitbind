@@ -1,3 +1,5 @@
+// Defines context-only Work associations on the canonical Goal.
+// Association records are bounded to 128 entries; see `src/session_goal.rs`.
 //! Bounded, context-only Work membership on the existing canonical Goal.
 
 use serde_json::Value;

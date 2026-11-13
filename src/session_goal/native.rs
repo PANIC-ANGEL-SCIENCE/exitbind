@@ -1,3 +1,5 @@
+// Resolves native session identity and the owner-bound Goal root.
+// Refuses a selector conflicting with child session identity; see `src/session_goal.rs`.
 //! Native-host session identity and its private, owner-bound Goal journal root.
 //!
 //! Host identifiers are correlation locators only. They are hashed before

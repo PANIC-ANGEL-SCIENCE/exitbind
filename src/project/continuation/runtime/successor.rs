@@ -1,3 +1,5 @@
+// Prepares a successor from the durable predecessor association.
+// Refuses a predecessor that is not retired; see `src/project/continuation/runtime.rs`.
 //! An existing durable predecessor claim is the only successor authority.
 use super::*;
 

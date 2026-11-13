@@ -1,3 +1,5 @@
+// Builds the complete current context for a prepared child.
+// Refuses an expired assignment context; see `src/session_goal/continuity/capture.rs`.
 //! The complete current context of one prepared named child: base profile,
 //! frozen perspectives and the assignment's deliveries, rechecked now.
 

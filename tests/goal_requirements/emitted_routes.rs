@@ -127,8 +127,35 @@ fn fill_argv(
     choice: &str,
     options: &[(&str, &str)],
 ) -> Vec<String> {
-    let route = &view["effectiveAction"]["fillRoute"];
-    let mut argv: Vec<String> = route["argv"]
+    // A diagnostic view may omit whole commands at its 8 KiB boundary.
+    // Follow its emitted read-only route to the complete current detail.
+    let recovered;
+    let view = if !view["effectiveAction"]["fillRoute"]["templatePrefix"].is_array() {
+        let route = &view["details"]["grouped"];
+        assert_eq!(route["sameExecutableRequired"], false, "{view}");
+        assert_eq!(route["sameConfigRequired"], false, "{view}");
+        let argv = route["command"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|word| word.as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        let output = project.call_exact_argv(&argv);
+        assert!(output.status.success(), "{output:?}");
+        recovered = serde_json::from_slice::<Value>(&output.stdout).unwrap();
+        assert_eq!(recovered["complete"], true);
+        &recovered
+    } else {
+        view
+    };
+    let route = if view["actionForms"]["fillRoute"].is_object() {
+        &view["actionForms"]["fillRoute"]
+    } else {
+        &view["effectiveAction"]["fillRoute"]
+    };
+    assert_eq!(route["executable"], false);
+    assert!(route.get("argv").is_none());
+    let mut argv: Vec<String> = route["templatePrefix"]
         .as_array()
         .unwrap_or_else(|| panic!("no fill route: {view}"))
         .iter()

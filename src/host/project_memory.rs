@@ -1,3 +1,5 @@
+// Projects the Lead role and accepted project memory into a session.
+// Bounds inlined memory and supplies read routes; see `src/host/mod.rs`.
 //! Project the Lead's role and current accepted project memory into a new
 //! session.
 //!

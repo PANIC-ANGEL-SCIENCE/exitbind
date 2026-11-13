@@ -1,3 +1,5 @@
+// Checks exact required instruction bytes for child delivery.
+// Refuses a profile not presented exactly; see `src/session_goal/continuity/capture.rs`.
 //! Check exact required instructional bytes for selected native delivery.
 use crate::evidence::hash;
 use serde_json::Value;

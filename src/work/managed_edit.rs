@@ -1,3 +1,5 @@
+// Binds managed file interaction to the current Worker assignment.
+// Refuses controlled launch with retained Worker results; see `src/work/mod.rs`.
 //! Assignment-bound file interaction. Native tools outside it retain host authority.
 mod state;
 mod transport;

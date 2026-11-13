@@ -1,3 +1,5 @@
+// Orders retained completion history in a validated governor snapshot.
+// Requires carried lineage for the relation; see `src/context/governor.rs`.
 //! Conservative ordering of completion history in an already validated
 //! canonical governor snapshot. This relation supplies no lineage or grant proof.
 use serde_json::Value;

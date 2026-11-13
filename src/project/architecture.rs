@@ -1,3 +1,5 @@
+// Projects optional owner-selected architecture context.
+// Refuses configuration drift during delivery; see `src/project/mod.rs`.
 //! Optional architecture context over owner-selected project configuration.
 //! No approval, command execution, or acceptance state is owned here.
 

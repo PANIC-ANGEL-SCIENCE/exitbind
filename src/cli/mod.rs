@@ -1,3 +1,5 @@
+// Routes CLI commands and validates their arguments.
+// Requires the emitted mutation-context token; see `src/main.rs`.
 use serde_json::json;
 use std::io::{IsTerminal, Read};
 

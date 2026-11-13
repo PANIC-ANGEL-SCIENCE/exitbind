@@ -1,3 +1,5 @@
+// Records the Work used for native journey integration.
+// Refuses new membership when the journal bounds are reached; see `src/session_goal/journey.rs`.
 use super::*;
 
 mod lineage;

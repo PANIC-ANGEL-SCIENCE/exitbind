@@ -1,3 +1,5 @@
+// Renders a human label for the selected Lead.
+// A missing Lead is displayed as unavailable; see `src/project/mod.rs`.
 //! Human labels never select a role, native identity or authority.
 use crate::config::Loaded;
 

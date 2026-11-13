@@ -1,3 +1,5 @@
+// Projects current obligations and material statuses for an actor.
+// Refuses unavailable native obligations; see `src/host/runtime/actor.rs`.
 //! Current obligations and material statuses for the selected actor.
 use super::{classified, copy_if_present, known_keys, nonempty};
 use crate::work::action_forms::GrantOffer;

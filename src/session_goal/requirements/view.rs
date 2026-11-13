@@ -1,3 +1,5 @@
+// Projects current requirement evidence and next routes.
+// Refuses named Goals from another project; see `src/session_goal/requirements.rs`.
 //! Read-only current requirement-to-evidence projection and useful next routes.
 
 use super::*;

@@ -1,3 +1,5 @@
+// Classifies a failed native start and its recovery route.
+// Controlled-effect attempts are not marked relaunchable; see `src/work/native_action.rs`.
 //! G7: classify a failed native start and name exactly one route.
 //!
 //! A provider turn that ends without a typed result is not one state. When no

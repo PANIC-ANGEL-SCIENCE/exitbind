@@ -1,3 +1,5 @@
+// Parses CLI positionals, flags and options and checks accepted options.
+// Refuses an empty option name; see `src/cli/mod.rs`.
 use std::collections::BTreeMap;
 
 #[derive(Debug, Default)]

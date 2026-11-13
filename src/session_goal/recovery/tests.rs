@@ -1,3 +1,5 @@
+// Tests validation of native Goal recovery endpoint state.
+// The case rejects a mismatched state root; see `src/session_goal/recovery.rs`.
 use super::record::validate_state;
 use super::*;
 

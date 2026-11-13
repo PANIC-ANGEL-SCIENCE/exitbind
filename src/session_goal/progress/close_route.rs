@@ -1,3 +1,5 @@
+// Projects a current whole-Goal close route.
+// Suppresses it when journey readiness blocks closure; see `src/session_goal/progress.rs`.
 //! Emit only a currently executable whole-Goal close route.
 use crate::config::Loaded;
 use serde_json::{json, Value};

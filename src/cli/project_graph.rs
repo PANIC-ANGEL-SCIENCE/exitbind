@@ -1,3 +1,5 @@
+// Routes and displays the project CodeGraph command.
+// Accepts only declared CLI options; see `src/cli/mod.rs`.
 use super::{args, print_json, Arguments};
 use serde_json::Value;
 

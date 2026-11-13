@@ -1,3 +1,5 @@
+// Guards controlled effects against the current continuation association.
+// Refuses new effects for retired Work; see `src/project/continuation/mod.rs`.
 //! Controlled-effect admission. The account lock never waits for a Work lock.
 mod facts;
 mod goal_linkage;

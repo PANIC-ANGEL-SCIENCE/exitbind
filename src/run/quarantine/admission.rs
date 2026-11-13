@@ -1,3 +1,5 @@
+// Admits and reserves quarantine checks using typed bindings.
+// Requires exact current configuration bytes; see `src/run/quarantine.rs`.
 //! Typed admission and durable one-shot reservation for quarantine checks.
 
 use serde_json::{json, Value};

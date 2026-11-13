@@ -1,3 +1,5 @@
+// Builds a completion event for the Lead response.
+// Withholds it when readiness is not current; see `src/presentation/events.rs`.
 //! Small completion events for the Lead's normal mutation-response channel.
 use serde_json::{json, Value};
 

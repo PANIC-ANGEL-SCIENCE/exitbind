@@ -1,3 +1,5 @@
+// Validates the shape of a continuation marker on a run start.
+// Rejects unsupported run versions; see `src/run/mod.rs`.
 //! Shape validation only. A persisted marker does not authenticate its claim;
 //! the continuation runtime verifies the actual association before effects.
 

@@ -1,3 +1,5 @@
+// Admits native supersession starts and claims.
+// Refuses invalid successor Work identities; see `src/run/mod.rs`.
 //! Domain-separated admission for the existing supersession start and claim.
 
 use crate::evidence::hash;

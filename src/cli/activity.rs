@@ -1,3 +1,5 @@
+// Routes direct Codex activity and observes its result.
+// Refuses a missing task prompt; see `src/cli/mod.rs`.
 //! Lightweight observation for an explicitly direct Codex task.
 
 use super::{args, config, positional, print_json, Arguments};

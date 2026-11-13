@@ -1,3 +1,5 @@
+// Delivers phase guidance declared for the selected agent.
+// Requires complete, current guidance; see `src/project/agent_context.rs`.
 //! Phase guidance bodies declared on one agent, delivered whole with the
 //! assignment that enters the phase, or as an exact role-scoped read route.
 use crate::{

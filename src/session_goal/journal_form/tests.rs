@@ -1,3 +1,5 @@
+// Tests Goal journal revision encoding and readback.
+// Cases avoid rewriting unchanged source text; see `src/session_goal/journal_form.rs`.
 //! FR55-15: a Goal journal grows by what changed, old journals read
 //! unchanged, and recovery reads a complete journal past the former 16 MiB
 //! bound (R55's was 17,987,800 B in 114 records when recovery refused it).

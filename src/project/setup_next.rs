@@ -1,3 +1,5 @@
+// Derives setup checks and subsequent Work activation actions.
+// Cannot derive the checker without configuration; see `src/project/setup.rs`.
 //! Build the exact read-only checks and Work activation actions emitted by setup.
 
 use super::SetupFacts;

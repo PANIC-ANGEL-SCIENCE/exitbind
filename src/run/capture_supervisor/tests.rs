@@ -1,3 +1,5 @@
+// Tests bounded supervisor capsules and adopted writers.
+// The nested-process case must finish within its deadline; see `src/run/capture_supervisor.rs`.
 use super::*;
 use crate::run::capture::{CapturePolicy, ObservationRequest};
 use std::io::Read;

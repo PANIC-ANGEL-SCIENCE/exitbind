@@ -1,3 +1,5 @@
+// Validates bounded architecture contracts and responsibility ownership.
+// Refuses malformed source identities; see `src/project/architecture.rs`.
 //! Closed, bounded contract shape and cohesive responsibility ownership.
 use super::*;
 

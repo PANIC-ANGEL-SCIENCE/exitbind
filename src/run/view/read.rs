@@ -1,3 +1,5 @@
+// Projects read-only Run status, explanation and report views.
+// Governor recovery is attached only for the marked protocol; see `src/run/view.rs`.
 //! Read-only Run status, explanation and report projections.
 
 use super::*;

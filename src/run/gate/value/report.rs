@@ -1,3 +1,5 @@
+// Produces redacted aggregate reports for checked runs.
+// Refuses conflicting evidence for duplicate run IDs; see `src/run/gate/value.rs`.
 //! Redacted aggregate reporting for checked runs.
 
 use super::*;

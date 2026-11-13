@@ -1,3 +1,5 @@
+// Previews and replays Lead-attested failed-check recovery.
+// Keeps durable unknown termination inspection-only; see `src/work/mod.rs`.
 //! Supported preview and exact replay for Lead-attested failed-check recovery.
 use super::*;
 use crate::run::{check_recovery as protocol, ledger};

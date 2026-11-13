@@ -1,3 +1,5 @@
+// Tests actor projection of carried mutation history.
+// Cases deny current credit to old or unbound evidence; see `src/host/runtime/actor/tests.rs`.
 use super::*;
 
 fn two_completions() -> Value {

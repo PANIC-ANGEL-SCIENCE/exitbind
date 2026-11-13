@@ -1,3 +1,5 @@
+// Reads and appends bounded Run ledger records.
+// Refuses ledger bytes changed while reading; see `src/run/mod.rs`.
 //! Bounded, append-only ledger storage.
 //!
 //! This module owns filesystem mechanics only.  Run orchestration stays in

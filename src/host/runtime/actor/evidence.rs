@@ -1,3 +1,5 @@
+// Selects source material and current evidence for an actor.
+// Refuses unclassified native sources; see `src/host/runtime/actor.rs`.
 //! Source material and current evidence for the selected actor.
 use super::{classified, copy_if_present, nonempty};
 use crate::evidence::hash;

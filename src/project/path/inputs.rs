@@ -1,3 +1,5 @@
+// Classifies command and configuration paths against their declared roots.
+// Refuses empty path inputs; see `src/project/path.rs`.
 //! Every path input meets its root here. Each path a command or configuration
 //! accepts is registered once with one declared outcome:
 //!

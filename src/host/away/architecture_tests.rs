@@ -1,3 +1,5 @@
+// Tests architecture-contract handling for away execution.
+// Cases refuse unsupported contracts without source reads; see `src/host/away.rs`.
 use super::*;
 use crate::project::{architecture, layout_types::Mode};
 use std::collections::BTreeMap;

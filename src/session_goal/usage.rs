@@ -1,3 +1,5 @@
+// Projects bounded numeric usage observations for Work and Goals.
+// Refuses oversized observation ledgers; see `src/session_goal.rs`.
 //! Bounded prospective numeric observations for an existing Work/goal view.
 
 use serde_json::{json, Value};

@@ -1,3 +1,5 @@
+// Tests prepared-child capture identity and recovery routes.
+// A rejected identity is not replaced by a new intent; see `src/session_goal/continuity/capture.rs`.
 use super::*;
 
 #[test]

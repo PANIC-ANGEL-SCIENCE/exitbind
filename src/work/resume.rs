@@ -1,3 +1,5 @@
+// Selects the current Work from project-local state.
+// Requires a UTF-8 ledger filename; see `src/work/mod.rs`.
 //! `work resume`: select the current work from project-local state.
 //!
 //! The navigation focus written by `work begin` names current work; other

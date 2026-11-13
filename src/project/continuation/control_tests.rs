@@ -1,3 +1,5 @@
+// Tests continuation association and reservation decisions.
+// Failed-start cases do not refund or restart; see `src/project/continuation/control.rs`.
 //! Synthetic pure decisions. IO adapters still prove persisted claims,
 //! canonical Work state, actual owned liveness and durable compare-and-write.
 use super::*;

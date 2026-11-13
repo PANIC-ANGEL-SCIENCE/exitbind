@@ -1,3 +1,5 @@
+// Preflights native agent projections before setup writes.
+// Refuses unsafe or external files; see `src/project/setup.rs`.
 //! Native agent projection preflight for `setup`: refuse unsafe or external
 //! projection files before init, and read projection status for the report.
 

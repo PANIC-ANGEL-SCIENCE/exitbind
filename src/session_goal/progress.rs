@@ -1,3 +1,5 @@
+// Projects overall Goal and divided-task progress.
+// Stops a Work projection when its Goal or configuration changes; see `src/session_goal.rs`.
 //! Product-owned overall-goal and divided-task progress projection.
 //!
 //! This read-only view derives task state from the canonical Lead session-goal

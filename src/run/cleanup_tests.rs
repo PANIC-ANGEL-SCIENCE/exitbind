@@ -1,3 +1,5 @@
+// Tests isolated child cleanup and failure visibility.
+// Cases retain deadline and panic failures; see `src/run/mod.rs`.
 //! Reaping belongs to an isolated fixture, not the parallel test process.
 use super::capture::{process_group_exists, terminate_process_group};
 #[path = "cleanup_fixture.rs"]

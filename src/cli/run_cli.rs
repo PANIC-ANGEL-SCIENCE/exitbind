@@ -1,3 +1,5 @@
+// Parses and presents the legacy Run command family.
+// Requires a supported action; see `src/cli/mod.rs`.
 //! Legacy run command parsing and presentation.
 
 use super::*;

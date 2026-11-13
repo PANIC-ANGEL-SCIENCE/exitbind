@@ -1,3 +1,5 @@
+// Refreshes native display after selected successful CLI actions.
+// Display failure leaves the command result unchanged; see `src/cli/mod.rs`.
 //! Wiring only: after a successful Goal or Work ledger command, refresh the
 //! human display state of the current native session. A display refresh never
 //! changes the command's result, output or exit status, and prints nothing.

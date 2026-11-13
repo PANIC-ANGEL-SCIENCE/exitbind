@@ -1,3 +1,5 @@
+// Acquires immutable predecessor and verification Work evidence.
+// Refuses a predecessor whose unresolved observation changed; see `src/session_goal/quarantine.rs`.
 //! Acquisition and validation of the immutable old and verification Work evidence.
 
 use super::{decision_digest, Endpoint, Residual};

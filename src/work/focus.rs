@@ -1,3 +1,5 @@
+// Maintains the project-local current-Work navigation pointer.
+// Does not select successor focus while the native link is pending; see `src/work/mod.rs`.
 //! Project-local current-work focus: a navigation pointer only.
 //!
 //! `work begin` points it at the new work so `work resume` can tell the current

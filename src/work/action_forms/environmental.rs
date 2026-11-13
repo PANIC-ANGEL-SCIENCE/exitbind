@@ -1,3 +1,5 @@
+// Offers Lead environmental-attestation forms for eligible checks.
+// Suppresses the form for a stale ended check; see `src/work/action_forms.rs`.
 //! The Lead's environmental-attestation form on a failed observed check, on a
 //! check observation that failed before the checker started, and on a timed-out
 //! observation whose owned process group has since been observed ended.

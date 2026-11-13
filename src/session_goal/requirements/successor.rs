@@ -1,3 +1,5 @@
+// Transfers contributors to an actual successor Work.
+// Refuses successors of a different named Goal; see `src/session_goal/requirements.rs`.
 //! Exact contributor transfer for an actual successor Work.
 use super::*;
 use std::path::Path;

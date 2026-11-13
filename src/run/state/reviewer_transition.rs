@@ -1,3 +1,5 @@
+// Routes reviewer findings to the Lead under the disposition protocol.
+// Other roles or runs without a basis use another transition; see `src/run/state.rs`.
 //! Reviewer findings move to the Lead under the current disposition protocol.
 //! Historical producers that predate it keep their recorded Lead transition.
 

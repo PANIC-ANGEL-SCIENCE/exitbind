@@ -1,3 +1,5 @@
+// Records a Lead decision on a pending Work finding cycle.
+// Requires the current pending Lead assignment; see `src/work/mod.rs`.
 //! `work disposition`: the Lead's decision on a pending finding cycle, or
 //! the Lead's environmental attestation of the current failed observed checks.
 //!

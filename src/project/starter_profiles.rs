@@ -1,3 +1,5 @@
+// Supplies neutral starter role-profile assets.
+// The bundled set contains three roles; see `src/project/mod.rs`.
 //! Neutral starter responsibilities, also distributed as managed role assets.
 
 pub(crate) const PROFILES: [(&str, &str); 3] = [

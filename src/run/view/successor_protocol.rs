@@ -1,3 +1,5 @@
+// Compares successor replay and builds canonical Work responses.
+// Refuses a successor ledger with different provenance; see `src/run/view.rs`.
 //! Exact successor replay comparison and canonical Work response.
 use super::*;
 

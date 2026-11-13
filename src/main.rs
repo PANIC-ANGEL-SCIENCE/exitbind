@@ -1,3 +1,5 @@
+// Starts the executable and routes CLI results and errors.
+// Refuses retired executable aliases; see `src/cli/mod.rs`.
 mod cli;
 mod compatibility;
 mod config;

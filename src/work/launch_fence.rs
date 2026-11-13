@@ -1,3 +1,5 @@
+// Serializes native launch admission with predecessor retirement.
+// Refuses launches for superseded Work; see `src/work/mod.rs`.
 //! Serialize native launch admission with predecessor retirement.
 
 use crate::{config::Loaded, run::ledger};

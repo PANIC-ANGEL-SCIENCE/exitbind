@@ -1,3 +1,5 @@
+// Previews and carries lessons from a previous project during setup.
+// Refuses the current project as the source; see `src/project/setup.rs`.
 //! `setup --lessons-from PREVIOUS_CONFIG`: bring the previous project's
 //! accepted, unexpired project lessons into the new project. Setup owns the
 //! configuration change (the `memory` section and lesson rights, in the same

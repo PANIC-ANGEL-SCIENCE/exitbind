@@ -1,3 +1,5 @@
+// Classifies observed-check novelty for the bounded governor.
+// Requires the recovery protocol for its start marker; see `src/run/state.rs`.
 //! Which observed check result is new information for the bounded governor.
 //!
 //! A start that carries `observationNoveltyProtocol` keys a passing observed

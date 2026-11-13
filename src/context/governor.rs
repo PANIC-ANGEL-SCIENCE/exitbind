@@ -1,3 +1,5 @@
+// Replays bounded governor state from recorded events.
+// Refuses malformed carried evidence identities; see `src/context.rs`.
 //! Replay the bounded governor state independently from its context projection.
 
 #[cfg(test)]

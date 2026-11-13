@@ -1,3 +1,5 @@
+// Applies the managed result contract and Work return to a host message.
+// Reports an unavailable native result schema; see `src/work/native_action.rs`.
 //! The managed result contract and Work return applied to a host message.
 
 use crate::config::Loaded;

@@ -1,3 +1,5 @@
+// Projects bounded recovery milestones from Goal and Work facts.
+// Missing hints produce unknown milestone facts; see `src/host/session_recovery.rs`.
 //! Read-only, bounded recovery milestone derived from the native Goal and a
 //! freshly rendered current Work detail. The saved hint never selects action.
 

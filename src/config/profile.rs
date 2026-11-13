@@ -1,3 +1,5 @@
+// Audits and imports agent profile candidates.
+// Refuses an empty forbid-term value; see `src/config/mod.rs`.
 use crate::config::{self, Loaded};
 use serde_json::{json, Value};
 use std::fs::{self, OpenOptions};

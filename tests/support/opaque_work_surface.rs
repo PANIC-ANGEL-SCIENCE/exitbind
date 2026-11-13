@@ -179,7 +179,24 @@ fn command_array(path: &[Step<'_>]) -> bool {
                 K("command"),
                 K("argv")
             ]
-            | [K("actionForms"), K("fillRoute"), K("argv")]
+            | [
+                K("actionForms" | "effectiveAction"),
+                K("fillRoute"),
+                K("argv" | "templatePrefix")
+            ]
+            | [
+                K("current"),
+                K("actionForm"),
+                K("fillRoute"),
+                K("argv" | "templatePrefix")
+            ]
+            | [
+                K("next"),
+                K("current"),
+                K("actionForm"),
+                K("fillRoute"),
+                K("argv" | "templatePrefix")
+            ]
             | [
                 K("current"),
                 K("actionForm"),

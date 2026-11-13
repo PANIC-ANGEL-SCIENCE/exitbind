@@ -1,3 +1,5 @@
+// Discovers and invokes the configured CodeGraph provider.
+// Refuses invalid provider version strings; see `src/host/codegraph.rs`.
 use super::{canonical, read_bounded, MAX_OUTPUT};
 use crate::config;
 

@@ -1,3 +1,5 @@
+// Reconciles pre-return execution results with saved attempts.
+// Refuses changed admissions after execution; see `src/run/pre_return.rs`.
 use super::*;
 
 pub(super) fn failure_response(

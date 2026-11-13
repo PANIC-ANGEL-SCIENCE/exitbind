@@ -1,3 +1,5 @@
+// Expands an opaque reference from the current Work view.
+// Refuses malformed references; see `src/work/mod.rs`.
 //! Expansion of one opaque reference from the current Work view: a grouped
 //! or detail section, the bound ledger history or one event, or an observed
 //! check's bounded log. Caller-supplied paths and hashes never substitute for

@@ -1,3 +1,5 @@
+// Drains bounded subprocess output for request-owned read-only discovery.
+// Cleans only its owned child group on cancellation; see `src/run/inputs/git_snapshot.rs`.
 //! Owned, bounded subprocess output for read-only discovery operations.
 //!
 //! The child gets a private process group. The caller polls nonblocking pipes
@@ -16,6 +18,12 @@ use std::time::{Duration, Instant};
 pub(crate) struct BoundedOutput {
     pub(crate) status: ExitStatus,
     pub(crate) stdout: Vec<u8>,
+    pub(crate) stderr: Vec<u8>,
+}
+
+#[derive(Debug)]
+pub(crate) struct BoundedStreamOutput {
+    pub(crate) status: ExitStatus,
     pub(crate) stderr: Vec<u8>,
 }
 
@@ -127,6 +135,33 @@ mod unix {
         stderr_limit: usize,
         deadline: Instant,
     ) -> Result<BoundedOutput, BoundedProcessError> {
+        let mut stdout = Vec::new();
+        let output = run_stream(
+            command,
+            stdout_limit,
+            stderr_limit,
+            deadline,
+            &mut |bytes| {
+                stdout.extend_from_slice(bytes);
+                Ok(())
+            },
+        )?;
+        Ok(BoundedOutput {
+            status: output.status,
+            stdout,
+            stderr: output.stderr,
+        })
+    }
+
+    /// Drain stdout as it arrives while retaining the same owned group,
+    /// deadline, byte cap, cancellation and cleanup contract as `run`.
+    pub(crate) fn run_stream(
+        command: &mut Command,
+        stdout_limit: usize,
+        stderr_limit: usize,
+        deadline: Instant,
+        sink: &mut dyn FnMut(&[u8]) -> Result<(), ()>,
+    ) -> Result<BoundedStreamOutput, BoundedProcessError> {
         let interrupt = InterruptGuard::install(deadline)?;
         if cancelled() {
             return Err(failure("cancelled", "operation interrupted before launch"));
@@ -181,7 +216,7 @@ mod unix {
             ));
         }
 
-        let mut out = Vec::new();
+        let mut observed_stdout = 0usize;
         let mut err = Vec::new();
         let mut stdout_eof = false;
         let mut stderr_eof = false;
@@ -207,12 +242,12 @@ mod unix {
                 drop(interrupt);
                 return Err(error);
             }
-            if let Err(reason) = collect(
+            if let Err(reason) = collect_stream(
                 &mut stdout,
-                &mut out,
+                &mut observed_stdout,
                 stdout_limit,
                 &mut stdout_eof,
-                "stdout_limit_exceeded",
+                sink,
             ) {
                 let error = cleanup_error(&mut child, group, reason, "bounded stdout failed");
                 drop(interrupt);
@@ -260,13 +295,43 @@ mod unix {
             };
             if let Some(status) = completed_status {
                 drop(interrupt);
-                return Ok(BoundedOutput {
+                return Ok(BoundedStreamOutput {
                     status,
-                    stdout: out,
                     stderr: err,
                 });
             }
             std::thread::sleep(POLL);
+        }
+    }
+
+    fn collect_stream<R: Read>(
+        stream: &mut R,
+        observed: &mut usize,
+        limit: usize,
+        eof: &mut bool,
+        sink: &mut dyn FnMut(&[u8]) -> Result<(), ()>,
+    ) -> Result<(), &'static str> {
+        if *eof {
+            return Ok(());
+        }
+        let mut buffer = [0u8; READ_CHUNK];
+        loop {
+            match stream.read(&mut buffer) {
+                Ok(0) => {
+                    *eof = true;
+                    return Ok(());
+                }
+                Ok(count) => {
+                    *observed = observed.saturating_add(count);
+                    if *observed > limit {
+                        return Err("stdout_limit_exceeded");
+                    }
+                    sink(&buffer[..count]).map_err(|()| "stdout_sink_failed")?;
+                }
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => return Ok(()),
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(_) => return Err("pipe_read_failed"),
+            }
         }
     }
 
@@ -378,7 +443,7 @@ mod unix {
 }
 
 #[cfg(unix)]
-pub(crate) use unix::run;
+pub(crate) use unix::{run, run_stream};
 
 #[cfg(not(unix))]
 pub(crate) fn run(
@@ -387,6 +452,21 @@ pub(crate) fn run(
     _stderr_limit: usize,
     _deadline: Instant,
 ) -> Result<BoundedOutput, BoundedProcessError> {
+    Err(BoundedProcessError {
+        reason: "bounded_process_unsupported",
+        detail: "bounded subprocess ownership is unavailable on this platform".into(),
+        kind: None,
+    })
+}
+
+#[cfg(not(unix))]
+pub(crate) fn run_stream(
+    _command: &mut Command,
+    _stdout_limit: usize,
+    _stderr_limit: usize,
+    _deadline: Instant,
+    _sink: &mut dyn FnMut(&[u8]) -> Result<(), ()>,
+) -> Result<BoundedStreamOutput, BoundedProcessError> {
     Err(BoundedProcessError {
         reason: "bounded_process_unsupported",
         detail: "bounded subprocess ownership is unavailable on this platform".into(),
@@ -465,6 +545,44 @@ mod tests {
         assert!(output.status.success());
         assert_eq!(output.stdout, b"ok");
         assert_eq!(output.stderr, b"note");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn streamed_stdout_keeps_caps_and_owned_cleanup() {
+        let _serial = SERIAL.lock().unwrap();
+        let mut seen = Vec::new();
+        let output = run_stream(
+            &mut shell("printf abc; printf def"),
+            6,
+            8,
+            Instant::now() + Duration::from_secs(1),
+            &mut |bytes| {
+                seen.extend_from_slice(bytes);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert!(output.status.success());
+        assert_eq!(seen, b"abcdef");
+        let error = run_stream(
+            &mut shell("while :; do printf 12345678; done"),
+            32,
+            8,
+            Instant::now() + Duration::from_secs(1),
+            &mut |_| Ok(()),
+        )
+        .unwrap_err();
+        assert_eq!(error.reason, "stdout_limit_exceeded");
+        let error = run_stream(
+            &mut shell("printf x; sleep 5"),
+            32,
+            8,
+            Instant::now() + Duration::from_secs(1),
+            &mut |_| Err(()),
+        )
+        .unwrap_err();
+        assert_eq!(error.reason, "stdout_sink_failed");
     }
 
     #[cfg(unix)]

@@ -1,3 +1,5 @@
+// Validates retained custody receipts for quarantine steps.
+// Refuses invalid custody references; see `src/run/quarantine.rs`.
 //! Validation of retained custody receipts for known-ended quarantine steps.
 
 use crate::{config::Loaded, evidence::hash, run::artifact};

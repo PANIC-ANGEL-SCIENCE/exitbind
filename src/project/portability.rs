@@ -1,3 +1,5 @@
+// Discovers workspace placement for automatic bootstrap.
+// Refuses to fork an existing project binding; see `src/project/mod.rs`.
 //! Canonical workspace discovery and owned placement for automatic bootstrap.
 //! Placement never copies source or changes source permissions.
 use crate::{

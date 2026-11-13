@@ -1,3 +1,5 @@
+// Projects verified native assignment packets for delivery.
+// Removes only equal recovery aliases; see `src/work/native_action.rs`.
 //! Lossless-for-delivery projection of a verified native assignment packet.
 
 use serde_json::Value;

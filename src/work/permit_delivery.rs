@@ -1,3 +1,5 @@
+// Verifies governor transitions after an actual host delivery.
+// A current Worker grant must be unique; see `src/work/mod.rs`.
 //! Verify the single governor transition following an actual host delivery.
 
 use crate::{config::Loaded, evidence::hash, run, session_goal};

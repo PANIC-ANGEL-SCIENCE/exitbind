@@ -1,3 +1,5 @@
+// Renders validated Run status and explanation for people.
+// Escapes the run ID and status with the inert formatter; see `src/presentation/mod.rs`.
 //! Human-readable rendering of the typed, validated run projection.
 
 use serde_json::Value;

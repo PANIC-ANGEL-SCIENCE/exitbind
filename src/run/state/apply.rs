@@ -1,3 +1,5 @@
+// Applies validated events to canonical run state.
+// Restricts returns after a lost observation; see `src/run/state.rs`.
 //! Apply validated run events to the canonical state.
 
 use super::*;

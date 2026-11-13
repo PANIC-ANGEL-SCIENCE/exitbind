@@ -1,3 +1,5 @@
+// Manages explicit project-owned native agent projections.
+// Refuses unsafe or external file conflicts; see `src/project/mod.rs`.
 //! Explicit, project-owned native agent projections. Existing external files
 //! are reported and left alone, so dotagents and user-managed profiles retain ownership.
 

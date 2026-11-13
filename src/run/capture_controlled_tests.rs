@@ -1,3 +1,5 @@
+// Tests holds around controlled process launch.
+// Prelaunch refusal cases start no child; see `src/run/capture_controlled.rs`.
 use super::*;
 
 struct Fixture(crate::test_root::TempRoot);

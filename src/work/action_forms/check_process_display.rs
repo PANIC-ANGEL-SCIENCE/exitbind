@@ -1,3 +1,5 @@
+// Presents owned check-process state in Work forms.
+// A live owned group has no forward route in this display; see `src/work/action_forms.rs`.
 //! Read-only presentation of owned check-process state.
 
 use crate::config::Loaded;

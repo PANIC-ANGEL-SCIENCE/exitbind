@@ -1,3 +1,5 @@
+// Fills presented Work forms for the responsible actor.
+// Requires the bound executable and configuration; see `src/work/action_forms.rs`.
 //! Who decides each current choice, and the fill route that runs a printed
 //! form with its placeholders filled instead of edited by hand.
 use super::*;

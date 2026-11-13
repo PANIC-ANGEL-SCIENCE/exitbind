@@ -1,3 +1,5 @@
+// Decides continuation admission and accounting from validated facts.
+// Refuses invalid associations; see `src/project/continuation/mod.rs`.
 //! Pure admission/accounting decisions for associated Work only. The adapter
 //! supplies validated current observations and persists a returned account
 //! under one lock before executing. None of these values authenticate a host,

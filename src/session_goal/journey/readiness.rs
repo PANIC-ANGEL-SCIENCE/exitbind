@@ -1,3 +1,5 @@
+// Checks the current readiness of native journey members.
+// Refuses members from another session or owner; see `src/session_goal/journey.rs`.
 use super::*;
 
 fn member_currentness(

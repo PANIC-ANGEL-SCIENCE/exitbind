@@ -1,3 +1,5 @@
+// Supplies setup diagnostics for managed project guidance.
+// Refuses a non-UTF-8 ControlRoot; see `src/project/setup.rs`.
 //! Setup diagnostics and recovery routes for managed project guidance.
 
 use crate::project::skills as project_skills;

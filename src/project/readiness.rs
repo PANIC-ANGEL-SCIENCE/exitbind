@@ -1,3 +1,5 @@
+// Observes environment and proposes starter preparation without effects.
+// A readiness observation does not apply a boundary; see `src/project/commands.rs`.
 //! One read-only environment readiness assessment for every entry point.
 //!
 //! The facts are the ones a first record otherwise learns too late: the tested
@@ -78,6 +80,7 @@ pub(crate) fn assess(facts: &Facts<'_>) -> Value {
             "directories": breadth["directories"],
             "fileLimit": WALK_PATH_LIMIT,
             "directoryLimit": WALK_DIRECTORY_LIMIT,
+            "walkLimitsApply": breadth["basis"] != "git-listing",
             "withinLimit": breadth["withinLimit"],
             "sampled": breadth["sampled"],
             "detail": breadth["detail"],
@@ -222,6 +225,9 @@ fn breadth_sentence(root: &Value) -> String {
     let file_limit = root["fileLimit"].as_u64().unwrap_or(0);
     let directory_limit = root["directoryLimit"].as_u64().unwrap_or(0);
     if root["sampled"] == json!(true) {
+        if basis == "git-listing" {
+            return "Git listing was not counted within the readiness budget; Git listing limits still apply".into();
+        }
         return format!(
             "not counted within the {} ms readiness budget; the tested-input walk stops at {file_limit} paths or {directory_limit} directories",
             WALK_DEADLINE.as_millis()
@@ -229,11 +235,9 @@ fn breadth_sentence(root: &Value) -> String {
     }
     match (basis, root["withinLimit"].as_bool()) {
         ("git-listing", Some(true)) => format!(
-            "{files} paths listed by Git; within the {file_limit}-path tested-input limit"
+            "{files} paths listed by Git; the non-Git walk limits do not apply"
         ),
-        ("git-listing", Some(false)) => format!(
-            "{files} paths listed by Git, over the {file_limit}-path tested-input limit; `work resume` cannot fingerprint this root"
-        ),
+        ("git-listing", Some(false)) => "Git listing is unavailable within its own limits".into(),
         (_, Some(true)) => format!(
             "{files} files and {} directories under the root; within the tested-input walk limit ({file_limit} paths / {directory_limit} directories)",
             directories.unwrap_or(0)
@@ -368,15 +372,21 @@ fn git_breadth(root: &Path, state_root: &Path, deadline: Instant) -> Value {
         return unavailable_breadth("git-listing", "the product root is not valid UTF-8");
     };
     let mut command = Command::new("git");
-    command.arg("-C").arg(text).args([
-        "ls-files",
-        "-z",
-        "--cached",
-        "--others",
-        "--exclude-standard",
-        "--",
-        ".",
-    ]);
+    command
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .arg("-C")
+        .arg(text)
+        .args([
+            "-c",
+            "core.fsmonitor=",
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "--",
+            ".",
+        ]);
     let output =
         match crate::kernel::bounded_process::run(&mut command, GIT_LISTING_LIMIT, 65536, deadline)
         {
@@ -404,15 +414,12 @@ fn git_breadth(root: &Path, state_root: &Path, deadline: Instant) -> Value {
             continue;
         }
         files += 1;
-        if files > WALK_PATH_LIMIT {
-            break;
-        }
     }
     json!({
         "basis": "git-listing",
         "files": files,
         "directories": null,
-        "withinLimit": files <= WALK_PATH_LIMIT,
+        "withinLimit": true,
         "sampled": false,
         "detail": null,
     })
@@ -530,6 +537,65 @@ pub(crate) fn checker_preparation(root: &Path, check: Option<&str>) -> Value {
     fact["workingDirectory"] = root.to_str().map_or(Value::Null, |path| json!(path));
     fact["input"] = command::input(root, check);
     fact
+}
+
+/// Facts for the initial Work response. They describe observations and an
+/// inert suggestion; neither changes the frozen configuration or its rights.
+pub(crate) fn work_preparation(loaded: &Loaded, check: Option<&str>) -> Value {
+    let checker = checker_preparation(&loaded.product_root, check);
+    work_preparation_from_checker(loaded, checker)
+}
+
+/// Reuse the check observation already carried by a current Work detail.
+pub(crate) fn work_preparation_from_checker(loaded: &Loaded, mut checker: Value) -> Value {
+    const DECLARED_COMMAND_LIMIT: usize = 32;
+    let interpreter = checker["program"].as_str().and_then(|program| {
+        Path::new(program)
+            .file_name()
+            .and_then(|name| name.to_str())
+    });
+    if matches!(interpreter, Some("sh" | "bash" | "python" | "python3"))
+        && checker["input"]["state"] == "not-applicable"
+    {
+        checker["input"] = json!({"state":"unknown", "reason":"the interpreter input could not be resolved without interpreting shell syntax"});
+    }
+    checker["workingDirectoryState"] = json!(match std::fs::metadata(&loaded.product_root) {
+        Ok(metadata) if metadata.is_dir() => "directory",
+        Ok(_) => "not-directory",
+        Err(_) => "unavailable",
+    });
+    let mut declared = Vec::new();
+    let mut total = 0usize;
+    for (name, agent) in &loaded.agents {
+        for command in &agent.commands {
+            total += 1;
+            if declared.len() < DECLARED_COMMAND_LIMIT {
+                declared.push(json!({"agent": name, "command": command,
+                    "observation": checker_preparation(&loaded.product_root, Some(command))}));
+            }
+        }
+    }
+    let proposal = if crate::project::commands::is_empty_starter(&loaded.agents) {
+        let observe = checker["input"]["argument"]
+            .as_str()
+            .filter(|_| checker["input"]["state"] == "readable")
+            .and_then(|path| crate::project::path::inputs::relative(&loaded.product_root, path))
+            .into_iter()
+            .collect::<Vec<_>>();
+        let commands = checker["program"]
+            .as_str()
+            .filter(|_| matches!(checker["state"].as_str(), Some("runnable" | "unresolved")))
+            .into_iter()
+            .collect::<Vec<_>>();
+        json!({"kind":"proposal", "authority":"none", "observe":observe,
+            "write":[], "commands":commands, "writeSelectionRequired":true,
+            "meaning":"Review task-specific paths and commands. This suggestion grants nothing and is not a run boundary manifest. Changes to the frozen configuration need the existing authorized successor route."})
+    } else {
+        Value::Null
+    };
+    json!({"checker":checker, "declaredCommands":{"items":declared, "total":total,
+        "omitted":total.saturating_sub(DECLARED_COMMAND_LIMIT)}, "boundaryProposal":proposal,
+        "meaning":"Read-only observations at this response; producing them does not run the frozen check."})
 }
 
 fn checker_fact(root: &Path, command: Option<&str>) -> Value {

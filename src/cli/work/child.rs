@@ -1,3 +1,5 @@
+// Parses preparation, reading and recovery of native Work children.
+// Refuses an index outside the results view; see `src/cli/work.rs`.
 //! `work child`: prepare, read, recover and record a native child of a Work.
 use super::*;
 

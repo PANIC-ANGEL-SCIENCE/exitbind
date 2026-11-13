@@ -1,3 +1,5 @@
+// Routes a stale observed check for eligible assignments.
+// Suppresses the route after a supersession claim; see `src/work/mod.rs`.
 //! Predicate-gated routing for a check whose observed result no longer tests
 //! the current inputs. The caller keeps the actual pending assignment intact.
 

@@ -1,3 +1,5 @@
+// Prepares task-owned outputs for opted-in verification.
+// Refuses scratch paths outside managed state; see `src/run/mod.rs`.
 //! Per-attempt, task-owned outputs for explicitly opted-in verification.
 use crate::{config::Loaded, evidence::hash};
 use serde_json::{json, Value};

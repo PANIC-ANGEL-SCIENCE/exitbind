@@ -1,3 +1,5 @@
+// Parses and prepares lesson input and its displayed bounds.
+// Refuses a source changed during preparation; see `src/memory/lessons.rs`.
 //! One owner for the lesson parser, read-only preparation and displayed bounds.
 use super::*;
 

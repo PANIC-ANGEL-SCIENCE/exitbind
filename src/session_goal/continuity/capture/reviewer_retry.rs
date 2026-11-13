@@ -1,3 +1,5 @@
+// Retries one ended, uncredited reviewer in the same session.
+// Refuses an ineligible retry source; see `src/session_goal/continuity/capture.rs`.
 //! One same-session retry of an ended, uncredited read-only reviewer.
 //!
 //! The original observation stays uncredited. This is an admission fence for a

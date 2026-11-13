@@ -1,3 +1,5 @@
+// Derives current Work navigation from the native Goal journey.
+// Bounds shown Works and counts additional ones; see `src/host/session_recovery.rs`.
 //! Current Works derived from the native Goal's own journey.
 //!
 //! After a host resume the Goal itself says which Works are open: its exact

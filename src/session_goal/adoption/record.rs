@@ -1,3 +1,5 @@
+// Manages the session-adoption extension on canonical Goal records.
+// Refuses a Goal changed before adoption; see `src/session_goal/adoption.rs`.
 //! The `sessionAdoptions` extension of a canonical Goal record: each session
 //! that adopted this journal, bounded, validated, and carried across
 //! same-Goal rewrites.

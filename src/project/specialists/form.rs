@@ -1,3 +1,5 @@
+// Constructs authoring forms for the specialist lifecycle.
+// Refuses changed preparation inputs; see `src/project/specialists.rs`.
 //! Typed inactive authoring and actor-correct forms over the existing lifecycle.
 use super::*;
 

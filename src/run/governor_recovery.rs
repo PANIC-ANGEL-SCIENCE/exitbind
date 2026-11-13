@@ -1,3 +1,5 @@
+// Validates owner-attested recovery of a duplicate-permit block.
+// Bounds recovery effects evidence; see `src/run/mod.rs`.
 //! Owner-attested, evidence-bound recovery for one duplicate-permit terminal block.
 //!
 //! This module only creates a successor seed. It never edits or replays the

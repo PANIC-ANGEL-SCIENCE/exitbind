@@ -1,3 +1,5 @@
+// Atomically appends and seals canonical Goal journal records.
+// Requires the native mutation owner; see `src/session_goal.rs`.
 //! Atomic mutation of the canonical Goal journal.
 
 use super::{

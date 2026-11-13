@@ -1,3 +1,5 @@
+// Defines the Lead decision on a pending finding cycle.
+// Refuses successor basis without supersede; see `src/kernel/mod.rs`.
 //! Lead disposition records: the Lead's decision on a pending finding cycle.
 //!
 //! A protocol-v1 record carries no `decision` and always starts another

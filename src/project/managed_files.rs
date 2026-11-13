@@ -1,3 +1,5 @@
+// Creates managed project and state directories within their roots.
+// Refuses symlink directory components; see `src/project/mod.rs`.
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::Path;

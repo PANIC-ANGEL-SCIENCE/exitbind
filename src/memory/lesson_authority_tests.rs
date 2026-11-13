@@ -1,3 +1,5 @@
+// Tests classification of schema agent properties for lesson authority.
+// Cases detect a newly seeded property; see `src/memory/lesson_authority.rs`.
 //! The schema is the oracle: every `$defs.agent` property is classified as
 //! lesson authority or not, a new property fails until it is classified, and
 //! the property scan is proven by a second scan written differently (brace

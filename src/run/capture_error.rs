@@ -1,3 +1,5 @@
+// Projects typed observation failures and partial capture facts.
+// Reports termination as ended only after cleanup is observed; see `src/run/capture.rs`.
 //! Bounded typed observation diagnostics; these are never check results.
 //!
 //! A failure that kept an owned checker group records it as the optional

@@ -1,3 +1,5 @@
+// Checks eligibility for the known-ended quarantine follow-up.
+// Requires the completed first verification ledger; see `src/run/quarantine/admission.rs`.
 //! Exact eligibility checks for the sole known-ended quarantine follow-up.
 use super::*;
 

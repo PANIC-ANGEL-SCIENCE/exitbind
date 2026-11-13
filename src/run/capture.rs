@@ -1,3 +1,5 @@
+// Owns typed observed-command capture and artifacts.
+// Refuses a capture stream above its limit; see `src/run/mod.rs`.
 //! Typed observed-command execution and bounded capture ownership.
 
 use serde_json::{json, Value};

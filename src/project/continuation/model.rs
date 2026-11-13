@@ -1,3 +1,5 @@
+// Defines bounded continuation planning data, without execution authority.
+// Refuses unsafe project paths; see `src/project/continuation/mod.rs`.
 //! Bounded planning data. Source text never supplies execution authority.
 
 use serde::{Deserialize, Serialize};

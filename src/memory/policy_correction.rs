@@ -1,3 +1,5 @@
+// Records owner decisions for incompatible project recall policies.
+// Refuses an empty or oversized owner reason; see `src/memory/mod.rs`.
 //! Explicit owner decisions for one project's otherwise incompatible recall policy.
 //! This route never treats administrative authorization as agent compatibility.
 use crate::{

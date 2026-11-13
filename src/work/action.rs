@@ -1,3 +1,5 @@
+// Resolves the current Work action and its assignment.
+// Keeps inspection read-only; see `src/work/mod.rs`.
 //! One current Work action at a time, with internal assignment resolution.
 
 use super::*;

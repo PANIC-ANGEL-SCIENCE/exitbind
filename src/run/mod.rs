@@ -1,3 +1,5 @@
+// Coordinates Run workflows and check-recording entry points.
+// Refuses check mutation after supersession; see `src/main.rs`.
 //! Run orchestration for bounded agent workflows.
 //!
 //! Ledger storage and locking live in `ledger`; event validation and state

@@ -1,3 +1,5 @@
+// Derives recovery facts for explicitly marked run starts.
+// Refuses stale or unbound forward repairs; see `src/run/state.rs`.
 //! Derived R18 recovery information on explicitly marked new starts.
 //!
 //! Source events remain the canonical facts. These governor projections are

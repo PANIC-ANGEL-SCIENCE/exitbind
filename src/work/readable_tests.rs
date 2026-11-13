@@ -1,3 +1,5 @@
+// Tests public Work detail aliases and native required facts.
+// Unequal residual facts remain in these cases; see `src/work/readable.rs`.
 //! Focused current-detail and native Goal race controls.
 use super::*;
 

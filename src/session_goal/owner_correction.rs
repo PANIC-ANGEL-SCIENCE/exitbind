@@ -1,3 +1,5 @@
+// Corrects the configured owner of an empty native named Goal.
+// Refuses Goals with Work or admission history; see `src/session_goal.rs`.
 //! Explicit correction of an empty native named Goal's configured owner.
 //!
 //! The owner record is a reader barrier. The sealed Goal append is the only

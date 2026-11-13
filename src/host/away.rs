@@ -1,3 +1,5 @@
+// Runs one authorized native Codex assignment through tmux.
+// Refuses nonportable away names; see `src/host/mod.rs`.
 //! Native Codex + tmux runner for one already-authorized assignment.
 
 use crate::{

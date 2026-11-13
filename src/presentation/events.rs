@@ -1,3 +1,5 @@
+// Projects conversational presentation from canonical run state.
+// Repeated failure display is suppressed for the same transition; see `src/presentation/mod.rs`.
 //! Conversational presentation derived from canonical run state.
 //!
 //! The lead speaks from Exitbind's state model instead of inventing narration:

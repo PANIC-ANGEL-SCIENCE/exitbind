@@ -1,3 +1,5 @@
+// Builds SessionStart recovery context from the native Goal.
+// Session selector mismatch leaves Work unselected; see `src/host/session_recovery.rs`.
 use super::{
     checkout, current_work,
     derived_text::{bounded_hook_text, derived_hook_text},

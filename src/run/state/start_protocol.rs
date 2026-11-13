@@ -1,3 +1,5 @@
+// Copies optional start protocol markers into reduced run state.
+// Only listed fields are copied; see `src/run/state.rs`.
 //! Project optional protocol markers from the canonical start into reduced state.
 
 use serde_json::Value;

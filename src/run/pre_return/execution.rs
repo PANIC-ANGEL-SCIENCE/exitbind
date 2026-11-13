@@ -1,3 +1,5 @@
+// Executes admitted pre-return attempts and retains their outcomes.
+// A replay returns the saved attempt without re-execution; see `src/run/pre_return.rs`.
 //! Execute one admitted pre-return attempt and retain its actual outcome.
 use super::*;
 use std::time::{Duration, Instant};

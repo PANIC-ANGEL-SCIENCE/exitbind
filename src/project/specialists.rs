@@ -1,3 +1,5 @@
+// Selects specialist experience from eligible agent-owned sources.
+// Refuses reintroducing revoked sources; see `src/project/mod.rs`.
 //! Read-only specialist selection and qualified, agent-owned experience.
 //! Existing configuration and memory lifecycle remain the sole writers.
 use crate::{config::Loaded, evidence::hash, memory, project::path};

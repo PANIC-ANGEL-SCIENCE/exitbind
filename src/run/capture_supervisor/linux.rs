@@ -1,3 +1,5 @@
+// Transports Linux observer capsules in a fresh executable.
+// Refuses observer proofs that are not private regular files; see `src/run/capture_supervisor.rs`.
 //! Fresh-exec capsule transport; no shared caller becomes a subreaper.
 use super::*;
 use std::fs::File;

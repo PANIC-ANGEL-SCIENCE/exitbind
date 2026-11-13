@@ -1,3 +1,5 @@
+// Coordinates native Work supersession with Run and Goal owners.
+// Requires a bounded non-empty reason; see `src/work/mod.rs`.
 //! Explicit native Work supersession, using the existing Run and Goal owners.
 
 use super::*;

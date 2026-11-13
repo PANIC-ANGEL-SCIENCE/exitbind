@@ -1,3 +1,5 @@
+// Recovers a failed native debit from its owning journal.
+// Requires the recorded Work and status to match; see `src/work/native_action/continuation.rs`.
 //! Recover an existing failed native debit from its owning journal. These
 //! observations do not authorize another provider attempt or relax retry rules.
 use super::*;

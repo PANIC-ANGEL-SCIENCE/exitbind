@@ -1,3 +1,5 @@
+// Reads and writes durable native assignment journals.
+// Refuses a journal that is not a regular file; see `src/work/native_action.rs`.
 //! Durable native assignment journal.
 
 use super::*;

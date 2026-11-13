@@ -1,3 +1,5 @@
+// Resolves a project checker named by a declared check command.
+// Refuses ambiguous covered checkers; see `src/session_goal/requirements.rs`.
 //! Name the project checker a declared check command runs.
 //!
 //! A check command names its checker directly (`sh scripts/check.sh`) or

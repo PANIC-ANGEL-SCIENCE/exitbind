@@ -1,3 +1,5 @@
+// Resolves assignment-scoped perspective sources for a child.
+// Bounds selector bytes; see `src/session_goal/continuity.rs`.
 //! Assignment-scoped perspective sources. IDs and hashes survive in the child
 //! intent; current bytes must still match before any context is presented.
 

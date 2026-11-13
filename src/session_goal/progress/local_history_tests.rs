@@ -1,3 +1,5 @@
+// Tests optional local Goal progress when ambient history is unavailable.
+// The fixture does not grant close authority; see `src/session_goal/progress.rs`.
 //! Optional local Goal display keeps its original single-assembly behavior.
 use super::JourneyObservation;
 use crate::session_goal;

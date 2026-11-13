@@ -1,3 +1,5 @@
+// Connects project modules; this file supplies declarations only.
+// For project configuration setup, see `src/project/setup.rs`.
 pub(crate) mod agent_context;
 pub(crate) mod agent_display;
 pub(crate) mod agent_rules;

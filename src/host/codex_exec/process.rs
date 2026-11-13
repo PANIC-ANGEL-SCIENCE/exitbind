@@ -1,3 +1,5 @@
+// Observes process identity and bounds Codex child lifetime.
+// Unverifiable observer liveness stays uncertain; see `src/host/codex_exec.rs`.
 //! Bounded process lifetime for a native Codex invocation.
 
 use super::{ProcessIdentity, ProcessLiveness, RunError};

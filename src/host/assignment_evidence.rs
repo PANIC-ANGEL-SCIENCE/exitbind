@@ -1,3 +1,5 @@
+// Presents evidence read routes for the current native assignment.
+// Limits previewed evidence entries; see `src/host/mod.rs`.
 //! Evidence read routes presented to a native child with its assignment.
 //!
 //! Preview references can be resolved through work expand; complete selected

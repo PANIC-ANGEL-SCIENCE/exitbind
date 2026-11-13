@@ -1,3 +1,5 @@
+// Tests selection of the latest early-evidence candidate.
+// Missing or changed candidates stay unknown; see `src/work/early_evidence.rs`.
 use super::*;
 use crate::project::layout_types::Mode;
 use std::{collections::BTreeMap, fs, path::Path};

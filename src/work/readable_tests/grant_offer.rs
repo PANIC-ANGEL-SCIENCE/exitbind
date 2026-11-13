@@ -1,3 +1,5 @@
+// Tests current grant offers under held results and governor phases.
+// Ineligible grants are suppressed in these cases; see `src/work/readable_tests.rs`.
 use super::*;
 
 #[path = "grant_offer/continuation.rs"]

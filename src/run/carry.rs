@@ -1,3 +1,5 @@
+// Carries same-Goal governor accounting across run identities.
+// Refuses malformed governor markers; see `src/run/mod.rs`.
 //! Persisted same-goal governor accounting carried between fresh run identities.
 
 use super::ledger::{ledger_path, load_at_unchecked, LedgerPath};

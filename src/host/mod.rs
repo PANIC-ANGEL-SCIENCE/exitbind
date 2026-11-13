@@ -1,3 +1,5 @@
+// Connects host integration modules; this file supplies declarations only.
+// For native hook execution, see `src/host/runtime.rs`.
 pub(crate) mod assignment_context;
 pub(crate) mod assignment_evidence;
 pub(crate) mod away;

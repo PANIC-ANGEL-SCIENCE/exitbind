@@ -6,6 +6,12 @@ edits the repository. Removing root `AGENTS.md` means hosts no longer discover
 these developer instructions through that filename; `CONTRIBUTING.md` is not
 an automatic host fallback.
 
+Read a Rust source file's first eight lines before its body. Its opening header
+names the responsibility, relevant refusal or limit, and the next place to
+look. The source inventory includes test-gated files under `src/`. For a
+reading measure, record the source files actually opened for a named change;
+do not split files solely to meet a size threshold.
+
 To use Exitbind for your own work, start with the [README](README.md) and
 [onboarding](docs/onboarding.md). Product use does not require contribution,
 cloning this source, Rust, or this developer guide.

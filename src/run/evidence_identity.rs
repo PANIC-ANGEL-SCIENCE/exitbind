@@ -1,3 +1,5 @@
+// Validates evidence identity against the current assignment.
+// Refuses evidence bound to another assignment; see `src/run/mod.rs`.
 //! Validation of evidence identity against the current assignment and
 //! carried-mutation lineage.
 

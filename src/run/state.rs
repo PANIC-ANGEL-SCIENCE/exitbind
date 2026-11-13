@@ -1,3 +1,5 @@
+// Reduces validated Run events to canonical state.
+// Refuses a ledger without a start event; see `src/run/mod.rs`.
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
 

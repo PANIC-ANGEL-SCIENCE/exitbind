@@ -1,3 +1,5 @@
+// Projects reviewer resolution and receipt status.
+// Refuses a receipt without current approval; see `src/evidence/mod.rs`.
 //! How a run reports its review outcome in `run status` and the Exit Path
 //! receipt.  A review cycle the Lead resolved by `defer` or `reject` is
 //! reported as that resolution, never as an omission or an approval.

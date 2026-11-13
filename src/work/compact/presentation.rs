@@ -1,3 +1,5 @@
+// Projects bounded Work and Goal presentation fields.
+// Compact Goal progress retains at most eight tasks; see `src/work/compact.rs`.
 //! Bounded Work presentation projections.
 
 use super::{bounded_text, bounded_value, copy_if_present};

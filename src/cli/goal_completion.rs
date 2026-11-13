@@ -1,3 +1,5 @@
+// Builds committed-Goal completion and read-only recovery responses.
+// The mutation response emits a terminal event only for a new close; see `src/cli/mod.rs`.
 //! Compact committed-goal response and one exact read-only recovery route.
 use crate::{config::Loaded, session_goal};
 use serde_json::{json, Value};

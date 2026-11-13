@@ -1,3 +1,5 @@
+// Validates and projects optional project memory policy.
+// Reports unknown policy fields; see `src/memory/mod.rs`.
 //! Validation and projection of the optional project recall policy.
 
 use serde_json::{Map, Value};

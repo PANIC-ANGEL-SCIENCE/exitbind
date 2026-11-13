@@ -1,3 +1,5 @@
+// Produces bounded, content-free native task file references.
+// Reports an unavailable Git inventory; see `src/host/mod.rs`.
 //! Bounded, content-free file result references for a direct native task.
 
 use crate::evidence::hash;

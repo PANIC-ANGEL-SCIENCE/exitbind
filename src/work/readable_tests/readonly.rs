@@ -1,3 +1,5 @@
+// Tests read-only native scope and its journey witness.
+// The fixture rechecks the retained witness; see `src/work/readable_tests.rs`.
 //! Read-only native scope keeps the observed witness and its final recheck.
 use super::*;
 use std::os::unix::{ffi::OsStrExt, fs::PermissionsExt};

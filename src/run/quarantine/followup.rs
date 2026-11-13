@@ -1,3 +1,5 @@
+// Defines the permitted known-ended quarantine follow-up.
+// Refuses unknown or repeated attempts; see `src/run/quarantine.rs`.
 //! Strict protocol step and identity for the one allowed known-ended follow-up.
 use super::{exact, sha, work, FOLLOWUP_PROTOCOL, PROTOCOL};
 use serde_json::{json, Value};

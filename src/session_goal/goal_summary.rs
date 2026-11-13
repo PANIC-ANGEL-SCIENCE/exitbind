@@ -1,3 +1,5 @@
+// Projects Lead-facing Goal closure and journey facts.
+// Open records have no closed revision; see `src/session_goal.rs`.
 //! Lead-facing Goal facts: how the native journey closes, read from the
 //! journey itself, and the project-lesson state. The same facts are appended
 //! to the shared Goal system text (`goal status`, Work responses), the

@@ -1,3 +1,5 @@
+// Validates native role results and projects bounded observations.
+// Refuses unsupported Codex roles; see `src/work/native_action.rs`.
 //! Native role schemas, verdict validation, and bounded observation projection.
 
 use crate::host::codex_exec::{CoverageGap, DiagnosticStatus, Observation, Request};

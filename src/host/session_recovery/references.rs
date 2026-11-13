@@ -1,3 +1,5 @@
+// Validates saved recovery references and Work configurations.
+// Refuses hints for another session or Goal; see `src/host/session_recovery.rs`.
 use super::hint::{
     bounded_text, canonical_path, current_executable_sha256, read_hint, source_root, valid_sha,
     PendingOperation, Reference, WorkRef, WorkSelection, MAX_ITEMS,

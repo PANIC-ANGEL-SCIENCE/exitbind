@@ -1,3 +1,5 @@
+// Applies a retained finding using current observed support.
+// Refuses a hypothesis as proof of reuse; see `src/session_goal/continuity.rs`.
 //! Explicit application of a retained finding, supported by a current observed
 //! check. Retrieval and a caller's claim alone never establish applicability.
 

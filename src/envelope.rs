@@ -1,3 +1,5 @@
+// Builds agent briefs and workflow planning envelopes.
+// Refuses empty tasks; see `src/main.rs`.
 use crate::config::{self, Loaded};
 use crate::evidence::hash;
 use serde_json::{json, Value};

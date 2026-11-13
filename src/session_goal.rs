@@ -1,3 +1,5 @@
+// Owns canonical Lead session-Goal state and journal reads.
+// Refuses inconsistent recovery snapshots; see `src/main.rs`.
 //! Canonical, Lead-owned evolving session goal state.
 //!
 

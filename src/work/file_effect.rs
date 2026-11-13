@@ -1,3 +1,5 @@
+// Applies assignment-fenced UTF-8 file replacement.
+// Refuses replacements above 256 KiB; see `src/work/mod.rs`.
 //! Product-mediated UTF-8 file replacement. The run lock fences assignment
 //! changes; a durable intent prevents a lost reply from repeating the effect.
 //! Native tools outside this mediator retain their host's own permissions.

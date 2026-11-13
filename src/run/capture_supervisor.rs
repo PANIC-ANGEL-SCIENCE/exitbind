@@ -1,3 +1,5 @@
+// Supervises per-observation child ownership and evidence.
+// Reports unavailable durable observer evidence; see `src/run/mod.rs`.
 //! Per-observation child ownership. Linux reaping stays in an exclusive exec.
 use super::capture::{process_group_exists, ObservationRequest};
 use std::io;

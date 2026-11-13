@@ -1,3 +1,5 @@
+// Collects bounded context for interpreting a local observer PID.
+// Omits empty or oversized context files; see `src/run/mod.rs`.
 //! Bounded, non-authenticating context for interpreting a local observer PID.
 //!
 //! Hashes avoid storing raw host identifiers. They are a comparison aid, not

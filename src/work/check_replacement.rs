@@ -1,3 +1,5 @@
+// Previews Lead replacement of a defective frozen check.
+// Requires exactly one replacement target; see `src/work/mod.rs`.
 //! Lead-owned, previewable replacement of an explicitly defective frozen check.
 
 use super::*;

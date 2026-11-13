@@ -1,3 +1,5 @@
+// Tests Goal owner-correction boundaries.
+// Historical associations and pending admissions refuse correction; see `src/session_goal/owner_correction.rs`.
 //! Focused correction-boundary tests.
 
 use super::*;

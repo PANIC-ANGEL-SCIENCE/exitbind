@@ -1,3 +1,5 @@
+// Tests compact Work adoption and recovery projections.
+// Minimal recovery does not invent completion; see `src/work/compact.rs`.
 //! Focused projection and recovery contract checks.
 
 use super::{continuation_route, project, MAX_RESPONSE_BYTES};

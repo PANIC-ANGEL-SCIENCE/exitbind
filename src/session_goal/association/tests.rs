@@ -1,3 +1,5 @@
+// Tests Goal association admission and record compatibility.
+// Unknown association protocols refuse in these cases; see `src/session_goal/association.rs`.
 use serde_json::{json, Value};
 use std::{env, fs};
 

@@ -1,3 +1,5 @@
+// Locates and validates retained Worker result storage.
+// Requires the held path to be a regular directory; see `src/work/mod.rs`.
 use crate::{config::Loaded, evidence::hash};
 use serde_json::{json, Value};
 use std::fs::{self, OpenOptions};

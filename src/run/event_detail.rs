@@ -1,3 +1,5 @@
+// Looks up a recorded event across later ledger heads.
+// Requires a 64-character event SHA-256; see `src/run/mod.rs`.
 //! Read-only lookup of one recorded event across later ledger heads.
 
 use super::*;

@@ -1,3 +1,5 @@
+// Resolves native journal locations, locks and saved operations.
+// Refuses invalid Work handles; see `src/work/native_action.rs`.
 //! Native journal locations, locking, and saved-operation selection.
 
 use super::*;

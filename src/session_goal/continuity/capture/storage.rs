@@ -1,3 +1,5 @@
+// Persists child intents under the existing private mutation lock.
+// Refuses malformed intent state; see `src/session_goal/continuity/capture.rs`.
 //! Existing private child-intent persistence and its mutation lock.
 
 use super::*;

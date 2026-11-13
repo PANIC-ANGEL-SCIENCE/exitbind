@@ -1,3 +1,5 @@
+// Models bounded requirement history and declared Work coverage.
+// Refuses invalid named-Goal versions or bounds; see `src/session_goal/requirements.rs`.
 //! Bounded requirement, history and declared Work-coverage representation.
 
 use serde::{Deserialize, Serialize};

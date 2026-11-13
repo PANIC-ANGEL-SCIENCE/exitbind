@@ -1,3 +1,5 @@
+// Records immutable quarantine verification acknowledgements.
+// Requires exact frozen artifact and input acknowledgement; see `src/run/quarantine.rs`.
 //! Immutable verification acknowledgement and replay guards. These commitments
 //! do not attest that the planned execution environment was actually exercised.
 use super::*;

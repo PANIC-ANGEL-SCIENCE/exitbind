@@ -1,3 +1,5 @@
+// Admits a Work association against the current Goal record.
+// Refuses invalid closure state before starting Work; see `src/session_goal/association.rs`.
 use super::*;
 use serde_json::{json, Value};
 use std::path::Path;

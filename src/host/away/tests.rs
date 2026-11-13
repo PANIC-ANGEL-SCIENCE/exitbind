@@ -1,3 +1,5 @@
+// Tests bounded away-execution names and assignment selection.
+// Cases do not upgrade harness requirements into evidence; see `src/host/away.rs`.
 use super::*;
 
 #[test]

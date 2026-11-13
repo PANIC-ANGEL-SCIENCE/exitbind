@@ -1,5 +1,6 @@
-//! Small default permit result. Full assignment and governor history remain
-//! available through the read-only work and event inspection routes.
+//! Projects the permit result and its read-only recovery routes.
+//! It grants no host permission; the governing transition is in
+//! `src/run/governor.rs`.
 
 use crate::{config::Loaded, run};
 use serde_json::{json, Value};
@@ -59,8 +60,11 @@ pub(crate) fn permit(
         }
         Ok(None) => {}
     }
+    // Sanitize the legacy compact permit packet first. The separately
+    // validated current detail must retain the same facts as a direct read.
+    let mut response = agent_response(response);
     super::refreshed_action::attach(loaded, work, &next, &mut response);
-    Ok(agent_response(response))
+    Ok(response)
 }
 
 fn projection_failure(
@@ -86,7 +90,7 @@ fn projection_failure(
         "kind":"read_only",
         "route":super::compact::continuation_route(config_path,
             crate::emitted::Route::new(["work","detail",work,"--view","action","--json"])),
-        "meaning":"The permit response retains its recorded event. Read current Work state; do not repeat the mutation or request a new permit to recover this display.",
+        "meaning":"The permit event is recorded. Inspect current Work to recover its state; do not repeat the edit or request a new permit merely because this display failed.",
     });
     agent_response(response)
 }
@@ -133,7 +137,7 @@ pub(super) fn compact(
             "action": next["action"], "role": next["role"],
             "assignment": next["assignment"], "requiresExpansion": true,
         },
-        "nextAction": read_route(config, crate::emitted::Route::new(["work", "detail", work, "--view", "action", "--json"]), "read_work"),
+        "nextAction": read_route(config, crate::emitted::Route::new(["work", "detail", work, "--json"]), "read_work"),
         "audit": event_sha.as_str().map(|sha| read_route(config, crate::emitted::Route::new(["run", "inspect", ledger, "--event", sha, "--json"]), "audit")),
     });
     response["nextAction"]["when"] = json!("after the permitted edit, or now to inspect an uncertain effect; never reuse the pre-permit return binding");
@@ -246,6 +250,10 @@ mod tests {
             "recorded-permit-event"
         );
         assert_eq!(response["recovery"]["kind"], "read_only");
+        assert!(response["recovery"]["meaning"]
+            .as_str()
+            .unwrap()
+            .contains("permit event is recorded"));
         let route = response["recovery"]["route"]["command"].as_array().unwrap();
         assert!(route
             .windows(2)

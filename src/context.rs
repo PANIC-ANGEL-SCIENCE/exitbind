@@ -1,3 +1,5 @@
+// Projects replayable context and the bounded low-information loop.
+// Refuses a missing current context projection; see `src/main.rs`.
 //! Thin, replayable context projections and the bounded low-information loop.
 //!
 //! This module is intentionally provider-neutral.  The run ledger remains the

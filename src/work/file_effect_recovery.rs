@@ -1,3 +1,5 @@
+// Reconciles previously admitted file effects.
+// Refuses operation identities conflicting with their requests; see `src/work/file_effect.rs`.
 //! Reconciliation belongs to the existing file effect owner. An exact admitted
 //! request may finish after revocation, but cannot change its target or bytes.
 use super::{durable_write, owner_binding, replacement_mode, result, WriteRequest};

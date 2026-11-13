@@ -1,3 +1,5 @@
+// Projects current recipient guidance into the Work action view.
+// Unavailable recipients do not produce guidance items; see `src/work/readable.rs`.
 //! The current recipient's delivered guidance on `work detail --view action`.
 //!
 //! One source of truth: this projects the selection and budget that the

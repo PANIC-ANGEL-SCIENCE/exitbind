@@ -1,3 +1,5 @@
+// Tracks bounded session journeys and final-current integration.
+// Refuses invalid or unsupported members; see `src/session_goal.rs`.
 //! Bounded session-journey membership and explicit final-current integration.
 //!
 //! Context-only membership never proves task acceptance. A local integration

@@ -1,3 +1,5 @@
+// Tests numerical ordering in the slow release series.
+// Cases reject leading zeroes; see `src/distribution/update.rs`.
 use super::Version;
 #[test]
 fn slow_series_orders_numerically_and_rejects_leading_zeroes() {

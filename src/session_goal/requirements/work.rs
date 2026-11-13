@@ -1,3 +1,5 @@
+// Binds declared requirements to Work and inspects its evidence.
+// Refuses checker inputs outside tested coverage; see `src/session_goal/requirements.rs`.
 //! Bind declared requirements before Work execution, then inspect its evidence.
 
 use super::*;

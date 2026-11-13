@@ -1,3 +1,5 @@
+// Builds bounded executable and configuration recovery routes.
+// Omits a next route for an oversized Work locator; see `src/work/mod.rs`.
 //! Exact executable/config recovery argv for bounded work responses.
 
 use crate::emitted::{Bounded, Route};

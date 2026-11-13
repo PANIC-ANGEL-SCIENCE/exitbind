@@ -1,3 +1,5 @@
+// Reconstructs native delivery facts from validated Work snapshots.
+// Refuses a changed current binding; see `src/work/details.rs`.
 //! Reconstruct native delivery facts from validated Work snapshots.
 use super::{binding, ensure_current_config, native_sections};
 use crate::work::action_forms::GrantOffer;

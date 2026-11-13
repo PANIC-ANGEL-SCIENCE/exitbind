@@ -1,3 +1,5 @@
+// Validates persisted evidence for frozen-check replacement.
+// Refuses changed architecture provenance; see `src/run/mod.rs`.
 //! Persisted evidence for an explicit replacement of a defective frozen check.
 
 use serde_json::Value;

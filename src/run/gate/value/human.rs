@@ -1,3 +1,5 @@
+// Renders status and explanations derived from checked run state.
+// Refuses explanations of unrelated protection events; see `src/run/gate/value.rs`.
 //! Human-readable status and explanation derived from checked state.
 
 use super::*;

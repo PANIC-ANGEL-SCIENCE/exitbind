@@ -1,3 +1,5 @@
+// Reconciles interrupted pre-return admissions against the ledger.
+// Requires one configured Lead for recovery; see `src/run/pre_return.rs`.
 //! Ledger-bound reconciliation of an interrupted pre-return admission.
 //!
 //! This records a reported Lead decision, not a checker result. The retained

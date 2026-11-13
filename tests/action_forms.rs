@@ -207,7 +207,24 @@ impl Fixture {
     }
 
     fn execute_choice(&self, choice: &Value, replacements: &[(&str, &str)], input: &[u8]) -> Value {
-        let mut argv = self.expand_command(&choice["command"]);
+        let command = &choice["command"];
+        assert_eq!(command["sameExecutableRequired"], false, "{command}");
+        assert_eq!(command["sameConfigRequired"], false, "{command}");
+        let mut argv = command["argv"]
+            .as_array()
+            .expect("complete action argv")
+            .iter()
+            .map(|word| word.as_str().expect("action argv text").to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            fs::canonicalize(&argv[0]).unwrap(),
+            fs::canonicalize(&self.executable).unwrap()
+        );
+        assert_eq!(argv[argv.len() - 2], "--config");
+        assert_eq!(
+            fs::canonicalize(&argv[argv.len() - 1]).unwrap(),
+            fs::canonicalize(self.root.join("exitbind.json")).unwrap()
+        );
         for argument in &mut argv {
             for (from, to) in replacements {
                 if argument == from {
@@ -442,20 +459,34 @@ fn ordinary_action_view_omits_inapplicable_contradiction_and_refuses_stale_retur
     assert!(before["decision"]["obligations"].is_array());
     assert!(before.get("sections").is_none());
     assert!(before.get("recipientContext").is_none());
-    let old_return = before["effectiveAction"]["choices"]
+    // The diagnostic view may omit whole commands at its navigation budget.
+    // Obtain executable forms from the complete current detail.
+    let complete_before = fixture.json(&["work", "detail", &work, "--json"], b"");
+    assert_eq!(complete_before["complete"], true);
+    let old_return = complete_before["actionForms"]["choices"]
         .as_array()
         .unwrap()
         .iter()
         .find(|c| c["label"] == "completed")
         .unwrap()
         .clone();
-    let mut permit = fixture.expand_command(&before["effectiveAction"]["beforeEditing"]["command"]);
+    let mut permit =
+        fixture.expand_command(&complete_before["actionForms"]["beforeEditing"]["command"]);
     let i = permit.iter().position(|s| s == "<OPERATION>").unwrap();
     permit[i] = "edit source".into();
     let out = fixture.run_argv(&permit, b"");
     assert!(out.status.success(), "{}", text(&out));
     let permit: Value = serde_json::from_slice(&out.stdout).unwrap();
     let output = fixture.run_route(&permit["nextAction"]);
+    assert!(output.status.success(), "{}", text(&output));
+    let complete: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(complete["kind"], "work_detail");
+    assert_eq!(complete["complete"], true);
+    assert!(complete["actionForms"]["currentGrant"].is_object());
+    let output = fixture.call(
+        &["work", "detail", &work, "--view", "action", "--json"],
+        b"",
+    );
     assert!(output.status.success(), "{}", text(&output));
     let current: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(current["compact"], true);
@@ -495,7 +526,9 @@ fn ordinary_action_view_omits_inapplicable_contradiction_and_refuses_stale_retur
         text(&stale)
     );
     assert_eq!(fs::read(fixture.root.join(&ledger)).unwrap(), recorded);
-    assert!(current["details"]["assignment"].is_object());
+    assert!(
+        current["details"]["assignment"].is_object() || current["details"]["grouped"].is_object()
+    );
 }
 
 #[test]
@@ -615,67 +648,59 @@ fn oversized_reviewer_action_uses_complete_grouped_route_and_keeps_its_fence() {
     assert!(output.status.success(), "{}", text(&output));
     assert!(output.stdout.len() <= 8192, "{} bytes", output.stdout.len());
     let action: Value = serde_json::from_slice(&output.stdout).unwrap();
-    fn has_reconstructable_action_command(value: &Value) -> bool {
+    fn assert_complete_commands(value: &Value) {
         match value {
             Value::Object(object) => {
-                if object.get("argv").and_then(Value::as_array).is_some() {
-                    assert!(object["sameConfigRequired"].is_boolean());
-                    assert!(object["sameExecutableRequired"].is_boolean());
-                    if object["sameConfigRequired"] == true
-                        || object["sameExecutableRequired"] == true
-                    {
-                        return true;
-                    }
+                if (object.get("argv").and_then(Value::as_array).is_some()
+                    || object.get("command").and_then(Value::as_array).is_some())
+                    && object.contains_key("sameConfigRequired")
+                    && object.contains_key("sameExecutableRequired")
+                {
+                    assert_eq!(object["sameConfigRequired"], false, "{object:?}");
+                    assert_eq!(object["sameExecutableRequired"], false, "{object:?}");
                 }
-                object.values().any(has_reconstructable_action_command)
+                for child in object.values() {
+                    assert_complete_commands(child);
+                }
             }
-            Value::Array(values) => values.iter().any(has_reconstructable_action_command),
-            _ => false,
+            Value::Array(values) => values.iter().for_each(assert_complete_commands),
+            _ => {}
         }
     }
-    assert!(
-        has_reconstructable_action_command(&action["effectiveAction"]),
-        "long-path fixture no longer exercises bounded argv reconstruction"
+    assert_complete_commands(&action);
+    assert_eq!(
+        action["effectiveAction"]["commandsComplete"], false,
+        "long paths must omit whole commands rather than publish partial argv"
     );
-
-    fn expand_action_commands(value: &Value, executable: &str, config: &str) -> Value {
-        match value {
-            Value::Object(object) => {
-                let mut expanded = object
-                    .iter()
-                    .map(|(key, child)| {
-                        (
-                            key.clone(),
-                            expand_action_commands(child, executable, config),
-                        )
-                    })
-                    .collect::<serde_json::Map<_, _>>();
-                if let Some(argv) = expanded.get("argv").and_then(Value::as_array) {
-                    if expanded["sameExecutableRequired"] == true
-                        || expanded["sameConfigRequired"] == true
-                    {
-                        let mut argv = argv.clone();
-                        if expanded["sameExecutableRequired"] == true {
-                            argv.insert(0, json!(executable));
-                        }
-                        if expanded["sameConfigRequired"] == true {
-                            argv.push(json!(config));
-                        }
-                        expanded.insert("argv".into(), Value::Array(argv));
-                        expanded.insert("sameExecutableRequired".into(), json!(false));
-                        expanded.insert("sameConfigRequired".into(), json!(false));
-                    }
-                }
-                Value::Object(expanded)
-            }
-            Value::Array(values) => Value::Array(
-                values
-                    .iter()
-                    .map(|child| expand_action_commands(child, executable, config))
-                    .collect(),
-            ),
-            value => value.clone(),
-        }
+    let plain = fixture.call(&["work", "detail", &work, "--view", "action"], b"");
+    assert!(plain.status.success(), "{}", text(&plain));
+    assert!(String::from_utf8_lossy(&plain.stdout).contains("Commands unavailable:"));
+    for args in [
+        vec!["work", "next", work.as_str(), "--json"],
+        vec!["work", "resume", "--json"],
+    ] {
+        let output = fixture.call(&args, b"");
+        assert!(output.status.success(), "{}", text(&output));
+        assert!(output.stdout.len() <= 8192, "{} bytes", output.stdout.len());
+        let read: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_complete_commands(&read);
+    }
+    for args in [
+        vec!["work", "next", work.as_str(), "--full", "--json"],
+        vec!["work", "resume", "--full", "--json"],
+    ] {
+        let output = fixture.call(&args, b"");
+        assert!(output.status.success(), "{}", text(&output));
+        let read: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let current = &read["next"]["current"];
+        assert!(current["actionForm"].is_object(), "{read}");
+        assert_complete_commands(&current["actionForm"]);
+        assert_complete_commands(&current["details"]);
+        assert_complete_commands(&read["effectiveAction"]);
+        let route = &current["details"]["grouped"];
+        assert!(route["command"].is_array(), "{route}");
+        assert_eq!(route["sameConfigRequired"], false, "{route}");
+        assert_eq!(route["sameExecutableRequired"], false, "{route}");
     }
     assert_eq!(action["recipient"]["role"], "reviewer");
     assert_eq!(action["binding"], reviewer["current"]["binding"]);
@@ -699,20 +724,34 @@ fn oversized_reviewer_action_uses_complete_grouped_route_and_keeps_its_fence() {
     assert_eq!(action["details"].as_object().unwrap().len(), 1);
     assert_eq!(action["details"]["grouped"]["readOnly"], true);
     assert_eq!(
-        action["details"]["grouped"],
-        reviewer["current"]["details"]["grouped"]
+        action["details"]["grouped"]["reference"],
+        reviewer["current"]["details"]["grouped"]["reference"]
     );
-    let mut original_navigation = action.clone();
-    original_navigation["details"] = reviewer["current"]["details"].clone();
-    original_navigation["details"]
-        .as_object_mut()
-        .unwrap()
-        .remove("grouped");
-    assert!(
-        serde_json::to_vec(&original_navigation).unwrap().len() + 1 > 8192,
-        "fixture no longer reproduces the oversized complete action view"
+    assert_eq!(action["details"]["grouped"]["sameConfigRequired"], false);
+    assert_eq!(
+        action["details"]["grouped"]["sameExecutableRequired"],
+        false
     );
     assert_eq!(fs::read(fixture.root.join(&ledger)).unwrap(), before_action);
+
+    // The old section expansion keeps its exact UTF-8 page response.
+    let legacy = fixture.run_route(&reviewer["current"]["details"]["evidence"]);
+    assert!(legacy.status.success(), "{}", text(&legacy));
+    let legacy: Value = serde_json::from_slice(&legacy.stdout).unwrap();
+    assert_eq!(legacy["kind"], "work_section");
+    assert_eq!(legacy["encoding"], "utf-8");
+    let page_text = legacy["contentText"].as_str().unwrap();
+    assert_eq!(legacy["bytes"], page_text.len());
+    assert!(legacy.get("contentHex").is_none());
+    assert_eq!(legacy["pageComplete"], true);
+    assert!(legacy["sectionSha256"].is_string());
+    if legacy["complete"] == true {
+        use sha2::{Digest, Sha256};
+        assert_eq!(
+            legacy["sectionSha256"],
+            format!("{:x}", Sha256::digest(page_text))
+        );
+    }
 
     let grouped_route = action["details"]["grouped"].clone();
     let expanded = fixture.run_route(&grouped_route);
@@ -745,25 +784,36 @@ fn oversized_reviewer_action_uses_complete_grouped_route_and_keeps_its_fence() {
         .unwrap()
         .iter()
         .any(|check| check["kind"] == "check" && check["status"] == "passed"));
-    let executable = fs::canonicalize(&fixture.executable)
+    let grouped_labels = grouped["actionForms"]["choices"]
+        .as_array()
         .unwrap()
-        .to_str()
+        .iter()
+        .map(|choice| choice["label"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    let action_labels = action["effectiveAction"]["choices"]
+        .as_array()
         .unwrap()
-        .to_owned();
-    let config = fs::canonicalize(fixture.root.join("exitbind.json"))
+        .iter()
+        .map(|choice| choice["label"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(grouped_labels, action_labels);
+    assert!(action["effectiveAction"]["choices"]
+        .as_array()
         .unwrap()
-        .to_str()
-        .unwrap()
-        .to_owned();
-    assert_eq!(
-        expand_action_commands(&grouped["actionForms"]["choices"], &executable, &config),
-        expand_action_commands(&action["effectiveAction"]["choices"], &executable, &config),
-        "bounded action view changed choices beyond its reconstructable command paths"
-    );
+        .iter()
+        .all(|choice| choice["command"].get("argv").is_none()
+            && choice["command"]["available"] == false));
     assert_eq!(fs::read(fixture.root.join(&ledger)).unwrap(), before_action);
 
+    assert_complete_commands(&grouped["actionForms"]);
+    let approved = grouped["actionForms"]["choices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|choice| choice["label"] == "approved")
+        .unwrap();
     fixture.execute_choice(
-        &fixture.choice(&reviewer, "approved"),
+        approved,
         &[("<REASON>", "review completed")],
         b"review completed\n",
     );
@@ -824,6 +874,16 @@ fn worker_permit_form_uses_stable_binding_request_id_and_replays_exactly() {
     );
     let worker = fixture.next(&work);
     let form = &worker["current"]["actionForm"]["beforeEditing"];
+    assert_eq!(form["required"], true);
+    assert_eq!(form["enforcement"], "advisory");
+    assert!(form["meaning"]
+        .as_str()
+        .unwrap()
+        .contains("advisory for ordinary"));
+    let plain = fixture.call(&["work", "detail", &work, "--view", "action"], b"");
+    assert!(plain.status.success(), "{}", text(&plain));
+    assert!(String::from_utf8_lossy(&plain.stdout)
+        .contains("advisory for ordinary host workspace writes"));
     let operation = &form["inputConstraints"]["OPERATION"];
     assert_eq!(operation["type"], "string");
     assert_eq!(operation["unit"], "UTF-8 bytes");

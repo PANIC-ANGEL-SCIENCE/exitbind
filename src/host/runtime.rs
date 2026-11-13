@@ -1,3 +1,5 @@
+// Executes native host hooks and assembles session context.
+// Bounds mandatory session context without truncating it; see `src/host/mod.rs`.
 use serde_json::{json, Value};
 use std::io::{self, Read, Write};
 

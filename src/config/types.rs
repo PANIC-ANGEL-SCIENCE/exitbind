@@ -1,3 +1,5 @@
+// Defines typed workflow, agent and runtime configuration.
+// A declined fallback has no runtime binding; see `src/config/mod.rs`.
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;

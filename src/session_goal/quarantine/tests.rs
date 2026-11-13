@@ -1,3 +1,5 @@
+// Tests uncredited Goal quarantine residuals and record formats.
+// Cases reject changed or missing member bindings; see `src/session_goal/quarantine.rs`.
 use super::*;
 
 fn hash(byte: char) -> String {

@@ -1,3 +1,5 @@
+// Classifies activation from consequence and promotion facts.
+// Direct activation requires neither condition; see `src/host/runtime.rs`.
 use serde_json::{json, Value};
 
 /// Classify activation from consequence and promotion requirements. A count of

@@ -1,3 +1,5 @@
+// Projects an effective action from existing canonical Work facts.
+// Withholds executable action when the response is blocked; see `src/work/mod.rs`.
 //! One additive projection of existing canonical actions; no transition owner.
 use serde_json::{json, Value};
 

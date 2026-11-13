@@ -1,3 +1,5 @@
+// Selects opt-in memory for an approved task context.
+// Refuses invalid task, revision or Lead selection; see `src/memory/mod.rs`.
 //! Opt-in choices in the existing approved task context, never another authority ledger.
 use crate::{config::Loaded, evidence::hash, project::path};
 use serde::{Deserialize, Serialize};

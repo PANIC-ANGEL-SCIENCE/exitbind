@@ -1,3 +1,5 @@
+// Previews setup environment readiness before the first write.
+// Apply refuses an ineligible checker before writing; see `src/project/setup.rs`.
 //! Setup's environment-readiness preflight and preview section.
 //!
 //! The resolver itself lives in `project::readiness`; this module only wires

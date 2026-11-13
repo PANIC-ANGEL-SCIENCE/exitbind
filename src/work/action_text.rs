@@ -1,10 +1,12 @@
+// Renders the current Work action as plain text.
+// Requires a UTF-8 configuration path; see `src/work/mod.rs`.
 //! Plain-text rendering of `work detail WORK --view action`.
 //!
 //! The JSON view stays the machine contract (`--json`). This rendering shows
 //! the same current action, bound commands and section routes as readable
 //! lines so a reader needs no JSON or hex tooling to act on it. Every printed
-//! command line names the full executable and configuration, also where the
-//! JSON form left them out to stay within its byte bound.
+//! command names the full executable and configuration; commands omitted at
+//! the compact bound are reported as unavailable.
 use serde_json::{json, Value};
 use std::path::Path;
 
@@ -88,6 +90,12 @@ fn render_with(view: &Value, context: &Context) -> String {
     if let Some(diagnosis) = action["recovery"]["diagnosis"].as_str() {
         lines.push(format!("Diagnosis: {diagnosis}"));
     }
+    if action["commandsComplete"] == false {
+        lines.push(format!(
+            "Commands unavailable: {}",
+            text(&action["commandsOmitted"])
+        ));
+    }
     if let Some(meaning) = action["recovery"]["meaning"].as_str() {
         lines.push(format!("Recovery: {meaning}"));
     }
@@ -117,7 +125,12 @@ fn render_with(view: &Value, context: &Context) -> String {
     if let Some(routes) = view["details"].as_object() {
         lines.push("Complete sections (read-only):".to_owned());
         for (name, route) in routes {
-            lines.push(format!("  {name}: {}", route_line(context, route)));
+            let command = route_line(context, route);
+            if command.is_empty() {
+                lines.push(format!("  {name}: unavailable"));
+            } else {
+                lines.push(format!("  {name}: {command}"));
+            }
         }
     }
     if let Some(warnings) = action["warnings"]
@@ -241,8 +254,15 @@ fn push_form(lines: &mut Vec<String>, context: &Context, fill: &Value, label: &s
             .collect();
         lines.push(format!("  fill: {}", names.join(", ")));
     }
-    if form["fill"]["choice"].is_string() && fill["argv"].is_array() {
-        let mut route = argv(context, fill);
+    let fill_command = if fill["templatePrefix"].is_array() {
+        json!({"argv":fill["templatePrefix"],
+            "sameExecutableRequired":fill["sameExecutableRequired"],
+            "sameConfigRequired":fill["sameConfigRequired"]})
+    } else {
+        fill.clone()
+    };
+    if form["fill"]["choice"].is_string() && fill_command["argv"].is_array() {
+        let mut route = argv(context, &fill_command);
         route.push_str(&format!(
             " --choice {}",
             quote(&text(&form["fill"]["choice"]))

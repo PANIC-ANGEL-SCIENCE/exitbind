@@ -1,3 +1,5 @@
+// Recovers a same-Work native operation whose reply was lost.
+// Refuses replay with changed execution parameters; see `src/work/native_action.rs`.
 //! Same-Work recovery for a native operation whose reply was lost.
 //!
 //! Recovery is admission only. It reads the durable native journal and lets the

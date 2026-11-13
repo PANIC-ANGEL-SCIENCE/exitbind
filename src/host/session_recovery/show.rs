@@ -1,3 +1,5 @@
+// Presents the saved owner session recovery state.
+// Refuses an owner configuration mismatch; see `src/host/session_recovery.rs`.
 //! The `session recovery show` read model: the complete saved hint, its
 //! currentness, executable-bound read routes, and the current Works derived
 //! from the native Goal's journey.

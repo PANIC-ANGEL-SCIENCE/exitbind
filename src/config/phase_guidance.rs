@@ -1,3 +1,5 @@
+// Validates agent phase-guidance declarations and their paths.
+// Reports unknown fields and duplicate IDs; see `src/config/mod.rs`.
 //! Owner-declared guidance bodies (for example a skill's SKILL.md) that an
 //! agent receives whole when its assignment enters a phase.
 //!

@@ -1,3 +1,5 @@
+// Finds unresolved pre-return admissions by assignment.
+// Refuses a non-directory journal path; see `src/run/pre_return.rs`.
 //! Find unresolved admissions by assignment, independent of producer identity.
 //!
 //! The caller holds the run ledger lock. An interrupted attempt must not be

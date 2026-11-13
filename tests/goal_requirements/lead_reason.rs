@@ -109,7 +109,22 @@ fn choice_labels(view: &Value) -> Vec<String> {
 
 /// Run the printed choice `label` through `work fill` with `--reason`.
 fn fill(p: &Project, work: &str, label: &str, text: &str) {
-    let view = action_view(p, work);
+    let mut view = action_view(p, work);
+    if !view["effectiveAction"]["fillRoute"]["templatePrefix"].is_array() {
+        let route = &view["details"]["grouped"];
+        assert_eq!(route["sameExecutableRequired"], false, "{view}");
+        assert_eq!(route["sameConfigRequired"], false, "{view}");
+        let argv = route["command"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|word| word.as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        let output = p.call_exact_argv(&argv);
+        assert!(output.status.success(), "{output:?}");
+        view = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(view["complete"], true);
+    }
     let choice = view["effectiveAction"]["choices"]
         .as_array()
         .unwrap()
@@ -117,8 +132,13 @@ fn fill(p: &Project, work: &str, label: &str, text: &str) {
         .find(|choice| choice["label"] == label)
         .unwrap_or_else(|| panic!("no printed choice {label}: {view}"));
     assert_eq!(choice["fill"]["options"]["REASON"], "--reason", "{choice}");
-    let route = &view["effectiveAction"]["fillRoute"];
-    let mut argv: Vec<String> = route["argv"]
+    let route = if view["actionForms"]["fillRoute"].is_object() {
+        &view["actionForms"]["fillRoute"]
+    } else {
+        &view["effectiveAction"]["fillRoute"]
+    };
+    assert_eq!(route["executable"], false);
+    let mut argv: Vec<String> = route["templatePrefix"]
         .as_array()
         .unwrap()
         .iter()

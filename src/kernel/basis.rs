@@ -1,3 +1,5 @@
+// Defines typed basis, review choices and Lead dispositions.
+// Refuses successors that drop constraints; see `src/kernel/mod.rs`.
 //! Typed opt-in basis, review choice, and Lead disposition records.
 //!
 //! These values are persisted in the governed event stream.  The reducer owns

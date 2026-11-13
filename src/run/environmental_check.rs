@@ -1,3 +1,5 @@
+// Validates the Lead environmental attestation of a failed check.
+// Refuses an invalid recorded process state; see `src/run/mod.rs`.
 //! The Lead's environmental attestation of a failed observed check.
 //!
 //! A frozen check can fail for a reason outside the result: a lock held by

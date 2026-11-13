@@ -1,3 +1,5 @@
+// Records build and executable identity alongside observations.
+// A local digest does not authenticate a release; see `src/main.rs`.
 //! Build identity recorded separately from persisted schema versions.
 
 use serde_json::{json, Value};

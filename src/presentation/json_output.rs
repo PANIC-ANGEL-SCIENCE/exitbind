@@ -1,3 +1,5 @@
+// Serializes CLI JSON and measures its output budget.
+// Fit checks reserve one byte for the newline; see `src/presentation/mod.rs`.
 //! The CLI's JSON representation and its terminating-newline budget.
 
 use serde_json::Value;

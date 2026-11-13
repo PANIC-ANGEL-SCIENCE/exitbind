@@ -1,3 +1,5 @@
+// Renders Work navigation for a receiving native session.
+// Known Work routes require that Work's configuration; see `src/host/mod.rs`.
 //! The receiving agent's Work navigation in the session context.
 
 /// A template for a known Work; its configuration comes from that Work's

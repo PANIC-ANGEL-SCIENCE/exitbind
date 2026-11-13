@@ -1,3 +1,5 @@
+// Projects the next Work action into compact output.
+// Packet context is omitted from this compact form; see `src/work/compact.rs`.
 use serde_json::{json, Map, Value};
 
 use super::{bounded_text, copy_if_present};

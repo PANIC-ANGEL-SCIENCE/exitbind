@@ -1,3 +1,5 @@
+// Defines Goal CLI action names and their admission classes.
+// Status uses read-only admission; see `src/cli/mod.rs`.
 //! Goal actions and their ownership admission at the CLI boundary.
 
 macro_rules! goal_actions {

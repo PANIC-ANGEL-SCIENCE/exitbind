@@ -1,3 +1,5 @@
+// Resolves the configured owner of a native session Goal.
+// Hints must match the recorded owner identity; see `src/host/session_recovery.rs`.
 //! The configuration of the project that owns the session's native Goal.
 //!
 //! A hook takes its project from the payload `cwd` only when no native Goal

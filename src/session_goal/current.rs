@@ -1,3 +1,5 @@
+// Evaluates recorded whole-Goal closure against current inputs.
+// Changed direct-closure inputs report stale; see `src/session_goal.rs`.
 //! Read-only applicability of a recorded whole-goal closure to current inputs.
 //! Historical closure remains in the ledger even when this projection is stale.
 

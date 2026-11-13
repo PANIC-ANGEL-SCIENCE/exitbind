@@ -1,3 +1,5 @@
+// Preserves exact configuration bytes for lesson source stamps.
+// Requires a memory policy for stamped copies; see `src/memory/mod.rs`.
 //! The stamped configuration copy: the exact configuration bytes lesson
 //! events were stamped with, kept once beside the lesson ledgers so the
 //! "configuration changed since memory event" refusal can name a real file

@@ -1,3 +1,5 @@
+// Projects and validates residual packets from captured run revisions.
+// Bounds packet file size; see `src/work/mod.rs`.
 //! Residual continuation packets: projection from one captured run revision,
 //! state-derived human help, and validation of a previously issued packet.
 //!

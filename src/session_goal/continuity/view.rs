@@ -1,3 +1,5 @@
+// Projects continuation and applicability as read-only facts.
+// Refuses a Goal belonging to another Work; see `src/session_goal/continuity.rs`.
 //! Read-only continuation and applicability projection.
 
 use super::*;

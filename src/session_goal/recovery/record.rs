@@ -1,3 +1,5 @@
+// Validates the persisted native Goal recovery extension.
+// Refuses invalid or unsupported extensions; see `src/session_goal/recovery.rs`.
 //! The persisted `nativeGoalRecovery` extension of a canonical Goal record:
 //! its field, request and fixture bounds, decision digest, and carrying the
 //! extension forward across a same-Goal rewrite.

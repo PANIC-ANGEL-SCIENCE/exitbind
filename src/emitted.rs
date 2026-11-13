@@ -1,3 +1,5 @@
+// Owns emitted route construction and placeholder registration.
+// Does not grant authority; see `src/emitted/route.rs`.
 //! Emitted routes: the one builder for every argv the product prints for a
 //! role to run, and the registry of every placeholder such an argv or a
 //! printed decision template may carry, with the input that fills it.
@@ -14,7 +16,7 @@ use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
 mod route;
-pub(crate) use route::{unavailable, Bounded, Route};
+pub(crate) use route::{complete_known, omit_commands, unavailable, Bounded, Route};
 
 /// How a placeholder is filled.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

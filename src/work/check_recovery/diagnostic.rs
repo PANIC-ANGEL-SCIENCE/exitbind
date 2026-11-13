@@ -1,3 +1,5 @@
+// Diagnoses immutable failed-check evidence independently of recovery.
+// Requires exact frozen configuration for history; see `src/work/check_recovery.rs`.
 //! Immutable diagnosis is deliberately separate from recovery eligibility.
 use super::*;
 

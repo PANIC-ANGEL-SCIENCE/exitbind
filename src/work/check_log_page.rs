@@ -1,3 +1,5 @@
+// Pages verified observed check logs through current references.
+// Refuses invalid page references; see `src/work/expansion.rs`.
 //! Bounded, current-reference pages of a verified observed check log.
 
 use crate::{config::Loaded, emitted::Route, run::artifact};

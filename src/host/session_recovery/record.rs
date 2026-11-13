@@ -1,3 +1,5 @@
+// Records owner-bound recovery references and graph results.
+// Refuses malformed graph references; see `src/host/session_recovery.rs`.
 use super::{
     hint::{
         bounded_text, canonical_path, checkpoint_is_ambiguous_older, current_executable_sha256,

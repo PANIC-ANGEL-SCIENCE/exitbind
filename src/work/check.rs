@@ -1,3 +1,5 @@
+// Runs frozen Work checks with bounded responses and exact replay.
+// Requires a UTF-8 configuration path; see `src/work/mod.rs`.
 //! Frozen Work checks, bounded responses and exact committed replay.
 use super::*;
 

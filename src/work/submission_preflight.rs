@@ -1,3 +1,5 @@
+// Validates selected evidence and next-state projection before submission.
+// Applies early-evidence validation to completed Worker results; see `src/work/mod.rs`.
 use crate::{config::Loaded, run};
 use serde_json::Value;
 

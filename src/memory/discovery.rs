@@ -1,3 +1,5 @@
+// Discovers configured project-local memory ledgers without following links.
+// Refuses symlink ledger entries; see `src/memory/mod.rs`.
 //! Shallow, no-follow discovery of configured project-local memory ledgers.
 
 use crate::config;

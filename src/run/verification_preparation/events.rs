@@ -1,3 +1,5 @@
+// Adds and validates verification-preparation event fields.
+// Requires a checked v8 start for the protocol; see `src/run/verification_preparation.rs`.
 //! Canonical event fields for the optional verification preparation protocol.
 
 use serde_json::{json, Value};

@@ -1,3 +1,5 @@
+// Memoizes validated ledger reads within the current thread.
+// Reuse requires the same path and source digest; see `src/run/ledger.rs`.
 //! Per-process memo of validated ledger reads.
 //!
 //! One command can read the same unchanged ledger hundreds of times: a native

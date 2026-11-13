@@ -1,3 +1,5 @@
+// Identifies launch-only guidance paths eligible for advisory treatment.
+// Quarantine verification keeps all inputs strict; see `src/run/guidance_continuity.rs`.
 //! Which product paths of a marked run are launch-only guidance and may be
 //! omitted from its tested-input fingerprint: the frozen memory sources and
 //! selection ledgers, minus every Git-tracked, checker, architecture or

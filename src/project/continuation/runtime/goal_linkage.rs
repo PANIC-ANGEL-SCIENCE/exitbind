@@ -1,3 +1,5 @@
+// Links a claimed continuation successor to the existing Goal.
+// Refuses a non-successor claim; see `src/project/continuation/runtime.rs`.
 //! Restore bookkeeping for an actual successor without transferring evidence.
 //! No account lock is held while the existing Goal owner appends mappings.
 

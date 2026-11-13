@@ -1,3 +1,5 @@
+// Loads and validates the selected project configuration.
+// Refuses an empty configuration path; see `src/main.rs`.
 pub(crate) mod boundary;
 pub(crate) mod phase_guidance;
 pub(crate) mod profile;

@@ -1,3 +1,5 @@
+// Attests forgetting against the selected memory configuration.
+// Requires loaded configuration; see `src/memory/mod.rs`.
 use serde_json::{json, Value};
 use std::fs::{self, OpenOptions};
 use std::io::Write;

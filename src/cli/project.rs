@@ -1,3 +1,5 @@
+// Dispatches project context, memory and continuation commands.
+// Refuses unknown architecture actions; see `src/cli/mod.rs`.
 //! Project context, current memory and bounded continuation commands.
 
 #[path = "project_continuation.rs"]

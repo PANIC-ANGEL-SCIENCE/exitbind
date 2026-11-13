@@ -1,3 +1,5 @@
+// Rechecks operation-local ledger reads across a carry chain.
+// Refuses configuration or path drift during projection; see `src/run/ledger.rs`.
 //! Operation-local, rechecked physical reads for one ordinary carry chain.
 //!
 //! The carry verifier still executes for every requested ledger. This owner

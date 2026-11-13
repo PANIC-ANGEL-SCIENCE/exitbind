@@ -1,3 +1,5 @@
+// Tests projected run progress and refusal states.
+// Historical or unchecked acceptance is not exit-ready; see `src/run/gate/value.rs`.
 use crate::{run_exit, run_progress};
 use serde_json::json;
 

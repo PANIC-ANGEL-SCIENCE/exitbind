@@ -1,3 +1,5 @@
+// Validates explicit time-only amendments to frozen Work associations.
+// Refuses invalid amendment receipts; see `src/project/continuation/mod.rs`.
 //! Explicit time-only authorization for an existing frozen Work association.
 //! Selection alone never changes a claim; this separate receipt is required.
 use super::{association, control, journal, sources};

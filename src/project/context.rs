@@ -1,3 +1,5 @@
+// Projects read-only project facts for native hooks and the CLI.
+// Refuses memory source drift; see `src/project/mod.rs`.
 //! Read-only project facts shared by the native session hook and JIT CLI.
 //! This projection never promotes a file, focus pointer, or observation into authority.
 

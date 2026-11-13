@@ -1,3 +1,5 @@
+// Serializes mutation of the session recovery record.
+// Names lock-entry failures as record busy; see `src/host/session_recovery.rs`.
 //! The session recovery record's lock. Every reader-modify-writer of the
 //! record takes it here, so a refusal raised before the lock was taken names
 //! this record, never the run ledger whose lock primitive it shares.

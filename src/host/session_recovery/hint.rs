@@ -1,3 +1,5 @@
+// Builds and validates session recovery hints.
+// Refuses hints failing integrity checks; see `src/host/session_recovery.rs`.
 use crate::{config, evidence::hash, host::codegraph, session_goal};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

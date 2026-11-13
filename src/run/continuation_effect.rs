@@ -1,3 +1,5 @@
+// Binds controlled Run effects to their owner operation identities.
+// Refuses saved checks absent from the exact ledger; see `src/run/mod.rs`.
 //! Bind controlled Run effects to their existing owner operation identities.
 //! Runtime reservations are short account transactions, never Work locks.
 

@@ -1,3 +1,5 @@
+// Resolves current recipient instructions for readable Work detail.
+// Refuses changed or oversized profiles; see `src/work/readable.rs`.
 //! Current recipient instructions for the existing readable detail owner.
 use crate::{
     config::Loaded,

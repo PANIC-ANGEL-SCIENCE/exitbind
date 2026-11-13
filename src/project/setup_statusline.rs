@@ -1,3 +1,5 @@
+// Installs the project Goal status line during setup.
+// Refuses a non-UTF-8 project root; see `src/project/setup.rs`.
 //! `setup --apply` installs the Exitbind Goal status line in the project's
 //! Claude Code settings. It is a display for the human only. An existing
 //! status line of the human's own, in project, local or user settings, is kept

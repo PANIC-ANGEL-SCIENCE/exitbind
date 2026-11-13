@@ -1,3 +1,5 @@
+// Parses approved setup role facts for selected agents.
+// Refuses mixed role-specific and general scope options; see `src/project/setup.rs`.
 //! Typed approved role facts, parsed once and applied to validated agents.
 use crate::{
     cli::args::Arguments,

@@ -1,3 +1,5 @@
+// Constructs bounded Work recovery commands and progress.
+// Requires a UTF-8 configuration path; see `src/work/mod.rs`.
 use crate::config::Loaded;
 use serde_json::{json, Value};
 

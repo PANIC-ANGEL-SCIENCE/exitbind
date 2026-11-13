@@ -1,3 +1,5 @@
+// Recovers owner-bound native Goals with unresolved journey state.
+// Refuses this route for named-requirement Goals; see `src/session_goal.rs`.
 //! Explicit, owner-bound recovery for a native Goal whose retained journey
 //! contains members from a separately configured Source project.
 

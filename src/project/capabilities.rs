@@ -1,3 +1,5 @@
+// Validates reviewed project capabilities for native launches.
+// Bounds capability IDs and descriptor identities; see `src/project/mod.rs`.
 //! Explicitly reviewed project resources for a relevant next native launch.
 //! Configuration owns registration; current context owns bounded delivery.
 use crate::{config::Loaded, evidence::hash, project::path};

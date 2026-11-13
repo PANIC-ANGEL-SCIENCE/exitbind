@@ -1,3 +1,5 @@
+// Adapts a fixed managed-edit session to disposable stdio MCP.
+// Requires immutable host preparation; see `src/work/managed_edit.rs`.
 //! Disposable stdio MCP adapter. The session is fixed by the trusted launch;
 //! JSON requests cannot select an actor, assignment, config or operation ID.
 use super::{interact_content, state};

@@ -1,3 +1,5 @@
+// Checks eligibility for a known-ended verification follow-up.
+// Requires a version-8 first verification; see `src/work/quarantine.rs`.
 //! Known-ended eligibility for the single verification follow-up.
 use crate::run;
 use serde_json::Value;

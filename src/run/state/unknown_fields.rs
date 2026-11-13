@@ -1,3 +1,5 @@
+// Validates allowed fields in canonical run events.
+// Refuses unknown ledger fields; see `src/run/state.rs`.
 use serde_json::{Map, Value};
 
 pub(super) fn reject_unknown(

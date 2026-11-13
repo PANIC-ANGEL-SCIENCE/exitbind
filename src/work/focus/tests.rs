@@ -1,3 +1,5 @@
+// Tests Work-focus transaction and lock behavior.
+// An unavailable lock refuses before Work starts; see `src/work/focus.rs`.
 //! The focus transaction serializes real writers without adding a ledger.
 
 use super::*;

@@ -1,3 +1,5 @@
+// Applies revision-fenced continuation mutations.
+// Refuses continuation bound to different Work; see `src/session_goal/continuity.rs`.
 //! Revision-fenced continuation mutations.
 
 use super::*;

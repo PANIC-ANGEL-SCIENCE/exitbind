@@ -1,3 +1,5 @@
+// Reduces ledger events into live run state.
+// Refuses an empty run ledger; see `src/run/mod.rs`.
 use super::*;
 
 pub(crate) fn reduce_live(loaded: &Loaded, events: &[Value]) -> Result<Value, String> {

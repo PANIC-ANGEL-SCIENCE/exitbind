@@ -1,3 +1,5 @@
+// Observes approved local continuation sources with declared provenance.
+// Bounds their combined bytes; see `src/project/continuation/mod.rs`.
 //! Local, bounded source observations. Git is an already authorized checkout;
 //! exported snapshots retain declared provenance and never imply a live fetch.
 

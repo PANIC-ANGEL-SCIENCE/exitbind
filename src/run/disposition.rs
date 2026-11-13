@@ -1,3 +1,5 @@
+// Records the Lead disposition of a pending finding cycle.
+// Blocks repair while check effects remain unresolved; see `src/run/mod.rs`.
 //! Lead disposition of a pending finding cycle.
 //!
 //! Reviewer and worker adverse evidence never starts work by itself: it

@@ -1,3 +1,5 @@
+// Routes Lead quarantine and follow-up admission options.
+// Requires a request ID and current binding; see `src/cli/mod.rs`.
 //! Explicit Lead admission of a single separately reviewed verification.
 
 use super::*;

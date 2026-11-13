@@ -183,7 +183,7 @@ fn a_non_git_root_with_many_entries_states_every_fact_before_any_record() {
     );
     assert!(git_stdout.contains("baseline commit "), "{git_stdout}");
     assert!(
-        git_stdout.contains("within the 4096-path tested-input limit"),
+        git_stdout.contains("the non-Git walk limits do not apply"),
         "{git_stdout}"
     );
     let git_json: Value = serde_json::from_slice(
@@ -198,6 +198,7 @@ fn a_non_git_root_with_many_entries_states_every_fact_before_any_record() {
     assert_eq!(git_json["readiness"]["state"], "ready");
     assert_eq!(git_json["readiness"]["git"]["state"], "worktree");
     assert_eq!(git_json["readiness"]["root"]["withinLimit"], true);
+    assert_eq!(git_json["readiness"]["root"]["walkLimitsApply"], false);
     assert_eq!(
         git_json["readiness"]["git"]["baseline"]
             .as_str()
@@ -303,6 +304,97 @@ fn begin(config: &Path, command: &str) -> Output {
         .arg(config)
         .output()
         .unwrap()
+}
+
+#[test]
+fn begin_observes_the_check_and_proposes_an_empty_starter_without_effects() {
+    for detail in [false, true] {
+        let root = support::temp(if detail {
+            "begin-preparation-detail"
+        } else {
+            "begin-preparation"
+        });
+        let config = init(&root);
+        let original_config = fs::read(&config).unwrap();
+        fs::write(root.join("check.sh"), b"printf ran > check-ran\n").unwrap();
+        let mut command = bin();
+        command
+            .current_dir(&root)
+            .args([
+                "work",
+                "begin",
+                "change",
+                "--goal",
+                "observe without executing",
+                "--review-policy",
+                "omitted",
+                "--standalone",
+                "--check-command",
+                "sh check.sh",
+                "--config",
+            ])
+            .arg(&config);
+        if detail {
+            command.arg("--detail");
+        }
+        let output = command.output().unwrap();
+        assert!(output.status.success(), "{}", text(&output));
+        let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let preparation = &value["beginPreparation"];
+        assert_eq!(preparation["checker"]["state"], "runnable");
+        assert_eq!(preparation["checker"]["workingDirectoryState"], "directory");
+        assert_eq!(preparation["checker"]["input"]["state"], "readable");
+        assert_eq!(preparation["boundaryProposal"]["kind"], "proposal");
+        assert_eq!(preparation["boundaryProposal"]["authority"], "none");
+        assert_eq!(
+            preparation["boundaryProposal"]["observe"],
+            serde_json::json!(["check.sh"])
+        );
+        assert_eq!(
+            preparation["boundaryProposal"]["write"],
+            serde_json::json!([])
+        );
+        assert_eq!(
+            preparation["boundaryProposal"]["commands"],
+            serde_json::json!(["sh"])
+        );
+        assert!(!root.join("check-ran").exists());
+        assert_eq!(fs::read(&config).unwrap(), original_config);
+
+        let work = value["work"].as_str().unwrap();
+        let recovered = bin()
+            .current_dir(&root)
+            .args(["work", "detail", work, "--json", "--config"])
+            .arg(&config)
+            .output()
+            .unwrap();
+        assert!(recovered.status.success(), "{}", text(&recovered));
+        let recovered: Value = serde_json::from_slice(&recovered.stdout).unwrap();
+        assert_eq!(
+            recovered["beginPreparation"]["boundaryProposal"],
+            preparation["boundaryProposal"]
+        );
+        assert!(!root.join("check-ran").exists());
+    }
+}
+
+#[test]
+fn begin_reports_missing_and_unknown_check_inputs_without_running_or_refusing() {
+    for (check, state) in [("sh missing.sh", "missing"), ("sh -c 'exit 0'", "unknown")] {
+        let root = support::temp("begin-preparation-uncertain");
+        let config = init(&root);
+        let output = begin(&config, check);
+        assert!(output.status.success(), "{}", text(&output));
+        let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(
+            value["beginPreparation"]["checker"]["input"]["state"],
+            state
+        );
+        assert_eq!(
+            value["beginPreparation"]["boundaryProposal"]["observe"],
+            serde_json::json!([])
+        );
+    }
 }
 
 // B1: an unreadable subdirectory must not be reported as a complete count.

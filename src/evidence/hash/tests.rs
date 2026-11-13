@@ -1,3 +1,5 @@
+// Tests stable canonical literal bytes and hashes.
+// Compares nested inputs with former output; see `src/evidence/hash.rs`.
 use super::{canonical, text, value};
 use serde_json::{json, Map, Value};
 

@@ -1,3 +1,5 @@
+// Recognizes reserved specialist sources in conventional content envelopes.
+// Inputs above 4 MiB are not classified as reserved; see `src/project/specialists.rs`.
 //! Recognize complete reserved sources in bounded conventional content envelopes.
 use super::*;
 

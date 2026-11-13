@@ -1,3 +1,5 @@
+// Stores bounded assignment bindings and managed read baselines.
+// Refuses invalid edit sessions; see `src/work/managed_edit.rs`.
 //! Private, bounded assignment binding and read baselines.
 use crate::{config::Loaded, evidence::hash, project::path};
 use serde::{Deserialize, Serialize};

@@ -1,3 +1,5 @@
+// Validates canonical run event shapes before replay.
+// Restricts the check observation protocol to supported recovery; see `src/run/state.rs`.
 //! Validate the canonical run event shapes before replay.
 
 use super::governor_validation::validate_governor_event;

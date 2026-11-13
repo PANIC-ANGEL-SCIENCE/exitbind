@@ -1,3 +1,5 @@
+// Coordinates source-grounded Goal and Work continuation.
+// Refuses stale selection previews; see `src/project/mod.rs`.
 //! Source-grounded continuation on the existing Goal and Work protocols.
 mod admission;
 mod amendment;

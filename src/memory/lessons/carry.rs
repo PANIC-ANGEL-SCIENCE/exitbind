@@ -1,3 +1,5 @@
+// Carries accepted, unexpired project lessons to a successor project.
+// Refuses carried sources above the bound; see `src/memory/lessons.rs`.
 //! Carry a previous project's accepted, unexpired lessons into a new project.
 //!
 //! The previous project is only read. Each carried lesson becomes a new

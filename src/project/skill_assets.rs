@@ -1,3 +1,5 @@
+// Defines shared skill assets and managed installation metadata.
+// Recognizes the exact publication marker line; see `src/project/mod.rs`.
 //! Shared optional skill assets and their installation metadata.
 
 #[derive(Clone, Copy)]

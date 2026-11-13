@@ -1,3 +1,5 @@
+// Projects state-specific action forms for the current binding.
+// A displayed form is not a host permission; see `src/work/permit_response.rs`.
 //! State-specific, executable next-action descriptors for the Lead.
 
 use crate::config::Loaded;
@@ -41,6 +43,52 @@ pub(crate) fn permit_request_id(form: &Value) -> Option<&str> {
         None
     } else {
         Some(id)
+    }
+}
+
+/// Explain the host boundary only in displayed forms. Canonical native forms
+/// remain byte-identical for saved delivery proofs and permit recovery.
+pub(crate) fn public_permit_guidance(value: &mut Value) {
+    for pointer in [
+        "/actionForms/beforeEditing",
+        "/effectiveAction/beforeEditing",
+        "/current/actionForm/beforeEditing",
+        "/next/current/actionForm/beforeEditing",
+        "/currentDelivery/actionForms/beforeEditing",
+        "/currentDelivery/effectiveAction/beforeEditing",
+    ] {
+        let Some(form) = value.pointer_mut(pointer).filter(|form| form.is_object()) else {
+            continue;
+        };
+        if permit_request_id(form).is_none() {
+            continue;
+        }
+        form["enforcement"] = json!("advisory");
+        form["meaning"] = json!("advisory for ordinary host workspace writes; required:true applies to managed file effects and a selected controlled-effects launch, which require allowed:true. Only a successful controlled launch and protection preflight enforce that file effect. Repeat the exact request ID only to recover its response; this form grants no host permission");
+    }
+}
+
+/// The generic fill route is a prefix until a choice and that choice's
+/// semantic inputs are selected. Keep it available as an explicitly named
+/// template, never as an argv advertised as executable.
+pub(crate) fn public_fill_guidance(value: &mut Value) {
+    for pointer in [
+        "/actionForms/fillRoute",
+        "/effectiveAction/fillRoute",
+        "/current/actionForm/fillRoute",
+        "/next/current/actionForm/fillRoute",
+        "/currentDelivery/actionForms/fillRoute",
+        "/currentDelivery/effectiveAction/fillRoute",
+    ] {
+        let Some(route) = value.pointer_mut(pointer).and_then(Value::as_object_mut) else {
+            continue;
+        };
+        let Some(prefix) = route.remove("argv") else {
+            continue;
+        };
+        route.insert("templatePrefix".into(), prefix);
+        route.insert("executable".into(), json!(false));
+        route.insert("meaning".into(), json!("template prefix: choose a current form and supply its documented inputs; use its complete command for ordinary execution"));
     }
 }
 

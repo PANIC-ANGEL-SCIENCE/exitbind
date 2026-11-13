@@ -1,3 +1,5 @@
+// Reads memory ledger files and writes confined receipts.
+// Refuses to overwrite existing receipts; see `src/memory/mod.rs`.
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs::{self, Metadata, OpenOptions};

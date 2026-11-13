@@ -1,3 +1,5 @@
+// Validates governor records against their bound run events.
+// Restricts grant acknowledgements to Worker mutation completion; see `src/run/state.rs`.
 //! Validate governor records and acknowledgements against their bound events.
 
 use super::*;

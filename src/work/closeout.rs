@@ -1,3 +1,5 @@
+// Exports optional Work evidence through the canonical receipt owner.
+// Refuses stale accepted evidence; see `src/work/mod.rs`.
 //! Optional Work evidence export over the canonical Exit Path receipt owner.
 //! No run events, acceptance decisions or mandatory completion step live here.
 

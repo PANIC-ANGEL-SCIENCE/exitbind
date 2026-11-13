@@ -1,3 +1,5 @@
+// Creates owned temporary directories for source-module tests.
+// The test guard keeps its directory during a panic; see `src/main.rs`.
 //! The one temp root for `src/` test modules (the integration-test twin is
 //! `tests/support/temp_root.rs`). `temp(label)` creates a fresh directory under
 //! the platform temp directory and returns a guard: when the test ends

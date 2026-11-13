@@ -1,3 +1,5 @@
+// Checks the receiving binding for a native child session.
+// Refuses attribution to a different receiving session; see `src/session_goal/continuity/capture.rs`.
 //! The receiving binding of a child started by the native session that holds
 //! the Work, and the `work child prepare` route `work next` prints for it.
 //!

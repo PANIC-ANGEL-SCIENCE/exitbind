@@ -1,3 +1,5 @@
+// Verifies native child profile context against the pending assignment.
+// Refuses incomplete packet provenance; see `src/host/mod.rs`.
 //! Verify that a native child profile belongs to the current pending assignment.
 //! A focus pointer and a matching agent name alone are never acquisition proof.
 

@@ -1,3 +1,5 @@
+// Executes bounded Codex requests and observes structured events.
+// Refuses non-regular executable files; see `src/host/mod.rs`.
 //! Bounded native Codex CLI execution and structured-event observation.
 //!
 //! This adapter owns process invocation and a small projection of Codex's

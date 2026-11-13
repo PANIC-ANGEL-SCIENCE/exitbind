@@ -1,3 +1,5 @@
+// Checks bounded UTF-8 architecture assertions without executing source.
+// Refuses inputs changed during observation; see `src/project/architecture.rs`.
 //! Deterministic bounded UTF-8 assertions; never evaluate source as a command.
 use super::*;
 

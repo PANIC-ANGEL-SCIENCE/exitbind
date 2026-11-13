@@ -1,3 +1,5 @@
+// Configures managed hooks for explicitly selected hosts.
+// Requires an explicit host selection; see `src/host/mod.rs`.
 use super::settings;
 use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};

@@ -1,3 +1,5 @@
+// Runs the deterministic, token-free first value-proof scenario.
+// Refuses results from another scenario; see `src/main.rs`.
 //! Deterministic, token-free first value-proof scenario.
 //!
 //! The benchmark is deliberately a caller of the installed binary.  It does

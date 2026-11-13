@@ -1,3 +1,5 @@
+// Defines Work locators shared by run naming, resume and focus.
+// Accepts only 64 hexadecimal characters in a token; see `src/work/mod.rs`.
 //! Work locator syntax shared by run naming, resume, and focus owners.
 
 pub(super) const WORK_PREFIX: &str = "smw_";

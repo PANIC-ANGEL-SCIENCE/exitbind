@@ -1,3 +1,5 @@
+// Validates host-owned transport for controlled Codex effects.
+// Requires a fresh ephemeral read-only Linux worker; see `src/host/codex_exec.rs`.
 //! Closed, versioned native launch cell. The tool transport is host-owned;
 //! this module grants no file authority and does not implement an effect owner.
 use super::{Request, RunError};

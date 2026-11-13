@@ -1,3 +1,5 @@
+// Projects Goal category items and their current routes.
+// Bounds listed items and reports omissions; see `src/session_goal/progress.rs`.
 use crate::config::Loaded;
 use serde_json::{json, Value};
 

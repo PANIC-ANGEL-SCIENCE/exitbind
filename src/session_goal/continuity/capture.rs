@@ -1,3 +1,5 @@
+// Owns host capture for a prepared native child.
+// Restricts reviewer retry to the same-host binding route; see `src/session_goal/continuity.rs`.
 //! Host-owned capture for a prepared native child.
 //!
 //! `work child prepare` binds an intent to the parent session; SubagentStart

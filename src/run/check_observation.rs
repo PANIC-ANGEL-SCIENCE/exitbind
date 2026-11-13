@@ -1,3 +1,5 @@
+// Records durable check admission and failure facts in the ledger.
+// Refuses unknown-origin recovery for ineligible observations; see `src/run/mod.rs`.
 //! Durable admission and failure facts inside the canonical run ledger.
 //! Admission prevents concurrent execution; an unresolved effect never grants
 //! another execution. Only an observed check supplies check evidence.

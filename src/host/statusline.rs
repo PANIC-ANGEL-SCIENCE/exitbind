@@ -1,3 +1,5 @@
+// Renders Claude status-line display from host session input.
+// Invalid session IDs produce no line; see `src/host/mod.rs`.
 //! Claude Code `statusLine` command: reads the host's stdin JSON, opens the
 //! display file for that `session_id` and prints one line for the human. It
 //! never reads the Goal ledger or configuration, never fails visibly, and

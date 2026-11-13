@@ -1,3 +1,5 @@
+// Handles role-result delivery, held state and post-record cleanup.
+// Refuses native replay without a unique committed result; see `src/work/mod.rs`.
 //! Worker and role result delivery, held state, and post-record cleanup.
 
 use super::*;

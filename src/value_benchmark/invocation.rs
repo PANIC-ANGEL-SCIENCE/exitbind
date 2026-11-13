@@ -1,3 +1,5 @@
+// Creates and invokes the value-benchmark fixture.
+// Reports inability to choose a unique fixture name; see `src/value_benchmark.rs`.
 use super::*;
 
 impl Invoker {

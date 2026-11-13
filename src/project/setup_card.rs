@@ -1,3 +1,5 @@
+// Converts a task card step table into setup Goal requirements.
+// Requires a task card for Goal or first-Work selection; see `src/project/setup.rs`.
 //! Read a round's task card for setup and register its step table.
 //!
 //! `setup --task-card PATH` turns the card's step table into the Goal's named

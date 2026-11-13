@@ -1,3 +1,5 @@
+// Projects agent-facing Work responses into bounded envelopes.
+// Refuses continuation mutation responses over budget; see `src/work/mod.rs`.
 //! Bounded default projection for agent-facing work responses.
 //!
 //! The full response remains the compatibility surface.  This view keeps the

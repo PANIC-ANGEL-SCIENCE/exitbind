@@ -1,3 +1,5 @@
+// Recovers retained child results without rerunning a host.
+// Refuses a changed receiving binding; see `src/session_goal/continuity/capture.rs`.
 //! Recover retained prepared-child results without rerunning a host.
 
 use super::{continuation, current_binding, load, record, return_result, same_host, with_intents};

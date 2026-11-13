@@ -1,3 +1,5 @@
+// Projects current required facts for the selected native actor.
+// Refuses unclassified non-empty fields; see `src/host/runtime.rs`.
 //! Current, required facts for the selected native actor.
 //!
 //! The canonical Work sections and their fingerprint remain unchanged. This

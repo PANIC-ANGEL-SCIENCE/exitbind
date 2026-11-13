@@ -1,3 +1,5 @@
+// Saves approved Lead plans as private task cards.
+// Skips approvals without explicit Lead origin; see `src/host/mod.rs`.
 //! Claude Code plan approval to task card. `PostToolUse` for `ExitPlanMode`
 //! fires only after the human approves a plan, and its `tool_response.plan`
 //! carries the approved text. When the Lead's own approval (`isAgent` false;

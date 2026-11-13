@@ -1,3 +1,5 @@
+// Tests prospective usage ingestion and numeric projection.
+// Decreasing cumulative usage needs a reset; see `src/session_goal/usage/ingest.rs`.
 //! Numeric admission and projection counterexamples.
 
 use super::*;

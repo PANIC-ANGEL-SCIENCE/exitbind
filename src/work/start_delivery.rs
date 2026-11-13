@@ -1,3 +1,5 @@
+// Presents current detail after a successful Work start.
+// Cannot undo a recorded start on delivery failure; see `src/work/begin.rs`.
 //! Deliver an explicitly requested current context after the existing start.
 //! A delivery failure cannot undo or conceal the already recorded Work.
 
@@ -8,19 +10,25 @@ pub(crate) fn with_detail(loaded: &Loaded, started: Value) -> Value {
     let work = started["work"]
         .as_str()
         .expect("successful Work start carries its handle");
-    deliver(loaded, work, started["focus"].clone(), || {
-        super::readable::current(loaded, work).map(crate::producer::observed)
-    })
+    deliver(
+        loaded,
+        work,
+        started["focus"].clone(),
+        started["beginPreparation"].clone(),
+        || super::readable::current(loaded, work).map(crate::producer::observed),
+    )
 }
 
 fn deliver(
     loaded: &Loaded,
     work: &str,
     focus: Value,
+    preparation: Value,
     read: impl FnOnce() -> Result<Value, String>,
 ) -> Value {
     let detail = read().and_then(|mut detail| {
         detail["creation"] = json!({"effect": "recorded", "focus": focus});
+        detail["beginPreparation"] = preparation.clone();
         if serde_json::to_vec(&detail)
             .map_err(|error| error.to_string())?
             .len()
@@ -39,6 +47,7 @@ fn deliver(
                 .within(1024);
             json!({"work": work, "effect": "recorded", "status": "recorded",
                 "complete": false, "creation": {"effect": "recorded", "focus": focus},
+                "beginPreparation": preparation,
                 "reason": {"code": "recorded_then_failed"},
                 "projectionError": error.chars().take(512).collect::<String>(),
                 "nextAction": {"type": "inspect", "safe": true, "readOnly": true,
@@ -101,12 +110,14 @@ mod tests {
                 &loaded,
                 work,
                 started["focus"].clone(),
+                started["beginPreparation"].clone(),
                 || Err(error.into()),
             );
             assert_eq!(result["work"], work);
             assert_eq!(result["effect"], "recorded");
             assert_eq!(result["complete"], false);
             assert_eq!(result["reason"]["code"], "recorded_then_failed");
+            assert_eq!(result["beginPreparation"], started["beginPreparation"]);
             assert_eq!(result["nextAction"]["readOnly"], true);
             assert_eq!(result["nextAction"]["command"][2], "detail");
         }

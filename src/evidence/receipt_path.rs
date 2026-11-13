@@ -1,3 +1,5 @@
+// Resolves and confines receipt input and output paths.
+// Refuses paths outside StateRoot; see `src/evidence/mod.rs`.
 //! Confined receipt output and read paths.
 
 use std::fs;

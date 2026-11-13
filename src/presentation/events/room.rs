@@ -1,3 +1,5 @@
+// Selects optional whole-Goal completion display.
+// Requires explicit Lead closure and current readiness; see `src/presentation/events.rs`.
 //! Deterministic, optional display of a currently ready named whole goal.
 
 use serde_json::{json, Value};

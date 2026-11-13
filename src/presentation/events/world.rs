@@ -1,3 +1,5 @@
+// Projects current Work and Goal facts into static display state.
+// Attributes recovery only to the matching Work; see `src/presentation/events.rs`.
 //! Static, read-only world projection. No artwork cache, provider call, raw
 //! task prose or new authority is needed to make canonical events visible.
 

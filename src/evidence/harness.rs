@@ -1,3 +1,5 @@
+// Loads and validates harness manifest evidence.
+// Refuses manifests above 65,536 bytes; see `src/evidence/mod.rs`.
 use super::hash;
 use crate::{config::Loaded, project::path as project_path};
 use serde::{Deserialize, Serialize};

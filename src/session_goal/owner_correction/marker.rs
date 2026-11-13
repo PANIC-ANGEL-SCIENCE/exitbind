@@ -1,3 +1,5 @@
+// Resolves effective Goal ownership from sealed correction history.
+// Refuses invalid correction markers; see `src/session_goal/owner_correction.rs`.
 //! Owner reader barrier and effective-owner resolution from sealed Goal history.
 
 use super::model::{decisions, OwnerCorrectionDecision, SavedRequest};

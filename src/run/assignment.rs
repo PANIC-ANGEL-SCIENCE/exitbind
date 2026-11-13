@@ -1,3 +1,5 @@
+// Derives pending assignment packets from validated run state.
+// Refuses invalid assignment stages; see `src/run/mod.rs`.
 //! Pending assignment packets derived from validated run state.
 
 use serde_json::{json, Value};

@@ -1,3 +1,5 @@
+// Closes Goals using existing accepted-result authority.
+// Refuses an identity from another revision; see `src/session_goal.rs`.
 //! Canonical goal closure through existing accepted-result authority.
 
 use super::{

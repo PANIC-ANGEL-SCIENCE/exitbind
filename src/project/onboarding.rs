@@ -1,3 +1,5 @@
+// Initializes projects with explicitly selected roots and placement.
+// Refuses incompatible bootstrap options; see `src/project/mod.rs`.
 use crate::project::skills as project_skills;
 use serde_json::{json, Value};
 use std::fs;

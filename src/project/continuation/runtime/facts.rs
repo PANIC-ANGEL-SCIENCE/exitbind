@@ -1,3 +1,5 @@
+// Collects read-only continuation decision facts and recipients.
+// Refuses unknown operation roles; see `src/project/continuation/runtime.rs`.
 //! Read-only observations for the pure decision; no Work lock is acquired here.
 use super::*;
 

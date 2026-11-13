@@ -1,3 +1,5 @@
+// Assembles typed human-facing run status and explanation facts.
+// Refuses an explanation for an unrelated protection event; see `src/run/mod.rs`.
 //! Human-facing projection assembled from kernel facts.
 //!
 //! Wording remains in `run_presentation`; this module owns only the typed

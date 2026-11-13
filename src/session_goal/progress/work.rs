@@ -1,3 +1,5 @@
+// Projects Goal progress against a verified Work association.
+// Reports an unbound Goal as unavailable; see `src/session_goal/progress.rs`.
 //! Work-bound Goal projection and verified association.
 use super::{
     project_with_limit, unavailable, GoalProjectionContext, JourneyObservation, MAX_TASKS,

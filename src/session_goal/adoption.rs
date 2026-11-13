@@ -1,3 +1,5 @@
+// Adopts an open project Goal journal for a new native session.
+// Requires a host-reported session identity; see `src/session_goal.rs`.
 //! Explicit adoption of this project's open Goal journal by a new native
 //! session of the same owner (`goal adopt`), and the one route every
 //! UNAVAILABLE Goal renderer prints when such a journal is reachable.

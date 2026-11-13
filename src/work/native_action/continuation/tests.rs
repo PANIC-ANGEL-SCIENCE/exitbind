@@ -1,3 +1,5 @@
+// Tests native continuation retirement and active-owner facts.
+// Held results earn no credit in retirement cases; see `src/work/native_action/continuation.rs`.
 use super::*;
 
 #[test]

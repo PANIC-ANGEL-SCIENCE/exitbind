@@ -1,3 +1,5 @@
+// Maintains the local Git exclusion used by the private writer.
+// Declines non-regular exclude paths; see `src/project/private_write.rs`.
 //! The project's Git worktree for the private writer: the local exclude
 //! line that hides a product directory and the `git status` check that proves it.
 

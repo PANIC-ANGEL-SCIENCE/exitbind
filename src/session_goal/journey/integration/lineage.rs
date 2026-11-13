@@ -1,3 +1,5 @@
+// Resolves successor lineage for native journey members.
+// Refuses cycles in that lineage; see `src/session_goal/journey/integration.rs`.
 use super::*;
 use std::collections::BTreeSet;
 

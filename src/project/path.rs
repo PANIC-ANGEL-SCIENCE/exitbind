@@ -1,3 +1,5 @@
+// Resolves project paths and reads confined file bytes.
+// Refuses paths that cannot be canonicalized; see `src/project/mod.rs`.
 use std::fs;
 #[cfg(unix)]
 use std::io;

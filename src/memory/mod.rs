@@ -1,3 +1,5 @@
+// Routes memory operations and resolves their ledger snapshots.
+// Refuses conflicting ledger items; see `src/main.rs`.
 use serde_json::{json, Value};
 
 use crate::{config::Loaded, evidence::hash};

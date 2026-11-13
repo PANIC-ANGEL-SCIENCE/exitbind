@@ -1,3 +1,5 @@
+// Validates durable supersession claims.
+// Refuses malformed claims; see `src/run/ledger.rs`.
 //! Exact validation for durable supersession claims.
 
 use serde_json::Value;

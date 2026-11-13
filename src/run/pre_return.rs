@@ -1,3 +1,5 @@
+// Runs opt-in, source-bound diagnostics before Worker return.
+// Requires a canonical Work ledger for governed permits; see `src/run/mod.rs`.
 //! Opt-in, source-bound diagnostic execution before a successful Worker return.
 mod binding_diagnostic;
 mod execution;

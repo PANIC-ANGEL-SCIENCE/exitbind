@@ -1,3 +1,5 @@
+// Frames bounded Claude start-hook delivery and acknowledgement.
+// Refuses oversized child envelopes; see `src/host/runtime.rs`.
 //! Lossless, bounded Claude start-hook framing and write acknowledgement.
 
 use serde_json::{json, Value};

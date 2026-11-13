@@ -1,3 +1,5 @@
+// Tests queued managed-file reads and retained baselines.
+// Same-file reads share one baseline in these cases; see `src/work/managed_edit.rs`.
 //! Queued managed reads serialize baseline commits and effects remain fenced.
 use super::*;
 use std::{fs, sync::Barrier};

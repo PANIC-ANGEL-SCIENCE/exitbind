@@ -1,3 +1,5 @@
+// Ingests prospective usage observations within secure bounds.
+// Requires valid Work identities; see `src/session_goal/usage.rs`.
 //! Secure, bounded prospective usage ingestion.
 
 use super::{

@@ -1,3 +1,5 @@
+// Coordinates optional task-bound CodeGraph integration.
+// Refuses unsafe index directories; see `src/host/mod.rs`.
 //! Optional, task-bound CodeGraph provider integration.
 //!
 //! Provider readiness belongs to one explicitly enabled project. Query and

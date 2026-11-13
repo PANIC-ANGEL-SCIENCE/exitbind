@@ -1,3 +1,5 @@
+// Admits separately authorized quarantine checks for a Lead.
+// Refuses invalid predecessor Work handles; see `src/work/mod.rs`.
 //! Lead-owned admission for the separately authorized quarantine check.
 
 use crate::{config::Loaded, evidence::hash, run};

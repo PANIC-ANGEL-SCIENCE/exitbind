@@ -1,3 +1,5 @@
+// Tests packet review and currentness judgments.
+// Non-current packets refuse in these cases; see `src/work/packet.rs`.
 use super::*;
 
 #[test]

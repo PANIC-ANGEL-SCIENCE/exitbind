@@ -1,3 +1,5 @@
+// Projects optional verification-preparation setup.
+// Leaves the configuration untouched without a selection; see `src/project/setup.rs`.
 use serde_json::{json, Value};
 use std::path::Path;
 

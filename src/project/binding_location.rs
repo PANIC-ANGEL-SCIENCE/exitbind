@@ -1,3 +1,5 @@
+// Selects writable storage while preserving project bindings.
+// Requires an absolute machine-local binding directory; see `src/project/mod.rs`.
 //! Select writable storage while preserving every existing project binding.
 use std::{fs, path::PathBuf};
 

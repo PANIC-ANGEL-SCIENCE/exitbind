@@ -1,3 +1,5 @@
+// Performs read-only transport preflight for a child intent.
+// Refuses delivery changed during preflight; see `src/session_goal/continuity/capture.rs`.
 //! Read-only delivery preflight for a candidate native child intent.
 use super::context;
 use crate::config::Loaded;

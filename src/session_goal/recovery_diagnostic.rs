@@ -1,3 +1,5 @@
+// Measures per-thread phases for the recovery test fixture.
+// This test-only scope rejects nested diagnostics; see `src/session_goal.rs`.
 //! Scoped, per-thread wall-time observations for the large recovery fixture.
 
 use std::cell::RefCell;

@@ -1,3 +1,5 @@
+// Inspects and reconciles current native operations.
+// Refuses invalid journal statuses; see `src/work/native_action.rs`.
 //! Bounded, read-only inspection of the current native operation. The result
 //! omits prompts, stderr, result text and machine-local journal paths.
 

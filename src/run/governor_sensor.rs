@@ -1,3 +1,5 @@
+// Exchanges governor sensor data for the pending assignment.
+// Refuses assignment drift during a request; see `src/run/mod.rs`.
 //! Governor sensor exchange for the exact pending assignment: record the
 //! sensor request the governor currently asks for, then bind the assignee's
 //! bounded assessment to that request, both under the assignment's ledger lock.

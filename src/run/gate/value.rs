@@ -1,3 +1,5 @@
+// Defines typed run value and check-policy records.
+// Pre-return limits require a pre-return command; see `src/run/gate/mod.rs`.
 //! Typed value-proof records derived from a run ledger.
 //!
 //! The checked-run value boundary validates both caller-reported and locally

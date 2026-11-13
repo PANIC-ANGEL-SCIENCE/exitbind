@@ -1,3 +1,5 @@
+// Filters eligible memory into deterministic, content-free references.
+// Refuses invalid memory references; see `src/memory/mod.rs`.
 //! Eligibility filtering and deterministic, content-free memory references.
 
 use crate::{config, evidence::hash, project::path as project_path};

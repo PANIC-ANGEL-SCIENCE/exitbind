@@ -1,3 +1,5 @@
+// Resolves pending Claude delivery for a claimed child intent.
+// Refuses ambiguous multipart identities; see `src/session_goal/continuity/capture.rs`.
 //! Pending Claude delivery belongs to the already claimed child intent.
 
 use super::{context, delivery, load, text, with_intents};

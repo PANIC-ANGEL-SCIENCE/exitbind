@@ -1,3 +1,5 @@
+// Constructs the value-benchmark scenario and its evidence.
+// Requires four distinct legacy role artifacts; see `src/value_benchmark.rs`.
 use super::*;
 
 pub(super) fn execute_scenario(

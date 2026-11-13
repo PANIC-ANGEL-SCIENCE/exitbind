@@ -1,3 +1,5 @@
+// Binds pre-return admissions to their owning run.
+// Refuses invalid admission ownership; see `src/run/pre_return.rs`.
 //! Bind new pre-return admissions to their owning run before execution.
 
 use super::*;

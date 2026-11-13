@@ -1,3 +1,5 @@
+// Prepares and validates the selected CodeGraph index.
+// Refuses metadata writes after the deadline; see `src/host/codegraph.rs`.
 use super::provider::{run_provider, source_identity, status, IndexState, ProviderIdentity};
 use super::{canonical, project_id, write_atomic, MAX_METADATA};
 use crate::config;

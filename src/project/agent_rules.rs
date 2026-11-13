@@ -1,3 +1,5 @@
+// Delivers complete project instruction files to agents.
+// Refuses launch when instruction delivery exceeds its bound; see `src/project/mod.rs`.
 //! Bounded delivery of complete project instruction files.
 //!
 //! Ordinary Work detail has a 256 KiB grouped-response bound; native current

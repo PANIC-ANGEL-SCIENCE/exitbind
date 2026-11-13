@@ -1,3 +1,5 @@
+// Binds a Lead stop decision to current native Goal state.
+// Leaves stop unchanged without a verified session; see `src/host/runtime.rs`.
 //! Bound a Lead stop to the existing native Goal and an explicit owner wait.
 //!
 //! This reads current state only. A missing or unverifiable selector, owner,

@@ -1,3 +1,5 @@
+// Renders general and command-specific CLI help.
+// Unknown command paths have no scoped usage; see `src/cli/mod.rs`.
 use super::VERSION;
 
 pub(super) fn print_help() {

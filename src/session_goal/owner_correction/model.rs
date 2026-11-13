@@ -1,3 +1,5 @@
+// Validates typed and sealed Goal ownership transitions.
+// Refuses invalid correction decisions; see `src/session_goal/owner_correction.rs`.
 //! Typed, sealed ownership decisions and their transition validation.
 
 use crate::{evidence::hash, session_goal::recovery::ConfigBinding};

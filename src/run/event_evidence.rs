@@ -1,3 +1,5 @@
+// Inspects artifact integrity for a selected ledger event.
+// Reports missing logs and refuses invalid evidence; see `src/run/mod.rs`.
 //! Read-only integrity status for artifacts named by a selected ledger event.
 
 use super::artifact::{self, SubmissionEvidence};

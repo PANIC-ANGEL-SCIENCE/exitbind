@@ -1,3 +1,5 @@
+// Builds typed changed-after-binding refusals and routes.
+// Only marked errors decode as drift facts; see `src/main.rs`.
 //! Changed after binding: the one typed refusal for "what was bound earlier
 //! differs from what is current".
 //!

@@ -1,3 +1,5 @@
+// Dispatches memory commands and task-scoped memory inspection.
+// Refuses excess memory-form source arguments; see `src/cli/mod.rs`.
 //! Existing memory CLI and task-selective inspection.
 use super::*;
 use crate::memory::{self, forgetting};

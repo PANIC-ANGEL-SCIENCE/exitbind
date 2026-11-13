@@ -1,4 +1,6 @@
 //! `work` subcommand parsing and dispatch to the work facade.
+//! Rejects unsupported arguments; permit response ownership is in
+//! `src/work/permit_response.rs`.
 
 use super::*;
 
@@ -11,11 +13,205 @@ mod recovery;
 fn print_work_json(value: &serde_json::Value) -> Result<(), String> {
     let mut value = crate::work::effective_action::attach(value);
     crate::work::readable::public_delivery(&mut value);
+    crate::work::action_forms::public_permit_guidance(&mut value);
+    crate::work::action_forms::public_fill_guidance(&mut value);
     print_json(&value)
 }
 
-fn print_work_result(value: &serde_json::Value) -> Result<(), String> {
-    print_work_json(value)?;
+/// Complete only the live navigation and action forms in a full read. The
+/// surrounding packet and historical evidence remain the original payload.
+fn print_active_read_json(
+    loaded: &config::Loaded,
+    value: &serde_json::Value,
+) -> Result<(), String> {
+    let mut value = crate::work::effective_action::attach(value);
+    crate::work::readable::public_delivery(&mut value);
+    crate::work::action_forms::public_permit_guidance(&mut value);
+    crate::work::action_forms::public_fill_guidance(&mut value);
+    let mut routes_complete = true;
+    for pointer in [
+        "/current/actionForm",
+        "/current/details",
+        "/next/current/actionForm",
+        "/next/current/details",
+        "/effectiveAction",
+        "/nextAction",
+        "/pauseRecord",
+    ] {
+        if let Some(routes) = value.pointer_mut(pointer) {
+            routes_complete &= crate::emitted::complete_known(routes, &loaded.path);
+        }
+    }
+    if !routes_complete {
+        value["transportCompletion"] = json!({"complete":false,
+            "reason":"a complete current route is unavailable"});
+    }
+    print_json(&value)
+}
+
+/// Complete the known routes in an existing compact read without changing its
+/// budget. If whole routes do not fit, keep an explicit read-only recovery.
+fn print_compact_read(loaded: &config::Loaded, value: &serde_json::Value) -> Result<(), String> {
+    let mut value = crate::work::effective_action::attach(value);
+    crate::work::action_forms::public_permit_guidance(&mut value);
+    crate::work::action_forms::public_fill_guidance(&mut value);
+    let mut routes_complete = true;
+    let locations = [
+        "/current",
+        "/next/current",
+        "/effectiveAction",
+        "/nextAction",
+        "/pauseRecord",
+        "/history",
+    ];
+    for pointer in locations {
+        if let Some(routes) = value.pointer_mut(pointer) {
+            routes_complete &= crate::emitted::complete_known(routes, &loaded.path);
+        }
+    }
+    if !routes_complete {
+        value["transportCompletion"] = json!({"complete":false,
+            "reason":"a complete route is unavailable"});
+    }
+    let fits = |value: &serde_json::Value| {
+        serde_json::to_vec(value)
+            .map(|bytes| bytes.len() < crate::work::compact::MAX_RESPONSE_BYTES)
+            .map_err(|error| error.to_string())
+    };
+    if !fits(&value)? {
+        for pointer in locations {
+            if let Some(routes) = value.pointer_mut(pointer) {
+                crate::emitted::omit_commands(routes);
+            }
+        }
+        value["transportCompletion"] = json!({"complete":false,
+            "reason":"complete routes were omitted at the compact response bound"});
+        let mut route = if let Some(work) = value["work"].as_str() {
+            crate::emitted::Route::new(["work", "detail", work, "--json"])
+        } else {
+            crate::emitted::Route::new(["work", "resume", "--full", "--json"])
+        }
+        .config(&loaded.path)
+        .within(1024)
+        .command_json();
+        crate::emitted::complete_known(&mut route, &loaded.path);
+        route["readOnly"] = json!(true);
+        value["transportCompletion"]["recovery"] = route.clone();
+        if !fits(&value)? {
+            value = json!({"compact":true,"complete":false,"status":value["status"],
+                "work":value["work"],"reason":"compact output could not retain complete routes",
+                "recovery":route});
+        }
+    }
+    print_json(&value)
+}
+
+fn print_step_json(loaded: &config::Loaded, value: &serde_json::Value) -> Result<(), String> {
+    print_bounded_step_json(loaded, value, false)
+}
+
+/// A grouped expansion preserves its section payloads; only its current forms
+/// are projected into complete public commands.
+fn print_bounded_step_json(
+    loaded: &config::Loaded,
+    value: &serde_json::Value,
+    forms_only: bool,
+) -> Result<(), String> {
+    let mut value = crate::work::effective_action::attach(value);
+    crate::work::readable::public_delivery(&mut value);
+    crate::work::action_forms::public_permit_guidance(&mut value);
+    crate::work::action_forms::public_fill_guidance(&mut value);
+    let mut completed = value.clone();
+    let mut routes_complete = true;
+    let all_route_locations = [
+        "/actionForms",
+        "/effectiveAction",
+        "/current",
+        "/next/current",
+        "/nextAction",
+        "/recipientContext/guidance",
+        "/sections/tasks",
+        "/sections/assignment/residual/humanHelp",
+        "/currentDelivery/actionForms",
+        "/currentDelivery/effectiveAction",
+        "/currentDelivery/recipientContext/guidance",
+        "/currentDelivery/sections/tasks",
+        "/currentDelivery/sections/assignment/residual/humanHelp",
+    ];
+    let route_locations = if forms_only {
+        &all_route_locations[..2]
+    } else {
+        &all_route_locations[..]
+    };
+    for pointer in route_locations {
+        if let Some(routes) = completed.pointer_mut(pointer) {
+            routes_complete &= crate::emitted::complete_known(routes, &loaded.path);
+        }
+    }
+    if !forms_only && completed["kind"] == "work_section" {
+        if let Some(route) = completed.get_mut("next") {
+            routes_complete &= crate::emitted::complete_known(route, &loaded.path);
+        }
+    }
+    if !routes_complete {
+        completed["transportCompletion"] = json!({"complete":false,
+            "reason":"a complete route is unavailable"});
+    }
+    if serde_json::to_vec(&completed)
+        .map_err(|error| error.to_string())?
+        .len()
+        < crate::work::readable::MAX_GROUPED_BYTES
+    {
+        value = completed;
+    } else {
+        // Preserve the recorded result and its facts, but never expose a
+        // shortened argv as if it were directly executable.
+        for pointer in route_locations {
+            if let Some(routes) = completed.pointer_mut(pointer) {
+                crate::emitted::omit_commands(routes);
+            }
+        }
+        completed["transportCompletion"] = json!({"complete":false,
+            "reason":"complete routes were omitted at the readable response bound; inspect current detail"});
+        if serde_json::to_vec(&completed)
+            .map_err(|error| error.to_string())?
+            .len()
+            + 1
+            > crate::work::readable::MAX_GROUPED_BYTES
+            && completed["currentDelivery"].is_object()
+        {
+            completed["currentDelivery"] = json!({"complete":false,
+                "reason":"current detail exceeds the response bound; inspect current detail"});
+            completed["effectiveAction"]["requiresDetail"] = json!(true);
+        }
+        if serde_json::to_vec(&completed)
+            .map_err(|error| error.to_string())?
+            .len()
+            + 1
+            > crate::work::readable::MAX_GROUPED_BYTES
+        {
+            let work = completed["work"]
+                .as_str()
+                .ok_or("bounded Work response has no handle")?;
+            let mut route = crate::emitted::Route::new(["work", "next", work, "--json"])
+                .config(&loaded.path)
+                .within(1024)
+                .command_json();
+            crate::emitted::complete_known(&mut route, &loaded.path);
+            route["readOnly"] = json!(true);
+            completed = json!({"work":work,"compact":true,"complete":false,
+                "status":completed["status"],"effect":completed["effect"],
+                "eventSha256":completed["eventSha256"],"creation":completed["creation"],
+                "reason":"current delivery exceeds the readable response bound; use the read-only route",
+                "nextAction":route});
+        }
+        value = completed;
+    }
+    print_json(&value)
+}
+
+fn print_work_result(loaded: &config::Loaded, value: &serde_json::Value) -> Result<(), String> {
+    print_step_json(loaded, value)?;
     if let Some(text) = value["presentation"]["goalProgress"]["systemText"]
         .as_str()
         .or_else(|| value["goalProgress"]["systemText"].as_str())
@@ -327,12 +523,18 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                 let current=crate::work::next(l,&work).map_err(|error|format!("Work {work} and its goal mapping were recorded, but context refresh failed: {error}; recover with work detail; do not repeat work begin"))?;
                 response["next"]=current["next"].clone();
             }
-            let response = if a.flags.contains_key("detail") {
+            let mut response = if a.flags.contains_key("detail") {
                 crate::work::start_delivery::with_detail(l, response)
             } else {
                 response
             };
-            print_work_json(&response)
+            if !a.flags.contains_key("detail") {
+                if let Some(work) = response["work"].as_str().map(str::to_owned) {
+                    let next = response["next"].clone();
+                    crate::work::refreshed_action::attach(l, &work, &next, &mut response);
+                }
+            }
+            print_step_json(l, &response)
         }
         "next" => {
             args::assert_options("work next", a, &["config", "json", "full", "themed"])?;
@@ -353,7 +555,11 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                     positional(a, 1, "work next requires WORK")?, &result);
                 result["world"] = world;
             }
-            print_work_json(&result)
+            if a.flags.contains_key("full") || a.flags.contains_key("themed") {
+                print_active_read_json(l, &result)
+            } else {
+                print_compact_read(l, &result)
+            }
         }
         "act" => {
             args::assert_options(
@@ -401,12 +607,12 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                     positional(a, 1, "work act requires WORK")?, &result);
                 result["world"] = world;
             }
-            print_work_result(&result)
+            print_work_result(l, &result)
         }
         "permit" => {
             args::assert_options("work permit", a, &["config", "operation", "request-id"])?;
             args::assert_positionals("work permit", a, 3)?;
-            print_work_json(&crate::work::permit(
+            print_step_json(l, &crate::work::permit(
                 l,
                 positional(a, 1, "work permit requires WORK ASSIGNMENT")?,
                 positional(a, 2, "work permit requires WORK ASSIGNMENT")?,
@@ -503,7 +709,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                 a.options.get("result-ref").map(String::as_str),
                 a.options.get("current-binding").map(String::as_str),
             )?;
-            print_work_result(&result)
+            print_work_result(l, &result)
         }
         "disposition" => {
             args::assert_options(
@@ -556,7 +762,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                 positional(a, 1, "work check requires WORK")?,
                 a.options.get("timeout-ms").map(String::as_str),
             )?;
-            print_work_result(&result)
+            print_work_result(l, &result)
         }
         "validate" => {
             args::assert_options("work validate", a, &["config", "packet", "json"])?;
@@ -574,11 +780,16 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
         "expand" => {
             args::assert_options("work expand", a, &["config", "json"])?;
             args::assert_positionals("work expand", a, 3)?;
-            print_work_json(&crate::work::expand(
+            let expanded = crate::work::expand(
                 l,
                 positional(a, 1, "work expand requires WORK REF")?,
                 positional(a, 2, "work expand requires WORK REF")?,
-            )?)
+            )?;
+            if expanded["kind"] == "work_detail" {
+                print_bounded_step_json(l, &expanded, true)
+            } else {
+                print_work_json(&expanded)
+            }
         }
         "closeout" => {
             args::assert_options("work closeout", a, &["config", "json", "export", "output", "receipt"])?;
@@ -603,7 +814,11 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             if let Some(routes) = crate::host::session_recovery::pause_routes(l) {
                 result["pauseRecord"] = routes;
             }
-            print_work_json(&result)
+            if a.flags.contains_key("full") || result["status"] != "resumed" {
+                print_active_read_json(l, &result)
+            } else {
+                print_compact_read(l, &result)
+            }
         }
         _ => Err(
             "work requires begin, next, detail, closeout, act, permit, replan, evidence, sensor-request, sensor-result, return, disposition, check, validate, expand, or resume"

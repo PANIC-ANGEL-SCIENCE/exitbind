@@ -1,3 +1,5 @@
+// Revalidates product-owned proof for pre-return recovery.
+// Requires product-owned observer evidence; see `src/run/pre_return/recovery.rs`.
 //! Revalidate the exact product-owned proof used by a reported decision.
 use crate::{config::Loaded, evidence::hash};
 use serde_json::{json, Value};

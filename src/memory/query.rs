@@ -1,3 +1,5 @@
+// Searches recipient-authorized current memory without an index.
+// Refuses a different contextual host; see `src/memory/mod.rs`.
 //! Search current, recipient-authorized memory sources without an index.
 //!
 //! A generic accepted memory item is a source, not an assertion that it is

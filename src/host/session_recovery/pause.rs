@@ -1,3 +1,5 @@
+// Records the Lead step and decisions for session recovery.
+// Requires a supplied step or decision; see `src/host/session_recovery.rs`.
 //! The Lead's pause record: the saved step and the Lead decisions taken on an
 //! in-flight Work before its Lead act, written through the existing recovery
 //! record, and the two emitted routes that write it. `goal status`,

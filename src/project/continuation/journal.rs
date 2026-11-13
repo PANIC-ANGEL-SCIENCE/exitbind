@@ -1,3 +1,5 @@
+// Stores continuation admission metadata; Work owns execution evidence.
+// Refuses unavailable or unsafe journals; see `src/project/continuation/mod.rs`.
 //! Admission metadata only. Work ledgers remain the execution/evidence owner.
 use super::model::{Plan, Spec};
 use crate::{config::Loaded, evidence::hash, project::path, run::ledger};

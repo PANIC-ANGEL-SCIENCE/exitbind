@@ -1,3 +1,5 @@
+// Validates and applies memory ledger transitions.
+// Refuses transitions without proposals; see `src/memory/mod.rs`.
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::path::Path;

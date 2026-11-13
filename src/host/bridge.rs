@@ -1,3 +1,5 @@
+// Installs the user-level managed host bridge.
+// Requires at least one selected host; see `src/host/mod.rs`.
 //! User-level host bridge: the managed Exitbind bootstrap skill that lets an
 //! existing coding-agent lead discover Exitbind in any repository after one
 //! installation.

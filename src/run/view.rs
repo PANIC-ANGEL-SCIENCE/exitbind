@@ -1,3 +1,5 @@
+// Coordinates run supersession using existing state and policy.
+// Requires a non-empty workflow; see `src/run/mod.rs`.
 use super::*;
 
 mod check_replacement;

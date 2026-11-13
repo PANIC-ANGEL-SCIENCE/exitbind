@@ -1,3 +1,5 @@
+// Admits native continuation observations and mandate control.
+// Refuses invalid journal identity or status; see `src/work/native_action.rs`.
 //! Native-owned observations and mandate control at actual provider admission.
 //! Account authorization remains with the continuation runtime; journal keys
 //! and provider observations never establish that authorization themselves.

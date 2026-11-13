@@ -1,3 +1,5 @@
+// Observes available local project execution resources.
+// Reports failed filesystem observations; see `src/host/mod.rs`.
 use serde_json::{json, Value};
 use std::path::Path;
 

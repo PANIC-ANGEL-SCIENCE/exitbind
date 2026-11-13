@@ -1,3 +1,5 @@
+// Observes recorded check-process group liveness.
+// A reused group identity stays uncertain; see `src/run/mod.rs`.
 //! The owned process group of a check observation that ended without a result.
 //!
 //! A timed-out observation whose capsule could not prove its own cleanup

@@ -1,3 +1,5 @@
+// Builds current bound grouped detail and the diagnostic action view.
+// Refuses stale grouped references; see `src/work/action_forms.rs`.
 //! Product-owned, exact grouped consumption for the current Work.
 //!
 //! The legacy section reader remains hex encoded for compatibility. This
@@ -16,7 +18,6 @@ pub(super) mod recipient_context;
 
 pub(crate) const PREFIX: &str = "ref:work-detail:v1:";
 pub(crate) const MAX_GROUPED_BYTES: usize = 256 * 1024;
-const ACTION_VIEW_ARGV_BUDGET: usize = 256;
 /// Every `work detail --view` value; the CLI accepts exactly these.
 pub(crate) const DETAIL_VIEWS: &[&str] = &["action"];
 
@@ -162,10 +163,15 @@ pub(crate) fn action_view(loaded: &Loaded, work: &str) -> Result<Value, String> 
     let binding = next["current"]["binding"]
         .as_str()
         .ok_or("current action binding unavailable")?;
-    let forms = super::action_forms::full(loaded, work, &next, binding);
+    let mut forms = super::action_forms::full(loaded, work, &next, binding);
+    crate::emitted::complete_known(&mut forms, &loaded.path);
     let mut routes = next["current"]["details"].clone();
+    crate::emitted::complete_known(&mut routes, &loaded.path);
     let recipient = recipient_context::read(loaded, &next);
-    let guidance = action_guidance::project(&recipient, &routes);
+    let mut guidance = action_guidance::project(&recipient, &routes);
+    if let Some(guidance) = guidance.as_mut() {
+        crate::emitted::complete_known(guidance, &loaded.path);
+    }
     let grouped_route = routes.get("grouped").cloned();
     if let Some(routes) = routes.as_object_mut() {
         routes.remove("grouped");
@@ -204,10 +210,18 @@ pub(crate) fn action_view(loaded: &Loaded, work: &str) -> Result<Value, String> 
     result.as_object_mut().unwrap().remove("actionForms");
     if navigation_bytes(&result)? > super::compact::MAX_RESPONSE_BYTES {
         let mut forms = forms;
-        bound_action_view_commands(loaded, &mut forms)?;
+        crate::emitted::omit_commands(&mut forms);
+        forms["commandsComplete"] = json!(false);
+        forms["commandsOmitted"] =
+            json!("complete commands omitted to fit the action view; use complete current detail");
         result["actionForms"] = forms;
         project_action_view(&mut result);
         result.as_object_mut().unwrap().remove("actionForms");
+        // When choices are unavailable, keep one complete read-only
+        // recovery route instead of the larger set of section-only routes.
+        if let Some(grouped) = grouped_route.as_ref().filter(|route| route.is_object()) {
+            result["details"] = json!({"grouped":grouped});
+        }
     }
     if navigation_bytes(&result)? > super::compact::MAX_RESPONSE_BYTES {
         result.as_object_mut().unwrap().remove("actionForms");
@@ -215,13 +229,9 @@ pub(crate) fn action_view(loaded: &Loaded, work: &str) -> Result<Value, String> 
             result["details"] = json!({"grouped": grouped_route});
         }
         if navigation_bytes(&result)? > super::compact::MAX_RESPONSE_BYTES {
-            // The grouped route is the last path-bearing form in this view.
-            // Reference its executable and configuration through its flags so
-            // a long install or project path cannot push the bounded view over
-            // the limit; the reference itself is unchanged.
-            if let Some(grouped) = result["details"]["grouped"].as_object_mut() {
-                bound_command(loaded, grouped, "command")?;
-            }
+            // A route that cannot fit whole is unavailable, never an argv
+            // prefix. The reference remains available for read-only recovery.
+            crate::emitted::omit_commands(&mut result["details"]["grouped"]);
         }
         if navigation_bytes(&result)? > super::compact::MAX_RESPONSE_BYTES {
             return Err(
@@ -267,98 +277,8 @@ fn project_action_view(result: &mut Value) {
     }
     effective["source"]["location"] = json!("effectiveAction");
     result["effectiveAction"] = effective;
-}
-
-fn bound_action_view_commands(loaded: &Loaded, value: &mut Value) -> Result<(), String> {
-    match value {
-        Value::Object(object) => {
-            bound_command(loaded, object, "argv")?;
-            for (key, child) in object.iter_mut() {
-                if key != "argv" {
-                    bound_action_view_commands(loaded, child)?;
-                }
-            }
-        }
-        Value::Array(values) => {
-            for child in values {
-                bound_action_view_commands(loaded, child)?;
-            }
-        }
-        _ => {}
-    }
-    Ok(())
-}
-
-/// Bound one command object in place, whether its argv sits under `argv` or
-/// under the route's own `command` key. Only an object carrying a command
-/// array and both accessor flags is a command; anything else is left alone.
-fn bound_command(
-    loaded: &Loaded,
-    object: &mut serde_json::Map<String, Value>,
-    key: &str,
-) -> Result<(), String> {
-    if !object.get(key).is_some_and(Value::is_array)
-        || !object
-            .get("sameConfigRequired")
-            .is_some_and(Value::is_boolean)
-        || !object
-            .get("sameExecutableRequired")
-            .is_some_and(Value::is_boolean)
-    {
-        return Ok(());
-    }
-    let argv = object[key]
-        .as_array()
-        .ok_or("action command argv unavailable")?;
-    let argv = argv
-        .iter()
-        .map(|argument| {
-            argument
-                .as_str()
-                .map(str::to_owned)
-                .ok_or("action command argv is not text")
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let same_executable = object["sameExecutableRequired"]
-        .as_bool()
-        .ok_or("action command executable requirement unavailable")?;
-    let same_config = object["sameConfigRequired"]
-        .as_bool()
-        .ok_or("action command config requirement unavailable")?;
-    let start = if !same_executable {
-        let expected = crate::emitted::executable()
-            .map_err(|_| "action command executable is no longer addressable")?;
-        if argv.first() != Some(&expected) {
-            return Err("action command executable changed during view construction".into());
-        }
-        1
-    } else {
-        0
-    };
-    if argv.len() <= start {
-        return Err("action command argv is malformed".into());
-    }
-    let mut suffix = argv[start..].to_vec();
-    if !same_config {
-        if suffix.len() < 2
-            || suffix[suffix.len() - 2] != "--config"
-            || Some(suffix[suffix.len() - 1].as_str()) != loaded.path.to_str()
-        {
-            return Err("action command config changed during view construction".into());
-        }
-        suffix.pop();
-    } else if suffix.last().map(String::as_str) != Some("--config") {
-        return Err("action command argv is malformed".into());
-    }
-    let command =
-        crate::emitted::Route::reprinted(suffix, &loaded.path)?.within(ACTION_VIEW_ARGV_BUDGET);
-    object.insert(key.into(), command.argv_value().clone());
-    object.insert("sameConfigRequired".into(), json!(command.needs_config()));
-    object.insert(
-        "sameExecutableRequired".into(),
-        json!(command.needs_executable()),
-    );
-    Ok(())
+    super::action_forms::public_permit_guidance(result);
+    super::action_forms::public_fill_guidance(result);
 }
 
 pub(crate) fn expand(

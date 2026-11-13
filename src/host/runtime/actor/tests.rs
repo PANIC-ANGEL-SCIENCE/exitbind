@@ -1,3 +1,5 @@
+// Tests selected actor delivery of repair and current facts.
+// Cases preserve the canonical action; see `src/host/runtime/actor.rs`.
 mod mutation_history;
 
 use super::*;

@@ -1,3 +1,5 @@
+// Builds and validates companion identity for associated Work.
+// Refuses malformed Work or start-event identity; see `src/session_goal/association.rs`.
 use super::*;
 use serde_json::{json, Value};
 use std::io::Write;

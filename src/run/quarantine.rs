@@ -1,3 +1,5 @@
+// Validates immutable representations for quarantine verification.
+// Bounds and checks operation text; see `src/run/mod.rs`.
 //! Immutable representation for separately authorized verification of an
 //! artifact whose earlier check retains unknown effects. Representation
 //! validation does not establish live owner authority or runtime isolation.

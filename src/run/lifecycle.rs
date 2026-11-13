@@ -1,3 +1,5 @@
+// Starts runs using their selected workflow and policy.
+// Refuses an empty workflow; see `src/run/mod.rs`.
 use super::*;
 
 pub fn start(

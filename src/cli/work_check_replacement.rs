@@ -1,3 +1,5 @@
+// Routes Work check-replacement options to the existing owner.
+// Requires a reason and classification; see `src/cli/mod.rs`.
 use super::*;
 
 pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {

@@ -1,3 +1,5 @@
+// Recovers a current Lead repair after permit exhaustion.
+// Refuses mutation of a superseded run; see `src/run/mod.rs`.
 //! Forward recovery of one current Lead repair when a later permit exhausted
 //! the governor's no-information streak. Historical starts are left intact.
 

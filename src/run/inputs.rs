@@ -1,3 +1,5 @@
+// Computes tested-input identity for v6 checked runs.
+// Resume keeps non-Git walk limits; see `src/run/inputs/git_snapshot.rs`.
 //! Tested-input identity for v6 checked runs.
 //!
 //! Coverage: every regular file and symlink under the product root that Git
@@ -18,6 +20,9 @@ use std::process::{Command, ExitStatus};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+#[path = "inputs/git_snapshot.rs"]
+mod git_snapshot;
+
 pub(crate) const COVERAGE: &str = "product-root-files-v1";
 
 /// Confirm that a declared checker file actually participates in the existing
@@ -26,7 +31,7 @@ pub(crate) fn covered_file(loaded: &crate::config::Loaded, path: &str) -> Result
     let root = &loaded.product_root;
     let wanted = root.join(path).canonicalize().map_err(|e| e.to_string())?;
     let mut budget = active_resume_budget();
-    let paths = match tested_paths(root, budget.as_mut()) {
+    let tested = match tested_paths(root, budget.as_mut()) {
         Ok(paths) => paths,
         Err(error) => {
             if let Some(budget) = budget.as_mut() {
@@ -36,12 +41,12 @@ pub(crate) fn covered_file(loaded: &crate::config::Loaded, path: &str) -> Result
         }
     };
     if let Some(budget) = budget.as_mut() {
-        if paths.len() > WALK_PATH_LIMIT {
+        if tested.git_root.is_none() && tested.paths.len() > WALK_PATH_LIMIT {
             budget.mark_limited("fingerprint_path_limit_exceeded");
             return Err("fingerprint_path_limit_exceeded".into());
         }
     }
-    for relative in paths {
+    for relative in tested.paths {
         if let Some(budget) = budget.as_mut() {
             budget.check().map_err(str::to_owned)?;
         }
@@ -274,7 +279,9 @@ fn fingerprint_impl(
     excluded_paths: &BTreeSet<String>,
 ) -> Result<String, String> {
     let root = &loaded.product_root;
-    let mut paths = tested_paths(root, budget.as_deref_mut())?;
+    let tested = tested_paths(root, budget.as_deref_mut())?;
+    let git_root = tested.git_root;
+    let mut paths = tested.paths;
     paths.retain(|path| {
         !excluded(root, &loaded.state_root, path)
             && path
@@ -283,12 +290,18 @@ fn fingerprint_impl(
     });
     paths.sort();
     paths.dedup();
+    let git_digests = match (budget.as_deref_mut(), git_root.as_deref()) {
+        (Some(budget), Some(git_root)) => {
+            git_snapshot::clean_hashes(root, git_root, &paths, budget)?
+        }
+        _ => None,
+    };
     let mut entries = Vec::with_capacity(paths.len());
     let mut aggregate_bytes = 0u64;
     for (index, relative) in paths.into_iter().enumerate() {
         if let Some(budget) = budget.as_deref_mut() {
             budget.check().map_err(str::to_owned)?;
-            if index >= WALK_PATH_LIMIT {
+            if git_root.is_none() && index >= WALK_PATH_LIMIT {
                 return Err("fingerprint_path_limit_exceeded".into());
             }
         }
@@ -317,7 +330,14 @@ fn fingerprint_impl(
                         return Err("fingerprint_byte_limit_exceeded".into());
                     }
                     budget.check().map_err(str::to_owned)?;
-                    hash_file_bounded(&full, size, budget)?
+                    match git_digests
+                        .as_ref()
+                        .and_then(|digests| digests.get(&relative))
+                        .filter(|digest| digest.matches(&meta))
+                    {
+                        Some(digest) => digest.sha256.clone(),
+                        None => hash_file_bounded(&full, size, budget)?,
+                    }
                 } else {
                     crate::evidence::hash::file(&full)?
                 };
@@ -334,10 +354,15 @@ fn fingerprint_impl(
 
 /// Enumerate the tested paths with the same cooperative limits for both a
 /// resume fingerprint and a checker-coverage read reached by that resume.
+struct TestedPaths {
+    paths: Vec<PathBuf>,
+    git_root: Option<PathBuf>,
+}
+
 fn tested_paths(
     root: &Path,
     mut budget: Option<&mut ResumeInputBudget>,
-) -> Result<Vec<PathBuf>, String> {
+) -> Result<TestedPaths, String> {
     let worktree = if let Some(budget) = budget.as_deref_mut() {
         budget.check().map_err(str::to_owned)?;
         match crate::project::git_preflight::worktree_root_bounded(root, budget.deadline()) {
@@ -361,14 +386,22 @@ fn tested_paths(
         crate::project::git_preflight::worktree_root(root)?
     };
     match worktree {
-        Some(_) => match budget.as_deref_mut() {
+        Some(git_root) => match budget.as_deref_mut() {
             Some(budget) => git_paths_bounded(root, budget),
             None => git_paths(root),
-        },
+        }
+        .map(|paths| TestedPaths {
+            paths,
+            git_root: Some(git_root),
+        }),
         None => match budget {
             Some(budget) => walk_paths_bounded(root, budget),
             None => walk_paths(root),
-        },
+        }
+        .map(|paths| TestedPaths {
+            paths,
+            git_root: None,
+        }),
     }
 }
 
@@ -453,15 +486,23 @@ fn git_paths_bounded(root: &Path, budget: &mut ResumeInputBudget) -> Result<Vec<
     let started = Instant::now();
     let listing_deadline = (started + Duration::from_millis(1000)).min(budget.deadline());
     let mut command = Command::new("git");
-    command.arg("-C").arg(root).args([
-        "ls-files",
-        "-z",
-        "--cached",
-        "--others",
-        "--exclude-standard",
-        "--",
-        ".",
-    ]);
+    // `ls-files` itself may invoke a configured fsmonitor hook. An empty
+    // per-call override suppresses it without changing repository config.
+    command
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .arg("-C")
+        .arg(root)
+        .args([
+            "-c",
+            "core.fsmonitor=",
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "--",
+            ".",
+        ]);
     let output = match crate::kernel::bounded_process::run(
         &mut command,
         OUTPUT_LIMIT,
@@ -592,6 +633,10 @@ mod tests {
             !crate::project::git_preflight::has_git_marker(root),
             "input-budget test requires a marker-free temporary root"
         );
+        loaded_at(root, state_root)
+    }
+
+    fn loaded_at(root: &Path, state_root: &Path) -> crate::config::Loaded {
         crate::config::Loaded {
             config: json!({}),
             agents: BTreeMap::new(),
@@ -739,5 +784,234 @@ mod tests {
         assert!(excluded(root, root, Path::new(".git/HEAD")));
         assert!(!excluded(root, root, Path::new("src/.exitbind.rs")));
         assert!(!excluded(root, root, Path::new("checks/preserve.sh")));
+    }
+
+    #[cfg(unix)]
+    fn fixture_git(root: &Path, args: &[&str]) -> std::process::Output {
+        let output = Command::new("git")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .arg("-C")
+            .arg(root)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "git {args:?}: {output:?}");
+        output
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn git_resume_keeps_v1_identity_across_large_stage_commit_and_index_flags() {
+        let root = crate::test_root::temp("git-resume-v1");
+        fs::create_dir(root.join("data")).unwrap();
+        for n in 0..4101 {
+            fs::write(
+                root.join(format!("data/f{n:04}")),
+                format!("content-{n:04}\n"),
+            )
+            .unwrap();
+        }
+        fixture_git(&root, &["init", "-q"]);
+        fixture_git(&root, &["add", "--all"]);
+        fixture_git(
+            &root,
+            &[
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "commit",
+                "-qm",
+                "baseline",
+            ],
+        );
+        let loaded = loaded_at(&root, &root.join(".exitbind"));
+        let expected = fingerprint(&loaded).unwrap();
+        let resume = || fingerprint_for_resume(&loaded, &mut ResumeInputBudget::new()).unwrap();
+        assert_eq!(resume(), expected);
+        if std::env::var_os("EXITBIND_TEST_EXPECT_GIT_OPTIMIZATION").is_some() {
+            let mut budget =
+                ResumeInputBudget::with_deadline(Instant::now() + Duration::from_secs(10));
+            let tested = tested_paths(&root, Some(&mut budget)).unwrap();
+            let digests = git_snapshot::clean_hashes(
+                &root,
+                tested.git_root.as_deref().unwrap(),
+                &tested.paths,
+                &mut budget,
+            )
+            .unwrap()
+            .expect("isolated Git optimization available");
+            assert!(digests.len() > 4096, "only {} clean blobs", digests.len());
+        }
+        fs::write(root.join("data/f0000"), b"changed content\n").unwrap();
+        let changed = fingerprint(&loaded).unwrap();
+        assert_ne!(changed, expected);
+        assert_eq!(resume(), changed);
+        fixture_git(&root, &["add", "data/f0000"]);
+        assert_eq!(fingerprint(&loaded).unwrap(), changed);
+        assert_eq!(resume(), changed);
+        fixture_git(
+            &root,
+            &[
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "commit",
+                "-qm",
+                "same bytes",
+            ],
+        );
+        assert_eq!(resume(), changed);
+
+        fixture_git(&root, &["update-index", "--assume-unchanged", "data/f0001"]);
+        fs::write(root.join("data/f0001"), b"assumed changed\n").unwrap();
+        assert_eq!(resume(), fingerprint(&loaded).unwrap());
+        fixture_git(
+            &root,
+            &["update-index", "--no-assume-unchanged", "data/f0001"],
+        );
+        fixture_git(&root, &["update-index", "--skip-worktree", "data/f0002"]);
+        fs::write(root.join("data/f0002"), b"skipped changed\n").unwrap();
+        assert_eq!(resume(), fingerprint(&loaded).unwrap());
+        fs::remove_file(root.join("data/f0003")).unwrap();
+        fs::write(root.join("untracked"), b"new\n").unwrap();
+        std::os::unix::fs::symlink("data/f0004", root.join("link")).unwrap();
+        assert_eq!(resume(), fingerprint(&loaded).unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn git_resume_suppresses_fsmonitor_filters_and_index_writes() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = crate::test_root::temp("git-resume-side-effects");
+        let sidecar = crate::test_root::temp("git-resume-markers");
+        fs::write(root.join("source"), b"content\n").unwrap();
+        fixture_git(&root, &["init", "-q"]);
+        fixture_git(&root, &["add", "--all"]);
+        fixture_git(
+            &root,
+            &[
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "commit",
+                "-qm",
+                "baseline",
+            ],
+        );
+        let loaded = loaded_at(&root, &root.join(".exitbind"));
+        let expected = fingerprint(&loaded).unwrap();
+        let hook = sidecar.join("hook");
+        let marker = sidecar.join("hook-ran");
+        fs::write(
+            &hook,
+            format!(
+                "#!/bin/sh\nprintf x >> '{}'\nprintf '2\\n'\n",
+                marker.display()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o700)).unwrap();
+        fixture_git(&root, &["config", "core.fsmonitor", hook.to_str().unwrap()]);
+        let index = fs::read(root.join(".git/index")).unwrap();
+        assert_eq!(
+            fingerprint_for_resume(&loaded, &mut ResumeInputBudget::new()).unwrap(),
+            expected
+        );
+        assert!(
+            !marker.exists(),
+            "read-only input listing invoked fsmonitor"
+        );
+        assert_eq!(fs::read(root.join(".git/index")).unwrap(), index);
+
+        let filter_marker = sidecar.join("filter-ran");
+        let filter = format!("sh -c 'printf x >> {}; cat'", filter_marker.display());
+        fixture_git(&root, &["config", "filter.fixture.clean", &filter]);
+        assert_eq!(
+            fingerprint_for_resume(&loaded, &mut ResumeInputBudget::new()).unwrap(),
+            expected
+        );
+        assert!(
+            !filter_marker.exists(),
+            "read-only input observation invoked a clean filter"
+        );
+        assert!(!marker.exists(), "fallback invoked fsmonitor");
+        assert_eq!(fs::read(root.join(".git/index")).unwrap(), index);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn git_resume_uses_worktree_bytes_for_a_missing_promisor_blob_without_fetching() {
+        let root = crate::test_root::temp("git-resume-missing-object");
+        let sidecar = crate::test_root::temp("git-resume-missing-marker");
+        fs::write(root.join("source"), b"present worktree bytes\n").unwrap();
+        fixture_git(&root, &["init", "-q"]);
+        fixture_git(&root, &["add", "--all"]);
+        fixture_git(
+            &root,
+            &[
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "commit",
+                "-qm",
+                "baseline",
+            ],
+        );
+        let loaded = loaded_at(&root, &root.join(".exitbind"));
+        let expected = fingerprint(&loaded).unwrap();
+        let hash = fixture_git(&root, &["hash-object", "source"]);
+        let oid = std::str::from_utf8(&hash.stdout).unwrap().trim();
+        let object = root.join(".git/objects").join(&oid[..2]).join(&oid[2..]);
+        assert!(object.is_file(), "fixture blob must be loose");
+        fs::remove_file(object).unwrap();
+        let marker = sidecar.join("remote-ran");
+        let url = format!("ext::sh -c 'printf x > {}'", marker.display());
+        fixture_git(&root, &["config", "remote.origin.url", &url]);
+        fixture_git(&root, &["config", "remote.origin.promisor", "true"]);
+        fixture_git(
+            &root,
+            &["config", "remote.origin.partialclonefilter", "blob:none"],
+        );
+        fixture_git(&root, &["config", "extensions.partialClone", "origin"]);
+        assert_eq!(
+            fingerprint_for_resume(&loaded, &mut ResumeInputBudget::new()).unwrap(),
+            expected
+        );
+        assert!(
+            !marker.exists(),
+            "missing object observation launched a remote helper"
+        );
+    }
+
+    #[test]
+    fn non_git_resume_still_refuses_a_walk_above_4096_paths() {
+        let root = crate::test_root::temp("non-git-resume-path-limit");
+        for n in 0..=WALK_PATH_LIMIT {
+            fs::write(root.join(format!("f{n:04}")), b"x").unwrap();
+        }
+        let loaded = loaded(&root, &root.join("state"));
+        let error = fingerprint_for_resume(&loaded, &mut ResumeInputBudget::new()).unwrap_err();
+        assert_eq!(error, "fingerprint_path_limit_exceeded");
+        assert!(
+            fingerprint(&loaded).is_ok(),
+            "mutation-time fingerprint stays unbounded"
+        );
+    }
+
+    #[test]
+    fn non_git_resume_still_refuses_a_walk_above_1024_directories() {
+        let root = crate::test_root::temp("non-git-resume-directory-limit");
+        for n in 0..WALK_DIRECTORY_LIMIT {
+            fs::create_dir(root.join(format!("d{n:04}"))).unwrap();
+        }
+        let loaded = loaded(&root, &root.join("state"));
+        let error = fingerprint_for_resume(&loaded, &mut ResumeInputBudget::new()).unwrap_err();
+        assert_eq!(error, "fingerprint_directory_limit_exceeded");
+        assert!(fingerprint(&loaded).is_ok());
     }
 }

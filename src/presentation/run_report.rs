@@ -1,3 +1,5 @@
+// Renders redacted aggregate run reports as human-readable text.
+// The report omits goals and artifact contents; see `src/presentation/mod.rs`.
 //! Human-readable rendering of the redacted, validated run report.
 
 use serde_json::Value;

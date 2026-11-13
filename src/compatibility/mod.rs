@@ -1,3 +1,5 @@
+// Defines the current command profile and historical hook tokens.
+// Only Exitbind is the current executable profile; see `src/main.rs`.
 //! The small, typed boundary for the current and historical command surfaces.
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

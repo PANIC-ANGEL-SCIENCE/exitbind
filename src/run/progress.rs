@@ -1,3 +1,5 @@
+// Computes weighted progress from validated run facts.
+// Invalid state produces an error projection; see `src/run/mod.rs`.
 //! Progress arithmetic and the stable JSON projection.
 //!
 //! Classification is delegated to `run_exit`; this module only computes the

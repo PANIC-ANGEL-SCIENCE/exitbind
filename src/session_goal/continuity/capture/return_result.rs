@@ -1,3 +1,5 @@
+// Bridges captured host messages to the existing Work return owner.
+// Withholds automatic return when the context limit is unverified; see `src/session_goal/continuity/capture.rs`.
 //! Bridge an already captured host message to the existing Work return owner.
 
 use crate::{config::Loaded, evidence::hash, work};

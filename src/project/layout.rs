@@ -1,3 +1,5 @@
+// Migrates legacy profile layout to project-owned profiles.
+// Refuses a manifest changed during migration; see `src/project/mod.rs`.
 //! Explicit migration from legacy distribution-owned profiles to Soulmate-owned profiles.
 
 use crate::{config::Loaded, evidence::hash, project::managed_files};

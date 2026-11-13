@@ -1,3 +1,5 @@
+// Projects validated whole-Goal progress and terminal facts.
+// Explicit closure must match the current revision; see `src/session_goal.rs`.
 //! Validated overall-goal progress and automatic terminal presentation.
 
 use super::*;

@@ -1,3 +1,5 @@
+// Dispatches project init, bind, doctor and check.
+// Refuses obsolete init options; see `src/project/readiness.rs`.
 //! CLI commands that initialize, bind, and diagnose a project layout.
 
 use crate::{
@@ -288,7 +290,7 @@ pub(super) fn validated_configuration(loaded: &config::Loaded) -> Result<Value, 
     Ok(json!({"valid": true, "mode": mode, "projectId": loaded.project_id, "warnings": warnings}))
 }
 
-fn is_empty_starter(
+pub(crate) fn is_empty_starter(
     agents: &std::collections::BTreeMap<String, crate::config::types::AgentConfig>,
 ) -> bool {
     !agents.is_empty()

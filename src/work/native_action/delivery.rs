@@ -1,3 +1,5 @@
+// Rechecks delivered assignment facts before a native launch.
+// Refuses changed assignments or delivery facts; see `src/work/native_action.rs`.
 //! Recheck the exact delivered assignment before admitting a native result.
 
 use crate::{config::Loaded, evidence::hash, work};

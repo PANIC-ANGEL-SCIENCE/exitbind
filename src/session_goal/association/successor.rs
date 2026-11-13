@@ -1,3 +1,5 @@
+// Admits and replays native Work successor associations.
+// Requires an open Goal for supersession; see `src/session_goal/association.rs`.
 //! Admission and exact replay for a native Work successor.
 
 use super::*;

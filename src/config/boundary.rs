@@ -1,3 +1,5 @@
+// Applies run-scoped filesystem boundaries within configured maxima.
+// Refuses extra manifest fields; see `src/config/mod.rs`.
 //! Run-scoped filesystem boundaries narrowed from each configured agent maximum.
 
 use crate::{

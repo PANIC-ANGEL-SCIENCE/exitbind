@@ -1,3 +1,5 @@
+// Manages named requirements in the canonical Goal stream.
+// Bounds requirement source bytes; see `src/session_goal.rs`.
 //! Agreed named requirements in the existing canonical goal stream.
 //!
 //! Coverage is a Lead decision. Satisfaction is derived from current observed

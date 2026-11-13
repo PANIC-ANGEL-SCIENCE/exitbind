@@ -1,3 +1,5 @@
+// Validates check and protection event bindings.
+// Refuses invalid observation bindings; see `src/run/gate/value.rs`.
 //! Check and protection event validation and binding.
 
 use super::*;

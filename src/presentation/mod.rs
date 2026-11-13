@@ -1,3 +1,5 @@
+// Renders validated run packets and shared CLI text.
+// Escapes control characters in supplied text; see `src/main.rs`.
 //! Read-only CLI presentation of already validated run packets.
 
 use serde_json::Value;

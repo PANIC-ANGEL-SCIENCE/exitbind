@@ -1,3 +1,5 @@
+// Selects native-host challenges and evaluates reported probes.
+// Bounds challenge questions and rejects control characters; see `src/work/mod.rs`.
 //! Conditional native-host challenges and applicability of reported probes.
 //! Reports remain in ordinary immutable Work artifacts. They grant no rights.
 use crate::{config::Loaded, evidence::hash, run::RunSnapshot};

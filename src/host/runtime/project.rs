@@ -1,3 +1,5 @@
+// Resolves the project configuration for a host hook.
+// Leaves an unusable Goal-owner root unresolved; see `src/host/runtime.rs`.
 //! Which project configuration a hook event uses.
 //!
 //! Every event the dispatcher handles resolves here. The project that owns

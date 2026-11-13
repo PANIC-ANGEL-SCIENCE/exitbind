@@ -1,3 +1,5 @@
+// Delivers current role-scoped context to a native assignment.
+// Refuses a changed role or agent; see `src/project/mod.rs`.
 //! Current, role-scoped context delivered to a native assignment.
 //!
 //! This is a launch-time projection.  It carries no authority and never

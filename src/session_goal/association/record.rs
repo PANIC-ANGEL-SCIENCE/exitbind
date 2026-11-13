@@ -1,3 +1,5 @@
+// Reads context-only Work associations from Goal records.
+// Refuses unsupported association protocols; see `src/session_goal/association.rs`.
 use super::*;
 fn has_extension(record: &Value) -> bool {
     record.get("workAssociationProtocol").is_some() || record.get("workAssociations").is_some()

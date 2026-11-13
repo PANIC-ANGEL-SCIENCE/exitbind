@@ -1,3 +1,5 @@
+// Maintains continuation facts on canonical session-Goal history.
+// Requires unique exact requirement excerpts; see `src/session_goal.rs`.
 //! One-work continuation facts on the existing canonical session-goal history.
 //! Native session handles are observations; the work ID and the goal revision
 //! remain the portable identity. This surface assumes one authorized local

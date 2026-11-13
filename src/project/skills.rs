@@ -1,3 +1,5 @@
+// Activates, refreshes and diagnoses managed project skills.
+// Requires an asset parent directory; see `src/project/mod.rs`.
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};

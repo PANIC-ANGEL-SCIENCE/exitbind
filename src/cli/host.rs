@@ -1,3 +1,5 @@
+// Presents host bridge status and installation commands.
+// Refuses unknown host actions; see `src/cli/mod.rs`.
 //! Host bridge status and installation CLI presentation.
 
 use super::{args, positional, print_json, Arguments, HOST_ACTIONS};

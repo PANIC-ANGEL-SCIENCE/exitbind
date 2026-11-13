@@ -1,3 +1,5 @@
+// Classifies the Git worktree before project initialization.
+// Reports failed root resolution; see `src/project/mod.rs`.
 //! Read-only Git classification before initialization or private state writes.
 
 use std::path::{Path, PathBuf};

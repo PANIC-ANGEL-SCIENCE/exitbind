@@ -1,3 +1,5 @@
+// Parses bounded native Codex JSONL observations.
+// Refuses malformed stream records; see `src/host/codex_exec.rs`.
 //! Bounded projection of a native JSONL turn.
 
 use super::*;

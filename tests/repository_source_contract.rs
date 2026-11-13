@@ -39,6 +39,8 @@ mod rust_source;
 mod session_adoption;
 #[path = "repository_source_contract/session_record_lock.rs"]
 mod session_record_lock;
+#[path = "repository_source_contract/source_headers.rs"]
+mod source_headers;
 #[path = "repository_source_contract/source_scanner.rs"]
 mod source_scanner;
 #[path = "support/mod.rs"]

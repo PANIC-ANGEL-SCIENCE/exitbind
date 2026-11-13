@@ -1,3 +1,5 @@
+// Renders native Goal status for host display surfaces.
+// Reports an unavailable display owner; see `src/session_goal.rs`.
 //! Human display state for the native host surfaces (status line, task list,
 //! native goal). One small JSON file per native session is rewritten from the
 //! Goal ledger after each ledger command; display readers open only this file

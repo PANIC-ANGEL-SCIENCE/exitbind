@@ -1,3 +1,5 @@
+// Stores task choices in the existing state artifact namespace.
+// Refuses incompatible choice format or namespace; see `src/memory/mod.rs`.
 //! Machine-owned task choices in the existing state artifact owner. No new rights ledger.
 use super::contextual::{self, Choice, Context, Resource, CHOICES, CONTEXT_BYTES};
 use crate::{

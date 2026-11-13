@@ -1,3 +1,5 @@
+// Derives next action, residual and presentation from one Run snapshot.
+// The ordinary route captures one revision for all three; see `src/work/mod.rs`.
 use super::*;
 
 /// Derive the next action, residual packet and presentation from one captured

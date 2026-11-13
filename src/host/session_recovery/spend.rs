@@ -1,3 +1,5 @@
+// Carries saved Lead decisions into the matching Work act.
+// Persists their removal only after the act is recorded; see `src/host/session_recovery.rs`.
 //! A Lead act spends the saved Lead decisions bound to the Work it acts on:
 //! the act records them after the Lead's own text, and they leave this
 //! native session's record under its lock. Decisions bound to another Work,

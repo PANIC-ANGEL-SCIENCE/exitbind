@@ -1,3 +1,5 @@
+// Classifies agent configuration fields carrying lesson authority.
+// Refuses non-object configuration; see `src/memory/mod.rs`.
 //! Which agent configuration fields carry lesson authority.
 //!
 //! Every comparison that decides whether carried project lessons stay

@@ -1,3 +1,5 @@
+// Validates native role outcome and result text contracts.
+// Refuses unsupported native roles; see `src/kernel/mod.rs`.
 //! The role/result vocabulary shared by host-managed and native deliveries.
 //!
 //! The run reducer remains the authority for transitions.  This contract only

@@ -1,3 +1,5 @@
+// Recovers accounting from the exact committed Work owner.
+// Refuses a mismatched start claim; see `src/project/continuation/mod.rs`.
 //! Exact committed-owner readback repairs accounting metadata, never execution.
 use super::*;
 

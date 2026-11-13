@@ -1,3 +1,5 @@
+// Computes SHA-256 for bytes, files and canonical JSON.
+// Canonical object keys are sorted before hashing; see `src/evidence/mod.rs`.
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::fs;

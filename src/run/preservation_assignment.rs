@@ -1,3 +1,5 @@
+// Projects recorded preservation policy into role packets.
+// The projection labels its enforcement as recorded, not enforced; see `src/run/mod.rs`.
 //! One canonical projection of a recorded preservation policy for role packets.
 
 use serde_json::{json, Value};

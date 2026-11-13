@@ -1,3 +1,5 @@
+// Dispatches native session recovery inspection and recording.
+// Refuses unsupported session actions; see `src/cli/mod.rs`.
 //! `session recovery show|record`: the native session's recovery read model
 //! and its record, including the Lead's pause form (`--step`, `--decision`).
 

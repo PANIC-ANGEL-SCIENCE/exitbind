@@ -1,3 +1,5 @@
+// Previews or applies project setup from selected owner facts.
+// Refuses unsafe native projection conflicts; see `src/project/mod.rs`.
 //! Assemble a project configuration from owner-approved facts.
 //!
 //! `init` remains the compatibility-preserving, no-overwrite initializer. This

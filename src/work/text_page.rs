@@ -1,3 +1,5 @@
+// Renders readable page content for bounded text references.
+// Refuses unavailable page offsets; see `src/work/mod.rs`.
 //! Readable page content, so a reader never needs a hex decoder.
 //!
 //! UTF-8 work-section pages carry their exact bytes as `contentText`; evidence

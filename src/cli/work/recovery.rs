@@ -1,3 +1,5 @@
+// Parses recovery commands for checks and interrupted pre-return.
+// Refuses unknown recovery commands; see `src/cli/work.rs`.
 //! Recovery command parsing for existing checks and interrupted pre-return.
 use super::*;
 

@@ -1,3 +1,5 @@
+// Writes and verifies Exit Path evidence receipts.
+// Refuses receipts without worker completion; see `src/evidence/mod.rs`.
 use super::receipt_path::{is_relative_path, receipt_path, state_relative};
 use super::{harness, hash};
 use crate::config::{self, Loaded};

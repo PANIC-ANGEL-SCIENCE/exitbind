@@ -1,3 +1,5 @@
+// Manages project lessons through the opted-in memory lifecycle.
+// Refuses acquisition during lesson mutation; see `src/memory/mod.rs`.
 //! Durable project facts reuse the opted-in memory lifecycle, never Work authority.
 use crate::{config::Loaded, evidence::hash, project::path};
 use serde::Deserialize;

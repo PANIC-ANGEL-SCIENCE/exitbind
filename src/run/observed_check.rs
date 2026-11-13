@@ -1,3 +1,5 @@
+// Executes and records observed check responses.
+// Refuses a new observation for a terminal run; see `src/run/mod.rs`.
 //! Execution, capture, and committed response for an observed check.
 
 use super::capture::{

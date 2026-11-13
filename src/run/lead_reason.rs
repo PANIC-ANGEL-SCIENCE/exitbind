@@ -1,3 +1,5 @@
+// Records and validates the Lead reason attached to a submission.
+// Bounds reason bytes before mutation; see `src/run/mod.rs`.
 //! The Lead's reason on its `submit` event.
 //!
 //! A Lead act records the text the Lead gave with `--reason`, followed by the

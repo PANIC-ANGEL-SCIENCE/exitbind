@@ -1,3 +1,5 @@
+// Routes Work challenge preparation and validation.
+// Bounds validation input reads; see `src/cli/work.rs`.
 use super::*;
 use std::io::Read;
 

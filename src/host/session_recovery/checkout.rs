@@ -1,3 +1,5 @@
+// Reports dirty product worktrees for a resumed session.
+// Limits inspected worktrees and reports additional dirty trees; see `src/host/session_recovery.rs`.
 //! Product checkout trees with uncommitted changes, named after a resume.
 //!
 //! A host resume can end a worker that left edits behind. This reads the

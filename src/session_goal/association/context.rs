@@ -1,3 +1,5 @@
+// Resolves the context of a Goal-associated Work successor.
+// Refuses malformed successor start events; see `src/session_goal/association.rs`.
 use super::super::native::Access;
 use super::*;
 use serde_json::json;

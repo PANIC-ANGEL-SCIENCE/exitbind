@@ -1,3 +1,5 @@
+// Records Lead recovery of known-ended uncommitted observations.
+// Bounds recovery decisions to 32768 bytes; see `src/run/mod.rs`.
 //! Explicit Lead-reported recovery of a known-ended, uncommitted observation.
 //! This records failure, not observed check evidence or execution authority.
 use super::*;

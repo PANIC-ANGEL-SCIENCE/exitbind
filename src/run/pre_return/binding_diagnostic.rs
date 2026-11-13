@@ -1,3 +1,5 @@
+// Names changed pre-return binding components and a readback route.
+// Refusals do not record a return; see `src/run/pre_return.rs`.
 //! Bounded component names for a pre-return binding refusal.
 //! Exact saved values remain available through the read-only attempt route.
 use crate::config::Loaded;

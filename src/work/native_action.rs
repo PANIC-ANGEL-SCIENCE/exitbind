@@ -1,3 +1,5 @@
+// Coordinates execution and recovery for native Work actions.
+// Requires a role and agent on the current assignment; see `src/work/action.rs`.
 #[path = "native_action/continuation.rs"]
 pub(super) mod continuation;
 #[path = "native_action/delivery.rs"]

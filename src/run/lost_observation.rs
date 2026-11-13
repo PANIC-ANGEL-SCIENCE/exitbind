@@ -1,3 +1,5 @@
+// Records configured-Lead reports of lost observation callers.
+// Refuses malformed bounded decisions; see `src/run/mod.rs`.
 //! Configured-Lead report of a lost observation caller. This is not a native
 //! failure or a check result; the execution and its effects remain unknown.
 use super::*;

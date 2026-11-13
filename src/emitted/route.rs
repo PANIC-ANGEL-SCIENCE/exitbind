@@ -1,3 +1,5 @@
+// Builds and renders typed executable routes.
+// Marks an unresolved complete route unavailable; see `src/emitted.rs`.
 //! The typed route: the one value a route-carrying surface accepts. A route
 //! is built here from its command words and the configuration it reads, and
 //! leaves this module only through its renderers: the full argv, the bounded
@@ -7,6 +9,127 @@
 
 use serde_json::{json, Value};
 use std::path::Path;
+
+/// Complete already-rendered typed routes for a public step response. User
+/// evidence is not passed here; the caller selects only route-bearing views.
+pub(crate) fn complete_known(value: &mut Value, config: &Path) -> bool {
+    let mut complete = true;
+    match value {
+        Value::Object(object) => {
+            let same_executable = object
+                .get("sameExecutableRequired")
+                .and_then(Value::as_bool);
+            let same_config = object.get("sameConfigRequired").and_then(Value::as_bool);
+            if let (Some(needs_executable), Some(needs_config)) = (same_executable, same_config) {
+                let key = if object.get("argv").is_some_and(Value::is_array) {
+                    Some("argv")
+                } else if object.get("command").is_some_and(Value::is_array) {
+                    Some("command")
+                } else {
+                    None
+                };
+                if let Some(key) = key {
+                    let argv = object[key].as_array().expect("checked array");
+                    let mut words = argv
+                        .iter()
+                        .map(Value::as_str)
+                        .map(|v| v.map(str::to_owned))
+                        .collect::<Option<Vec<_>>>();
+                    if let Some(words) = words.as_mut().filter(|words| !words.is_empty()) {
+                        if needs_config && words.last().map(String::as_str) == Some("--config") {
+                            if let Some(path) = config.to_str() {
+                                words.push(path.to_owned());
+                                object.insert("sameConfigRequired".into(), json!(false));
+                            }
+                        }
+                        if needs_executable {
+                            if let Ok(executable) = super::executable() {
+                                words.insert(0, executable);
+                                object.insert("sameExecutableRequired".into(), json!(false));
+                            }
+                        }
+                        if object["sameConfigRequired"] == false
+                            && object["sameExecutableRequired"] == false
+                        {
+                            object.insert(key.into(), json!(words));
+                        } else {
+                            complete = false;
+                            object.remove(key);
+                            object.insert("available".into(), json!(false));
+                            object.insert(
+                                "unavailableReason".into(),
+                                json!("complete route unavailable"),
+                            );
+                        }
+                    } else {
+                        complete = false;
+                        object.remove(key);
+                        object.insert("available".into(), json!(false));
+                        object.insert(
+                            "unavailableReason".into(),
+                            json!("complete route unavailable"),
+                        );
+                    }
+                } else if object.contains_key("argv") || object.contains_key("command") {
+                    complete = false;
+                    object.remove("argv");
+                    if object.get("command").is_some_and(Value::is_null) {
+                        object.remove("command");
+                    }
+                    object.insert("available".into(), json!(false));
+                    object.insert(
+                        "unavailableReason".into(),
+                        json!("complete route unavailable"),
+                    );
+                }
+            }
+            for child in object.values_mut() {
+                complete &= complete_known(child, config);
+            }
+        }
+        Value::Array(values) => {
+            for child in values {
+                complete &= complete_known(child, config);
+            }
+        }
+        _ => {}
+    }
+    complete
+}
+
+/// Omit whole typed commands when their complete paths do not fit a public
+/// view. Never leave an argv prefix for the reader to mistake for a command.
+pub(crate) fn omit_commands(value: &mut Value) {
+    match value {
+        Value::Object(object) => {
+            if object
+                .get("sameExecutableRequired")
+                .is_some_and(Value::is_boolean)
+                && object
+                    .get("sameConfigRequired")
+                    .is_some_and(Value::is_boolean)
+            {
+                let omitted = object.remove("argv").is_some()
+                    | object.get("command").is_some_and(Value::is_array);
+                if object.get("command").is_some_and(Value::is_array) {
+                    object.remove("command");
+                }
+                if omitted {
+                    object.insert("available".into(), json!(false));
+                    object.insert(
+                        "unavailableReason".into(),
+                        json!("complete route omitted at the response bound"),
+                    );
+                }
+            }
+            for child in object.values_mut() {
+                omit_commands(child);
+            }
+        }
+        Value::Array(values) => values.iter_mut().for_each(omit_commands),
+        _ => {}
+    }
+}
 
 /// A command the product prints for a role to run.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -387,6 +510,29 @@ mod tests {
             Route::reprinted(route.partial_suffix(), Path::new("/c/exitbind.json")).unwrap(),
             route
         );
+    }
+
+    #[test]
+    fn displayed_typed_route_restores_only_known_transport_arguments() {
+        let route =
+            Route::new(["work", "next", "smw_1"]).config_text("/tmp/quoted path/config.json");
+        let mut displayed = route.within(10).argv_json();
+        complete_known(&mut displayed, Path::new("/tmp/quoted path/config.json"));
+        assert_eq!(displayed["argv"], json!(route.full_argv().unwrap()));
+        assert_eq!(displayed["sameConfigRequired"], false);
+        assert_eq!(displayed["sameExecutableRequired"], false);
+        let mut data = json!({"argv":["not a typed route"], "sameConfigRequired":true});
+        let original = data.clone();
+        complete_known(&mut data, Path::new("/tmp/config.json"));
+        assert_eq!(data, original);
+        let mut malformed = json!({"argv":["work", "next"], "sameConfigRequired":true,
+            "sameExecutableRequired":true});
+        assert!(!complete_known(
+            &mut malformed,
+            Path::new("/tmp/config.json")
+        ));
+        assert!(malformed.get("argv").is_none());
+        assert_eq!(malformed["available"], false);
     }
 
     #[test]

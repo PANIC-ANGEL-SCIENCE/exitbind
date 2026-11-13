@@ -1,3 +1,5 @@
+// Pages retained native observations that earned no credit.
+// Requires source identity and read proof; see `src/work/native_action.rs`.
 //! Read-only pages for an owned native observation which earned no credit.
 
 use super::*;

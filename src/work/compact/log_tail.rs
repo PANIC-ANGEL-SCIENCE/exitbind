@@ -1,3 +1,5 @@
+// Retains a bounded check-log route in compact Work output.
+// Requires a check-log reference with a bounded tail; see `src/work/compact.rs`.
 //! Retain a bounded check-log route when large compact projections fall back.
 
 use serde_json::{json, Value};

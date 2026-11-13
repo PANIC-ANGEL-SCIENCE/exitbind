@@ -1,3 +1,5 @@
+// Assembles and measures the selected native child delivery.
+// Refuses a missing child callback configuration; see `src/host/runtime.rs`.
 //! Assemble and measure the same selected child text before and at delivery.
 
 use super::{context, project, MAX_PROFILE};

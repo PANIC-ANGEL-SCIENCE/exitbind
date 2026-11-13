@@ -1,3 +1,5 @@
+// Lists bounded candidate children for the Linux observer.
+// Refuses an oversized child list; see `src/run/capture_supervisor/linux/runtime.rs`.
 //! Bounded candidates only. Every action still requires immediate waitid.
 use super::*;
 const MAX_ENTRIES: usize = 4096;

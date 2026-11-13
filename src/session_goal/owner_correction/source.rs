@@ -1,3 +1,5 @@
+// Binds recorded source snapshots to confined target files.
+// Requires readable regular files without symlinks; see `src/session_goal/owner_correction.rs`.
 //! Bind recorded source snapshots to confined, byte-identical target files.
 
 use super::model::{decisions, SourceRelocation};

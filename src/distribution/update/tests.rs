@@ -1,3 +1,5 @@
+// Tests release-version parsing and ordering.
+// Cases reject malformed version components; see `src/distribution/update.rs`.
 use super::*;
 use std::io::Write;
 use std::time::Duration;

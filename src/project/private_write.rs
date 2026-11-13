@@ -1,3 +1,5 @@
+// Writes private project-owned files through a confined writer.
+// Refuses to overwrite different existing bytes; see `src/project/mod.rs`.
 //! The one writer for product files under a root: plan cards, task-card
 //! snapshots, carried lesson sources and the stamped configuration copy.
 //! Before a file is written its directory is added to the local Git exclude

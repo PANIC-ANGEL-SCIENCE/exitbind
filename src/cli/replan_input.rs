@@ -1,3 +1,5 @@
+// Reads bounded, regular re-plan input and resolves its CLI fields.
+// Refuses file and inline re-plan fields together; see `src/cli/mod.rs`.
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read};
 use std::os::unix::fs::OpenOptionsExt;

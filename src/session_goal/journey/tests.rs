@@ -1,3 +1,5 @@
+// Tests native journey protocol and reserved markers.
+// Cases reject unknown fields; see `src/session_goal/journey.rs`.
 use serde_json::json;
 
 fn basis_text(constraints: Vec<String>) -> String {

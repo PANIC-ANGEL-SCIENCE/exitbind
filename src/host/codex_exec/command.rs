@@ -1,3 +1,5 @@
+// Builds Codex commands and classifies their Git launch directory.
+// Refuses unresolved Git markers; see `src/host/codex_exec.rs`.
 //! Native command construction and read-only Git launch classification.
 
 use super::{controlled, Request, RunError};

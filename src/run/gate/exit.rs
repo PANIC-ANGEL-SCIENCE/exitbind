@@ -1,3 +1,5 @@
+// Computes typed run exit state and canonical acceptance.
+// Requires reviewer approval when applicable; see `src/run/gate/mod.rs`.
 //! Typed exit-state kernel.
 //!
 //! This module is the only owner of current-attempt evidence, subject

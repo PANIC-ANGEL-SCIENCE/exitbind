@@ -1,3 +1,5 @@
+// Routes review after the recorded check result is known.
+// Refuses changes after a terminal run state; see `src/run/state.rs`.
 //! Check events change review routing only after the recorded result is known.
 
 use serde_json::{json, Value};

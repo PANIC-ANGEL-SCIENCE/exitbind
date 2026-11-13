@@ -1,3 +1,5 @@
+// Tests novelty classification of observed checks.
+// A repeated pass remains duplicate in the fixture; see `src/run/state/observation_novelty.rs`.
 //! R55 F7: for every shape of observed check the governor can answer, whether
 //! the governor appends new information, and which event it appends.
 //!

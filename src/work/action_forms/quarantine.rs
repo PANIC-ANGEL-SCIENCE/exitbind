@@ -1,3 +1,5 @@
+// Projects verification-only Work action forms.
+// Invalid quarantine modes expose no action choices; see `src/work/action_forms.rs`.
 //! Verification-only forms cannot advertise an ordinary mutation or successor.
 use super::*;
 

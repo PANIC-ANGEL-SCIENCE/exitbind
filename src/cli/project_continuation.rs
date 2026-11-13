@@ -1,3 +1,5 @@
+// Parses explicit project-continuation commands.
+// Refuses unknown advance actions; see `src/cli/project.rs`.
 //! Wiring for the explicit project-continuation protocol.
 use super::{args, print_json, Arguments};
 use crate::{config::Loaded, project::continuation};

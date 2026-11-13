@@ -1,3 +1,5 @@
+// Defines project roots and local bindings for portable and local modes.
+// Refuses unrecognized project modes; see `src/project/mod.rs`.
 //! Typed project roots and machine-local bindings for portable and local modes.
 
 use serde_json::{json, Value};

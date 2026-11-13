@@ -1,3 +1,5 @@
+// Exports a host-reported native session ID to the host environment file.
+// Declines unsafe IDs and non-absolute paths; see `src/host/mod.rs`.
 //! Expose the host-reported native session ID to later shell commands.
 //!
 //! Claude Code passes `session_id` to SessionStart hooks and lets them persist

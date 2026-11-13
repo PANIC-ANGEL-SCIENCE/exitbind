@@ -1,3 +1,5 @@
+// Executes the historical uncaptured check route.
+// Requires a POSIX host for observation; see `src/run/capture.rs`.
 //! Uncaptured historical execution; current observed logs use capture.rs.
 use super::*;
 

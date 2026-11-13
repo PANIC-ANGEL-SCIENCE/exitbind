@@ -1,3 +1,5 @@
+// Renders bounded SessionStart Work and checkout recovery text.
+// Text shortening preserves UTF-8 boundaries; see `src/host/session_recovery.rs`.
 //! Bounded SessionStart text for the Works derived from the native Goal's
 //! journey and the checkout trees that hold uncommitted changes.
 //!

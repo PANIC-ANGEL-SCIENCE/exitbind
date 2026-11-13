@@ -1,3 +1,5 @@
+// Binds canonical configuration identities for Goal recovery.
+// Requires UTF-8 canonical paths; see `src/session_goal/recovery.rs`.
 //! Exact canonical configuration identities used by Goal recovery.
 
 use super::ConfigBinding;

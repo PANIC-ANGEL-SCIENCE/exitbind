@@ -1,3 +1,5 @@
+// Loads and stages host hook settings within the selected root.
+// Refuses empty or NUL-containing roots; see `src/host/mod.rs`.
 use serde_json::{json, Value};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};

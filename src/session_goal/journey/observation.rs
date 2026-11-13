@@ -1,3 +1,5 @@
+// Rechecks lineage and Goal facts during journey projection.
+// Refuses changed owner, session or history; see `src/session_goal/journey.rs`.
 //! Bound one Work's journey projection to rechecked lineage and Goal facts.
 use super::*;
 use crate::run::ledger::observation::Observation;

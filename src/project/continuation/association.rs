@@ -1,3 +1,5 @@
+// Validates continuation markers against claims and Work lineage.
+// Refuses noncanonical claim roots; see `src/project/continuation/mod.rs`.
 //! Validate a frozen marker against its actual claim and canonical Work lineage.
 use super::{control, journal};
 use crate::{config::Loaded, evidence::hash, run::ledger};

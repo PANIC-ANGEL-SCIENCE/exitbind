@@ -1,3 +1,5 @@
+// Summarizes prepared children and retained-result recovery routes.
+// Reports result byte counts without result text; see `src/session_goal/continuity/capture.rs`.
 //! The read-only view of a Work's prepared children: the summary the
 //! continuation view and the child-blocked refusals read, and the
 //! `work child recover` line for a retained result.

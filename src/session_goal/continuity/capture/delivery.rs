@@ -1,3 +1,5 @@
+// Carries a presented child form through its governor grant.
+// Refuses ambiguous permit transitions; see `src/session_goal/continuity/capture.rs`.
 //! Carry one actually presented child form through its exact governor grant.
 
 use super::{actor_checks, context, load, text, with_intents};

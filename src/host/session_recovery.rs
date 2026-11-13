@@ -1,3 +1,5 @@
+// Connects native session recovery hint and owner modules.
+// This file contains declarations and re-exports; see `src/host/mod.rs`.
 //! Bounded, owner-checked recovery hints for native host session continuation.
 //!
 //! The hint is private navigation metadata. The native Goal journal remains

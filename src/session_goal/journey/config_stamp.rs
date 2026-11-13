@@ -1,3 +1,5 @@
+// Resolves a journey member's stamped configuration for evidence reads.
+// Refuses authority changes between stamps; see `src/session_goal/journey.rs`.
 //! A journey member's configuration stamp across a configuration change.
 //!
 //! A member is stamped with the configuration bytes current when it was

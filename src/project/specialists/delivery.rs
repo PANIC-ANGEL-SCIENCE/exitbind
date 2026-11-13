@@ -1,3 +1,5 @@
+// Resolves specialist eligibility and experience for actual assignments.
+// Bounds recalled experience bytes; see `src/project/specialists.rs`.
 //! Shared actual-assignment eligibility; routing and native consumers use these same bytes.
 use super::*;
 

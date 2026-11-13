@@ -1,3 +1,5 @@
+// Runs a current printed Work form with supplied placeholders.
+// Requires its current binding and choice; see `src/cli/work.rs`.
 //! `work fill`: run one current printed form with its placeholders filled.
 use super::*;
 use std::collections::BTreeMap;

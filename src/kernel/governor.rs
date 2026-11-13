@@ -1,3 +1,5 @@
+// Defines deterministic governor phases and mutation transitions.
+// Refuses mutation until required re-plan or evidence; see `src/kernel/mod.rs`.
 //! Typed deterministic core for bounded low-information iteration.
 //!
 //! Persistence, assignment binding, and artifact verification stay in the run
