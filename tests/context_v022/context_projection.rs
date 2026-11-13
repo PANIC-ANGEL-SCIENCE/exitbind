@@ -2,10 +2,15 @@ use super::*;
 
 fn assert_embedded_memory_delivery(response: &Value, agent: &str) -> Value {
     let delivery = &response["currentDelivery"];
-    assert_eq!(delivery["complete"], true, "{response}");
-    let recipient = &delivery["recipientContext"];
-    assert_eq!(recipient["agent"], agent);
-    let guidance = &recipient["guidance"];
+    assert_eq!(delivery["kind"], "work_actor_context", "{response}");
+    assert_eq!(delivery["complete"], false);
+    assert_eq!(delivery["requiredContentComplete"], true);
+    assert_eq!(delivery["work"], response["work"]);
+    assert_eq!(delivery["binding"], response["current"]["binding"]);
+    assert_eq!(delivery["recipient"], response["current"]["recipient"]);
+    assert_eq!(delivery["recipient"]["agent"], agent);
+    assert_no_transport_paths(delivery);
+    let guidance = &delivery["instructions"]["guidance"];
     assert_no_transport_paths(guidance);
     let item = guidance["items"]
         .as_array()
@@ -18,7 +23,33 @@ fn assert_embedded_memory_delivery(response: &Value, agent: &str) -> Value {
     assert!(reference["itemId"].is_string());
     assert!(reference["sourceSha256"].is_string());
     assert!(reference["ledgerHeadSha256"].is_string());
+    assert_eq!(
+        reference["sourceSha256"],
+        format!("{:x}", Sha256::digest(b"accepted invariant\n"))
+    );
     reference.clone()
+}
+
+fn assert_memory_continuity(response: &Value, previous: &Value) {
+    let delivery = &response["currentDelivery"];
+    assert_eq!(delivery["kind"], "work_context_continuity");
+    assert_eq!(delivery["complete"], false);
+    assert_eq!(delivery["work"], previous["currentDelivery"]["work"]);
+    assert_eq!(delivery["binding"], response["current"]["binding"]);
+    assert_eq!(
+        delivery["baseBinding"],
+        previous["currentDelivery"]["binding"]
+    );
+    assert_eq!(
+        delivery["recipient"],
+        previous["currentDelivery"]["recipient"]
+    );
+    assert_eq!(delivery["recipient"], response["current"]["recipient"]);
+    assert_eq!(
+        delivery["contextIdentity"],
+        previous["currentDelivery"]["contextIdentity"]
+    );
+    assert_no_transport_paths(delivery);
 }
 
 fn return_with_output(
@@ -100,36 +131,34 @@ fn agent_facing_projection_strips_memory_transport_paths() {
     let selected = assert_embedded_memory_delivery(&started, "lead");
     assert_eq!(selected, started["next"]["packet"]["memoryReferences"][0]);
 
-    // The outer preparation exposes states, while the typed delivery retains
-    // the profile and checker identities. Neither is a memory reference.
-    let profile = &started["currentDelivery"]["recipientContext"]["profile"];
-    assert_eq!(profile["path"], "exitbind/agents/lead.md");
+    // The ordinary actor projection carries the profile bytes without their
+    // path. Explicit detail remains the typed path and checker observation.
+    let direct = fixture.json(&["work", "detail", &work, "--json"]);
+    let profile = &started["currentDelivery"]["instructions"]["profile"];
+    let direct_profile = &direct["recipientContext"]["profile"];
+    assert!(profile.get("path").is_none());
+    assert_eq!(direct_profile["path"], "exitbind/agents/lead.md");
     assert_eq!(profile["complete"], true);
-    assert!(profile["sha256"].is_string());
+    for field in ["content", "sha256", "bytes", "complete"] {
+        assert_eq!(profile[field], direct_profile[field]);
+    }
+    let content = profile["content"].as_str().unwrap().as_bytes();
+    assert_eq!(profile["bytes"], content.len());
+    assert_eq!(profile["sha256"], format!("{:x}", Sha256::digest(content)));
     let checker = &started["beginPreparation"]["checker"];
     assert_eq!(checker["program"], "true");
     assert_eq!(checker["state"], "runnable");
     assert!(checker.get("path").is_none());
     assert!(checker.get("workingDirectory").is_none());
-    let delivered_checker =
-        &started["currentDelivery"]["sections"]["assignment"]["checkPreparation"];
+    let delivered_checker = &started["currentDelivery"]["checkPreparation"];
     assert_eq!(delivered_checker["program"], "true");
     assert_eq!(delivered_checker["state"], "runnable");
-    let checker_path = delivered_checker["path"].as_str().unwrap();
+    assert!(delivered_checker.get("path").is_none());
+    let checker_path = direct["sections"]["assignment"]["checkPreparation"]["path"]
+        .as_str()
+        .unwrap();
     assert!(std::path::Path::new(checker_path).is_absolute());
-    let mut transport_checked = started.clone();
-    for pointer in [
-        "/currentDelivery/recipientContext/profile",
-        "/currentDelivery/sections/assignment/checkPreparation",
-    ] {
-        transport_checked
-            .pointer_mut(pointer)
-            .unwrap()
-            .as_object_mut()
-            .unwrap()
-            .remove("path");
-    }
-    assert_no_transport_paths(&transport_checked);
+    assert_no_transport_paths(&started);
     // Ensure the strict selected-memory scan still catches a real leak.
     for key in ["ledgerPath", "sourcePath", "path", "root"] {
         let mut leaked = selected.clone();
@@ -139,7 +168,6 @@ fn agent_facing_projection_strips_memory_transport_paths() {
 
     // Explicit detail retains its established native reference shape, while
     // the public copy carries the same body and stable selected identity.
-    let direct = fixture.json(&["work", "detail", &work, "--json"]);
     let direct_item = &direct["recipientContext"]["guidance"]["items"][0];
     assert_eq!(direct_item["reference"]["ledgerPath"], ledger);
     assert_eq!(direct_item["reference"]["sourcePath"], "memory.md");
@@ -169,7 +197,7 @@ fn agent_facing_projection_strips_memory_transport_paths() {
     );
     assert!(scoped.status.success(), "{scoped:?}");
     let scoped: Value = serde_json::from_slice(&scoped.stdout).unwrap();
-    assert_embedded_memory_delivery(&scoped, "worker");
+    let worker_memory = assert_embedded_memory_delivery(&scoped, "worker");
     let next = fixture.json(&["work", "next", &work]);
 
     assert_no_transport_paths(&next);
@@ -186,7 +214,47 @@ fn agent_facing_projection_strips_memory_transport_paths() {
         "Verify memory delivery",
     ]);
     assert_eq!(permit["allowed"], true);
-    assert_embedded_memory_delivery(&permit, "worker");
+    match permit["currentDelivery"]["kind"].as_str() {
+        Some("work_context_continuity") => {
+            assert_memory_continuity(&permit, &scoped);
+            for pointer in [
+                "/binding",
+                "/baseBinding",
+                "/recipient/agent",
+                "/contextIdentity/recipientSha256",
+            ] {
+                let mut forged = permit.clone();
+                *forged["currentDelivery"].pointer_mut(pointer).unwrap() = json!("forged");
+                assert!(
+                    std::panic::catch_unwind(|| assert_memory_continuity(&forged, &scoped))
+                        .is_err()
+                );
+            }
+        }
+        Some("work_actor_context") => {
+            let delivered = assert_embedded_memory_delivery(&permit, "worker");
+            assert_eq!(delivered, worker_memory);
+            assert_eq!(
+                permit["currentDelivery"]["recipient"],
+                scoped["currentDelivery"]["recipient"]
+            );
+            for pointer in [
+                "/binding",
+                "/recipient/agent",
+                "/instructions/guidance/items/0/reference/sourceSha256",
+                "/instructions/guidance/items/0/content",
+            ] {
+                let mut forged = permit.clone();
+                *forged["currentDelivery"].pointer_mut(pointer).unwrap() = json!("forged");
+                assert!(std::panic::catch_unwind(|| assert_embedded_memory_delivery(
+                    &forged, "worker"
+                ))
+                .is_err());
+            }
+        }
+        other => panic!("worker instructions or verified continuity missing: {other:?}"),
+    }
+    assert_eq!(worker_memory["sourceSha256"], selected["sourceSha256"]);
     let completed =
         return_with_output(&fixture, &work, assignment, "completed", b"worker result\n");
     assert!(completed.status.success(), "{completed:?}");

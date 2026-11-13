@@ -55,6 +55,12 @@ pub(crate) fn transport_semantics(value: &Value) -> Value {
     if let Some(next) = value.get("next").filter(|next| next.is_object()) {
         result.insert("next".into(), minimal_next(next));
     }
+    if let Some(help) = value
+        .get("humanHelp")
+        .filter(|help| help["preservationAssignment"].is_object())
+    {
+        result.insert("humanHelp".into(), minimal_human_help(help));
+    }
     if let Some(presentation) = value
         .get("presentation")
         .filter(|presentation| presentation.is_object())
@@ -114,6 +120,9 @@ pub(crate) fn semantic_partial(value: &Value, route: Value) -> Result<Value, Str
             partial[key] = candidate.clone();
         }
     }
+    if let Some(help) = semantic.get("humanHelp") {
+        partial["humanHelp"] = help.clone();
+    }
     for key in ["effectiveAction", "discovery", "history"] {
         if !fits(&partial)? && partial.as_object_mut().unwrap().remove(key).is_some() {
             partial["omitted"].as_array_mut().unwrap().push(json!(key));
@@ -145,7 +154,7 @@ pub(crate) fn semantic_partial(value: &Value, route: Value) -> Result<Value, Str
                 .push(json!("pauseRecord"));
         }
     }
-    for key in ["presentation", "current", "next", "selection"] {
+    for key in ["presentation", "current", "next", "selection", "humanHelp"] {
         if !fits(&partial)? && partial.as_object_mut().unwrap().remove(key).is_some() {
             partial["omitted"].as_array_mut().unwrap().push(json!(key));
         }

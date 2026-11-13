@@ -893,8 +893,15 @@ fn navigation_step(loaded: &config::Loaded, work: &str, original: &Value) -> Opt
     let current = navigation_current(&original["next"]["current"])?;
     let mut next = crate::work::compact::compact_next(&original["next"]);
     if let Some(next) = next.as_object_mut() {
+        let preservation_omitted = next
+            .get("packet")
+            .is_some_and(|packet| packet["preservationAssignment"].is_object());
         next.remove("packet");
         next.remove("goal");
+        if preservation_omitted {
+            next.insert("requiresExpansion".into(), json!(true));
+            next.insert("constraintsOmitted".into(), json!(true));
+        }
         if let Some(progress) = next.get_mut("progress").and_then(Value::as_object_mut) {
             if progress.keys().all(|key| {
                 matches!(

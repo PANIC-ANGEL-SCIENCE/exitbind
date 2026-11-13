@@ -7,6 +7,55 @@ use serde_json::json;
 use std::path::Path;
 
 #[test]
+fn transport_partial_keeps_preservation_summary_and_explicit_omission() {
+    let response = json!({"work":"smw_work", "status":"current",
+        "current":{"binding":"binding", "actionForm":{"state":"initial_scope"}},
+        "next":{"action":"lead_decision", "assignment":"sma_scope",
+            "requiresExpansion":true, "constraintsOmitted":true},
+        "humanHelp":{"ownerDecision":"not_required", "whatHappened":"scope is pending",
+            "preservationAssignment":{"route":"FORMAL", "quality":"required",
+                "requirements":[{"command":"x".repeat(9_000)}]}}});
+    let recovery = json!({"command":["exitbind","work","detail","smw_work","--json","--config","config"],
+        "sameExecutableRequired":false,"sameConfigRequired":false,"readOnly":true});
+    let partial = super::semantic_partial(&response, recovery.clone()).unwrap();
+    assert!(serde_json::to_vec(&partial).unwrap().len() < MAX_RESPONSE_BYTES);
+    assert_eq!(partial["current"]["binding"], "binding");
+    assert_eq!(partial["next"]["requiresExpansion"], true);
+    assert_eq!(partial["next"]["constraintsOmitted"], true);
+    assert_eq!(
+        partial["humanHelp"]["preservationAssignment"]["route"],
+        "FORMAL"
+    );
+    assert_eq!(
+        partial["humanHelp"]["preservationAssignment"]["requiresExpansion"],
+        true
+    );
+    assert_eq!(
+        partial["humanHelp"]["preservationAssignment"]["requirementsCount"],
+        1
+    );
+    assert!(!partial.to_string().contains(&"x".repeat(9_000)));
+    assert_eq!(partial["recovery"], recovery);
+
+    // A synthetic near-budget route forces the summary itself out. The
+    // omission remains explicit and the complete recovery is preserved.
+    let constrained = json!({"work":"smw_work", "status":"current",
+        "humanHelp":{"whatHappened":"x".repeat(512),
+            "preservationAssignment":{"route":"FORMAL", "quality":"required",
+                "requirements":[{"command":"true"}]}}});
+    let large_recovery = json!({"command":["exitbind","work","detail","smw_work","--json","--config","x".repeat(7_750)],
+        "sameExecutableRequired":false,"sameConfigRequired":false,"readOnly":true});
+    let partial = super::semantic_partial(&constrained, large_recovery.clone()).unwrap();
+    assert!(serde_json::to_vec(&partial).unwrap().len() < MAX_RESPONSE_BYTES);
+    assert!(partial.get("humanHelp").is_none());
+    assert!(partial["omitted"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("humanHelp")));
+    assert_eq!(partial["recovery"], large_recovery);
+}
+
+#[test]
 fn transport_semantic_partial_preserves_current_adoption_and_pause_when_recovery_is_too_large() {
     let pause = json!({"actor":"lead","saveStep":{"command":["exitbind","session","recovery","record","--step","<SAVED_STEP>"]}});
     let adoption = json!({"command":["exitbind","goal","adopt"],

@@ -5,49 +5,36 @@
 
 mod support;
 
-use serde_json::{json, Value};
+use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::{fs, path::Path};
 
-fn route_descriptor(
-    value: &Value,
-    argv_key: &str,
-    executable_key: &str,
-    config_key: &str,
-) -> Value {
-    json!({
-        "argv": value[argv_key],
-        "sameExecutableRequired": value
-            .get(executable_key)
-            .cloned()
-            .unwrap_or(Value::Bool(false)),
-        "sameConfigRequired": value
-            .get(config_key)
-            .cloned()
-            .unwrap_or(Value::Bool(false)),
-    })
+fn assert_complete_route(route: &Value, defaults: &Value) {
+    for flag in ["sameExecutableRequired", "sameConfigRequired"] {
+        assert_eq!(
+            route
+                .get(flag)
+                .or_else(|| defaults.get(flag))
+                .and_then(Value::as_bool),
+            Some(false),
+            "route flag {flag} must explicitly be false: {route}"
+        );
+    }
 }
 
-fn reconstruct_inspect_command(
-    route: &Value,
+fn exact_inspect_command(
+    response: &Value,
     expected_executable: &Path,
     expected_config: &Path,
     invocation_cwd: &Path,
     work: &str,
     event_sha: &str,
 ) -> Vec<String> {
-    let descriptor = route_descriptor(
-        route,
-        "command",
-        "sameExecutableRequired",
-        "sameConfigRequired",
-    );
-    let same_executable = descriptor["sameExecutableRequired"]
-        .as_bool()
-        .expect("inspect route executable flag is a boolean");
-    let same_config = descriptor["sameConfigRequired"]
-        .as_bool()
-        .expect("inspect route config flag is a boolean");
-    let mut argv = descriptor["argv"]
+    let route = &response["nextAction"];
+    assert_eq!(route["type"], "inspect");
+    assert_eq!(route["safe"], true);
+    assert_complete_route(route, &response["routeDefaults"]);
+    let argv = route["command"]
         .as_array()
         .expect("inspect route argv is an array")
         .iter()
@@ -60,22 +47,12 @@ fn reconstruct_inspect_command(
         .collect::<Vec<_>>();
     assert!(!argv.is_empty(), "inspect route argv is not empty");
     let executable = fs::canonicalize(expected_executable).unwrap();
-    if same_executable {
-        assert_eq!(argv[0], "run");
-        argv.insert(0, executable.to_str().unwrap().to_owned());
-    } else {
-        assert!(
-            Path::new(&argv[0]).is_absolute(),
-            "inspect executable is explicit"
-        );
-        assert_eq!(fs::canonicalize(&argv[0]).unwrap(), executable);
-    }
-
+    assert!(
+        Path::new(&argv[0]).is_absolute(),
+        "inspect executable is explicit"
+    );
+    assert_eq!(fs::canonicalize(&argv[0]).unwrap(), executable);
     let config = fs::canonicalize(expected_config).unwrap();
-    if same_config {
-        assert_eq!(argv.last().map(String::as_str), Some("--config"));
-        argv.push(config.to_str().unwrap().to_owned());
-    }
 
     assert!(
         work.starts_with("smw_") && work.len() > 4,
@@ -161,29 +138,45 @@ fn long_preservation_command_is_bounded_and_recoverable() {
     assert!(compact["next"]["packet"].is_null());
     assert_eq!(compact["next"]["requiresExpansion"], true);
     assert_eq!(compact["next"]["constraintsOmitted"], true);
-    let descriptor = route_descriptor(
-        &compact,
-        "fullCommand",
-        "fullCommandSameExecutableRequired",
-        "fullCommandSameConfigRequired",
+    let recovery = &compact["recovery"];
+    assert_eq!(recovery["readOnly"], true);
+    assert_eq!(recovery["sameExecutableRequired"], false);
+    assert_eq!(recovery["sameConfigRequired"], false);
+    let argv = recovery["command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(argv.len(), 7);
+    assert_eq!(
+        fs::canonicalize(argv[0]).unwrap(),
+        fs::canonicalize(env!("CARGO_BIN_EXE_exitbind")).unwrap()
     );
-    let argv = support::reconstruct_work_command(
-        &descriptor,
-        Path::new(env!("CARGO_BIN_EXE_exitbind")),
-        &config,
-        &root,
+    assert_eq!(&argv[1..6], &["work", "detail", work, "--json", "--config"]);
+    assert_eq!(
+        fs::canonicalize(argv[6]).unwrap(),
+        fs::canonicalize(&config).unwrap()
     );
-    let full = support::git_topology::command(&argv[0])
+    let full = support::git_topology::command(argv[0])
         .current_dir(&root)
         .args(&argv[1..])
         .output()
         .unwrap();
     assert!(full.status.success(), "{full:?}");
     let full: Value = serde_json::from_slice(&full.stdout).unwrap();
-    assert_eq!(full["next"]["assignment"], compact["next"]["assignment"]);
-    assert!(full["residual"]["humanHelp"]["preservationAssignment"]
-        .to_string()
-        .contains(&command));
+    assert_eq!(full["kind"], "work_detail");
+    assert_eq!(full["work"], work);
+    assert_eq!(full["binding"], compact["current"]["binding"]);
+    assert_eq!(
+        full["actionForms"]["assignment"],
+        compact["next"]["assignment"]
+    );
+    assert!(
+        full["sections"]["assignment"]["residual"]["humanHelp"]["preservationAssignment"]
+            .to_string()
+            .contains(&command)
+    );
     let _ = fs::remove_dir_all(root);
 }
 
@@ -233,22 +226,38 @@ fn recovery_uses_the_exact_long_executable_path() {
     assert!(next.status.success(), "{next:?}");
     assert!(next.stdout.len() <= 8 * 1024);
     let compact: Value = serde_json::from_slice(&next.stdout).unwrap();
-    let descriptor = route_descriptor(
-        &compact,
-        "fullCommand",
-        "fullCommandSameExecutableRequired",
-        "fullCommandSameConfigRequired",
-    );
-    let argv = support::reconstruct_work_command(&descriptor, &candidate, &config, &root);
     let candidate = fs::canonicalize(&candidate).unwrap();
-    assert_eq!(Path::new(&argv[0]), candidate);
-    let mut expanded = support::git_topology::command(&argv[0]);
+    let recovery = compact
+        .get("full")
+        .filter(|route| route["command"].is_array())
+        .or_else(|| compact.pointer("/transportCompletion/recovery"))
+        .or_else(|| compact.get("recovery"))
+        .expect("complete current detail recovery");
+    assert_complete_route(recovery, &compact["routeDefaults"]);
+    assert_eq!(recovery["readOnly"], true);
+    let argv = recovery["command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|argument| argument.as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(argv.len(), 7);
+    assert_eq!(fs::canonicalize(argv[0]).unwrap(), candidate);
+    assert_eq!(&argv[1..6], &["work", "detail", work, "--json", "--config"]);
+    assert_eq!(
+        fs::canonicalize(argv[6]).unwrap(),
+        fs::canonicalize(&config).unwrap()
+    );
+    let mut expanded = support::git_topology::command(argv[0]);
     expanded.current_dir(&root).args(&argv[1..]);
     let expanded = support::run(&mut expanded);
     assert!(expanded.status.success(), "{expanded:?}");
     let expanded: Value = serde_json::from_slice(&expanded.stdout).unwrap();
+    assert_eq!(expanded["kind"], "work_detail");
+    assert_eq!(expanded["work"], work);
+    assert_eq!(expanded["binding"], compact["current"]["binding"]);
     assert_eq!(
-        expanded["next"]["assignment"],
+        expanded["recipient"]["assignment"],
         compact["next"]["assignment"]
     );
     let mut returned = support::git_topology::command(&candidate);
@@ -269,23 +278,56 @@ fn recovery_uses_the_exact_long_executable_path() {
     assert!(returned.stdout.len() <= 256 * 1024);
     let returned: Value = serde_json::from_slice(&returned.stdout).unwrap();
     let delivery = &returned["currentDelivery"];
-    assert_eq!(delivery["complete"], true);
-    assert_eq!(delivery["recipientContext"]["complete"], true);
+    assert_eq!(delivery["kind"], "work_actor_context");
+    assert_eq!(delivery["complete"], false);
+    assert_eq!(delivery["requiredContentComplete"], true);
     assert_eq!(delivery["work"], work);
+    assert_eq!(delivery["binding"], returned["current"]["binding"]);
     assert_eq!(delivery["recipient"]["actor"], "worker");
     assert_eq!(
         delivery["recipient"]["assignment"],
-        delivery["actionForms"]["assignment"]
+        returned["effectiveAction"]["assignment"]
     );
+    let full_route = &returned["full"];
+    assert_eq!(full_route["readOnly"], true);
+    assert_eq!(full_route["binding"], delivery["binding"]);
+    assert_complete_route(full_route, &returned["routeDefaults"]);
+    let full_argv = full_route["command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|argument| argument.as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(full_argv.len(), 7);
+    assert_eq!(fs::canonicalize(full_argv[0]).unwrap(), candidate);
+    assert_eq!(
+        &full_argv[1..6],
+        &["work", "detail", work, "--json", "--config"]
+    );
+    assert_eq!(
+        fs::canonicalize(full_argv[6]).unwrap(),
+        fs::canonicalize(&config).unwrap()
+    );
+    let full = support::git_topology::command(full_argv[0])
+        .current_dir(&root)
+        .args(&full_argv[1..])
+        .output()
+        .unwrap();
+    assert!(full.status.success(), "{full:?}");
+    let full: Value = serde_json::from_slice(&full.stdout).unwrap();
+    assert_eq!(full["binding"], delivery["binding"]);
+    assert_eq!(full["recipient"], delivery["recipient"]);
+    assert_eq!(full["contextIdentity"], delivery["contextIdentity"]);
+    let profile = &delivery["instructions"]["profile"];
+    let full_profile = &full["recipientContext"]["profile"];
+    for field in ["content", "sha256", "bytes", "complete"] {
+        assert_eq!(profile[field], full_profile[field]);
+    }
+    let content = profile["content"].as_str().unwrap().as_bytes();
+    assert_eq!(profile["bytes"], content.len());
+    assert_eq!(profile["sha256"], format!("{:x}", Sha256::digest(content)));
     let event_sha = returned["eventSha256"].as_str().unwrap();
-    let detail_argv = reconstruct_inspect_command(
-        &returned["nextAction"],
-        &candidate,
-        &config,
-        &root,
-        work,
-        event_sha,
-    );
+    let detail_argv = exact_inspect_command(&returned, &candidate, &config, &root, work, event_sha);
     assert_eq!(Path::new(&detail_argv[0]), candidate);
     let mut detail = support::git_topology::command(&detail_argv[0]);
     detail.current_dir(&root).args(&detail_argv[1..]);
@@ -296,9 +338,8 @@ fn recovery_uses_the_exact_long_executable_path() {
 
     // The next actor can use the complete delivery without rewriting the
     // executable or configuration path; only the operation is actor-supplied.
-    let permit = &delivery["actionForms"]["beforeEditing"]["command"];
-    assert_eq!(permit["sameExecutableRequired"], false);
-    assert_eq!(permit["sameConfigRequired"], false);
+    let permit = &returned["effectiveAction"]["beforeEditing"]["command"];
+    assert_complete_route(permit, &returned["routeDefaults"]);
     let mut permit_argv = permit["argv"]
         .as_array()
         .unwrap()
