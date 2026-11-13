@@ -312,14 +312,14 @@ fn opaque_oracle_validates_typed_delivery_without_trusting_its_neighbors() {
     let private = fixture.root.join(".exitbind");
     let aliases = support::temp("typed-delivery-aliases");
     let alias = aliases.join("typed-private-alias");
-    std::os::unix::fs::symlink(&private, &alias).unwrap();
+    std::os::unix::fs::symlink(private, &alias).unwrap();
     let mut private_alias = typed.clone();
     private_alias["currentDelivery"]["unknown"] = serde_json::json!(alias.join("missing"));
     rejects(&private_alias);
     let cycle_a = aliases.join("typed-cycle-a");
     let cycle_b = aliases.join("typed-cycle-b");
     std::os::unix::fs::symlink("typed-cycle-b", &cycle_a).unwrap();
-    std::os::unix::fs::symlink("typed-cycle-a", &cycle_b).unwrap();
+    std::os::unix::fs::symlink("typed-cycle-a", cycle_b).unwrap();
     let mut cycle = typed.clone();
     cycle["currentDelivery"]["unknown"] = serde_json::json!(cycle_a);
     rejects(&cycle);
