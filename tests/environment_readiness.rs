@@ -342,8 +342,13 @@ fn begin_observes_the_check_and_proposes_an_empty_starter_without_effects() {
         let value: Value = serde_json::from_slice(&output.stdout).unwrap();
         let preparation = &value["beginPreparation"];
         assert_eq!(preparation["checker"]["state"], "runnable");
+        assert_eq!(preparation["checker"]["program"], "sh");
         assert_eq!(preparation["checker"]["workingDirectoryState"], "directory");
         assert_eq!(preparation["checker"]["input"]["state"], "readable");
+        assert!(preparation["checker"].get("path").is_none());
+        assert!(preparation["checker"].get("workingDirectory").is_none());
+        assert!(preparation["checker"]["input"].get("path").is_none());
+        assert!(preparation["checker"]["input"].get("argument").is_none());
         assert_eq!(preparation["boundaryProposal"]["kind"], "proposal");
         assert_eq!(preparation["boundaryProposal"]["authority"], "none");
         assert_eq!(
@@ -358,6 +363,8 @@ fn begin_observes_the_check_and_proposes_an_empty_starter_without_effects() {
             preparation["boundaryProposal"]["commands"],
             serde_json::json!(["sh"])
         );
+        assert_eq!(preparation["boundaryProposal"]["observeOmitted"], false);
+        assert_eq!(preparation["boundaryProposal"]["commandsOmitted"], false);
         assert!(!root.join("check-ran").exists());
         assert_eq!(fs::read(&config).unwrap(), original_config);
 
@@ -376,6 +383,78 @@ fn begin_observes_the_check_and_proposes_an_empty_starter_without_effects() {
         );
         assert!(!root.join("check-ran").exists());
     }
+}
+
+#[test]
+fn begin_keeps_observation_states_without_exposing_private_check_paths() {
+    use std::os::unix::fs::symlink;
+
+    let root = support::temp("begin-preparation-private");
+    let config = init(&root);
+    let private = root.join(".exitbind/private-check.sh");
+    fs::write(&private, b"printf ran > check-ran\n").unwrap();
+    symlink(&private, root.join("check-alias.sh")).unwrap();
+    let output = begin(&config, "sh check-alias.sh");
+    assert!(output.status.success(), "{}", text(&output));
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let preparation = &value["beginPreparation"];
+    assert_eq!(preparation["checker"]["state"], "runnable");
+    assert_eq!(preparation["checker"]["input"]["state"], "readable");
+    assert_eq!(
+        preparation["boundaryProposal"]["observe"],
+        serde_json::json!([])
+    );
+    assert_eq!(preparation["boundaryProposal"]["observeOmitted"], true);
+    assert_eq!(
+        preparation["boundaryProposal"]["commands"],
+        serde_json::json!(["sh"])
+    );
+    assert!(!preparation.to_string().contains(".exitbind"));
+    assert!(!preparation.to_string().contains("check-alias.sh"));
+    assert!(!root.join("check-ran").exists());
+
+    let output = begin(&config, "/bin/sh check-alias.sh");
+    assert!(output.status.success(), "{}", text(&output));
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let preparation = &value["beginPreparation"];
+    assert_eq!(preparation["checker"]["state"], "runnable");
+    assert!(preparation["checker"]["program"].is_null());
+    assert_eq!(
+        preparation["boundaryProposal"]["commands"],
+        serde_json::json!([])
+    );
+    assert_eq!(preparation["boundaryProposal"]["commandsOmitted"], true);
+    assert!(!preparation.to_string().contains("/bin/sh"));
+    assert!(!root.join("check-ran").exists());
+
+    let root = support::temp("begin-preparation-declared");
+    let config = init(&root);
+    fs::write(root.join("check.sh"), b"exit 0\n").unwrap();
+    let mut configured: Value = serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
+    configured["agents"]["worker"]["commands"] =
+        serde_json::json!(["sh check.sh", "sh missing.sh"]);
+    fs::write(&config, serde_json::to_vec_pretty(&configured).unwrap()).unwrap();
+    let output = begin(&config, "sh check.sh");
+    assert!(output.status.success(), "{}", text(&output));
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let declared = &value["beginPreparation"]["declaredCommands"];
+    let worker = declared["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|item| item["agent"] == "worker")
+        .collect::<Vec<_>>();
+    assert_eq!(worker.len(), 2);
+    assert_eq!(worker[0]["observation"]["state"], "runnable");
+    assert_eq!(worker[0]["observation"]["input"]["state"], "readable");
+    assert_eq!(worker[1]["observation"]["input"]["state"], "missing");
+    assert!(worker.iter().all(|item| item.get("command").is_none()));
+    assert!(worker
+        .iter()
+        .all(|item| item["observation"].get("path").is_none()));
+    assert!(!value["beginPreparation"]
+        .to_string()
+        .contains(root.to_str().unwrap()));
 }
 
 #[test]

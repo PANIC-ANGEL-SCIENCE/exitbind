@@ -915,3 +915,114 @@ fn selected_check_snapshot_refuses_changes_during_detail_assembly() {
 
 #[path = "readable_tests/grant_offer.rs"]
 mod grant_offer;
+
+#[test]
+fn same_recipient_continuity_refuses_changed_content_and_unknown_facts() {
+    let before = json!({"kind":"work_detail","complete":true,"work":"w",
+        "binding":"old","recipient":{"assignment":"a"},
+        "recipientContext":{"profile":{"content":"instructions"}},
+        "sections":{"assignment":{"assignment":{"context":{
+            "goal":"goal", "unknown":{"keep":true},
+            "loop":{"state":"ready","spent":0,"currentReplan":null},
+            "evidence":[{"evidenceId":"event","rawEventRef":{"kind":"ledger_event",
+                "work":"w","selector":"event","id":"ref:old","eventCount":1,
+                "headEventSha256":"old","sha256":"old"}}],
+            "expansions":[{"kind":"ledger_history","id":"ref:old","eventCount":1,
+                "headEventSha256":"old","sha256":"old"}],"digest":"old"}},
+            "residual":{"snapshot":{"eventCount":1,"headEventSha256":"old",
+                "inputsSha256":"input"}}},
+            "evidence":{"items":[{"reference":"ref:old","artifact":{"content":"evidence"}}]},
+            "tasks":{"x":1}}});
+    let mut after = before.clone();
+    after["binding"] = json!("new");
+    let context = &mut after["sections"]["assignment"]["assignment"]["context"];
+    context["loop"]["spent"] = json!(1);
+    context["loop"]["currentMutation"] = json!({"operation":"edit"});
+    context["evidence"][0]["rawEventRef"]["id"] = json!("ref:new");
+    context["evidence"][0]["rawEventRef"]["eventCount"] = json!(2);
+    context["expansions"][0]["id"] = json!("ref:new");
+    context["expansions"][0]["eventCount"] = json!(2);
+    context["digest"] = json!("new");
+    after["sections"]["assignment"]["residual"]["snapshot"]["eventCount"] = json!(2);
+    after["sections"]["assignment"]["residual"]["snapshot"]["headEventSha256"] = json!("new");
+    after["sections"]["assignment"]["residual"]["snapshot"]["inputsSha256"] = json!("new input");
+    after["sections"]["evidence"]["items"][0]["reference"] = json!("ref:new");
+    let continuity = public_context_continuity(&before, &after).unwrap();
+    assert_eq!(
+        continuity["contextIdentity"],
+        public_context_identities(&before).unwrap()
+    );
+    assert_eq!(continuity["governor"]["spent"], 1);
+    assert_eq!(continuity["inputsSha256"], "new input");
+    let mut changed = after.clone();
+    changed["sections"]["assignment"]["assignment"]["context"]["unknown"]["keep"] = json!(false);
+    assert!(public_context_continuity(&before, &changed).is_none());
+    changed = after.clone();
+    changed["sections"]["assignment"]["assignment"]["context"]["loop"]["currentReplan"] =
+        json!({"scope":"new"});
+    assert!(public_context_continuity(&before, &changed).is_none());
+    changed = after.clone();
+    changed["sections"]["assignment"]["assignment"]["context"]["loop"]["currentMutation"]
+        ["unknownRequired"] = json!("new");
+    assert!(public_context_continuity(&before, &changed).is_none());
+    changed = after.clone();
+    changed["sections"]["evidence"]["items"][0]["artifact"]["content"] = json!("new evidence");
+    assert!(public_context_continuity(&before, &changed).is_none());
+    after["recipientContext"]["profile"]["content"] = json!("changed instructions");
+    assert!(public_context_continuity(&before, &after).is_none());
+    after["recipient"] = json!({"assignment":"another actor"});
+    assert!(public_context_continuity(&before, &after).is_none());
+}
+
+#[test]
+fn actor_context_preserves_instruction_content_and_refuses_unknown_transport() {
+    let profile = "Exact actor instruction.\n";
+    let sha = crate::evidence::hash::bytes(profile.as_bytes());
+    let mut detail = json!({"kind":"work_detail","complete":true,"work":"w","binding":"b",
+        "recipient":{"agent":"worker","role":"worker","nativeName":"worker"},
+        "recipientContext":{"available":true,"complete":true,"agent":"worker","role":"worker",
+            "nativeName":"worker","displayName":"worker","authority":"none","rules":[],
+            "profile":{"path":"agent.md","sha256":sha,"bytes":profile.len(),
+                "complete":true,"content":profile}},
+        "sections":{"assignment":{"assignment":{"goal":"goal","purpose":null,
+                "declaredBoundary":null,"context":{"goal":"goal","evidence":[],
+                    "expansions":[],"loop":{"enabled":true,"state":"ready","budget":3,
+                        "spent":0,"currentReplan":null,"currentSensorRequest":null,"evidence":[]},
+                    "recovery":{"stale":[],"conflicts":[]}}},
+            "residual":{"snapshot":{"inputsSha256":"input"}},"checkPreparation":{"state":"runnable"},
+            "memoryQuery":null,"outcomes":null},
+            "evidence":{"items":[],"complete":true},"tasks":{"tasks":[]}}});
+    let body = public_actor_context(&detail, false).unwrap();
+    assert_eq!(body["requiredContentComplete"], true);
+    assert_eq!(body["instructions"]["profile"]["content"], profile);
+    assert!(body["instructions"]["profile"].get("path").is_none());
+    let reused = public_actor_context(&detail, true).unwrap();
+    assert_eq!(reused["requiredContentComplete"], false);
+    assert_eq!(reused["instructions"]["reuseIfPreviouslyRead"], true);
+    assert_eq!(
+        reused["instructions"]["recipientSha256"],
+        body["contextIdentity"]["recipientSha256"]
+    );
+    detail["recipientContext"]["guidance"] = json!({"items":[],"overflow":[{"id":"more"}],
+        "unavailable":[],"selectedCount":0,"overflowCount":1,"unavailableCount":0});
+    assert!(public_actor_context(&detail, false).is_none());
+    detail["recipientContext"]["guidance"] = json!({"items":[{"content":"keep this",
+        "unknown":{"path":"semantic-not-a-reference"}}],"overflow":[],"unavailable":[],
+        "selectedCount":1,"overflowCount":0,"unavailableCount":0});
+    assert!(public_actor_context(&detail, false).is_none());
+    detail["recipientContext"]
+        .as_object_mut()
+        .unwrap()
+        .remove("guidance");
+    detail["sections"]["assignment"]["assignment"]["context"]["unknown"] =
+        json!({"path":"private"});
+    assert!(public_actor_context(&detail, false).is_none());
+    detail["sections"]["assignment"]["assignment"]["context"]
+        .as_object_mut()
+        .unwrap()
+        .remove("unknown");
+    detail["sections"]["assignment"]["assignment"]["context"]["evidence"] = json!([{
+        "kind":"submission","rawEventRef":{"kind":"ledger_event","selector":"missing",
+            "work":"w","exact":true,"id":"ref:missing"}}]);
+    assert!(public_actor_context(&detail, false).is_none());
+}

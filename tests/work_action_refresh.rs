@@ -51,12 +51,20 @@ fn form(root: &Path, work: &str, value: &Value, label: &str) -> Vec<String> {
         .as_array()
         .unwrap()
         .iter()
-        .find(|c| c["label"] == label)
+        .find(|c| {
+            c["label"] == label
+                || (c["kind"] == "outcome_template"
+                    && c["outcomes"]
+                        .as_array()
+                        .is_some_and(|outcomes| outcomes.iter().any(|item| item == label)))
+        })
         .unwrap();
     let mut command = choice["command"].clone();
     for argument in command["argv"].as_array_mut().unwrap() {
         if argument == "<REASON>" {
             *argument = Value::String("A literal fixture reason; no shell interpolation".into());
+        } else if argument == "<OUTCOME>" {
+            *argument = Value::String(label.into());
         }
     }
     assert_eq!(command["sameConfigRequired"], false);
@@ -130,10 +138,11 @@ fn post_permit_forms_are_current_and_old_return_binding_refuses() {
         Some("Bound result-file scope"),
     ));
     let worker = scoped["currentDelivery"].clone();
-    assert_eq!(worker["complete"], true);
-    assert_eq!(worker["recipientContext"]["complete"], true);
-    let old_return = form(&root, work, &worker, "completed");
-    let mut permit_command = worker["actionForms"]["beforeEditing"]["command"].clone();
+    assert_eq!(worker["kind"], "work_actor_context");
+    assert_eq!(worker["requiredContentComplete"], true);
+    assert_eq!(worker["instructions"]["profile"]["complete"], true);
+    let old_return = form(&root, work, &scoped, "completed");
+    let mut permit_command = scoped["effectiveAction"]["beforeEditing"]["command"].clone();
     for argument in permit_command["argv"].as_array_mut().unwrap() {
         if argument == "<OPERATION>" {
             *argument = Value::String("Write result file".into());
@@ -156,26 +165,25 @@ fn post_permit_forms_are_current_and_old_return_binding_refuses() {
     assert!(permit_output.stdout.len() <= 256 * 1024);
     let permit = value(permit_output);
     assert_eq!(permit["allowed"], true);
-    assert_eq!(permit["currentDelivery"]["complete"], true);
-    assert_eq!(
-        permit["currentDelivery"]["recipientContext"]["complete"],
-        true
-    );
-    assert_eq!(
-        permit["currentDelivery"]["recipientContext"]["profile"]["path"],
-        worker["recipientContext"]["profile"]["path"]
-    );
+    let continuity = &permit["currentDelivery"];
+    assert_eq!(continuity["kind"], "work_context_continuity");
+    assert_eq!(continuity["complete"], false);
+    assert_eq!(continuity["baseBinding"], worker["binding"]);
+    assert_eq!(continuity["contextIdentity"], worker["contextIdentity"]);
     assert!(permit["currentGrant"].is_object());
-    // This extra read belongs to the regression, not to the actor's action
-    // flow: the attached complete detail must preserve the direct reader's
-    // recipient, assignment and evidence, including transport paths.
+    // This read is a regression oracle, not part of the actor's action flow.
+    // The compact content identities must match the actual current detail.
     let direct = invoke(&root, &["work", "detail", work, "--json"]);
-    assert_eq!(permit["currentDelivery"]["binding"], direct["binding"]);
+    assert_eq!(continuity["binding"], direct["binding"]);
+    assert_eq!(continuity["contextIdentity"], direct["contextIdentity"]);
     assert_eq!(
-        permit["currentDelivery"]["recipientContext"],
-        direct["recipientContext"]
+        worker["instructions"]["profile"]["content"],
+        direct["recipientContext"]["profile"]["content"]
     );
-    assert_eq!(permit["currentDelivery"]["sections"], direct["sections"]);
+    let loop_state = &direct["sections"]["assignment"]["assignment"]["context"]["loop"];
+    for field in ["state", "budget", "spent", "noInformationStreak"] {
+        assert_eq!(continuity["governor"][field], loop_state[field]);
+    }
     assert!(!permit["effectiveAction"]["choices"]
         .as_array()
         .unwrap()
@@ -191,6 +199,20 @@ fn post_permit_forms_are_current_and_old_return_binding_refuses() {
     );
     assert!(!stale.status.success());
     assert!(String::from_utf8_lossy(&stale.stderr).contains("binding is stale"));
+    let next_step = invoke(&root, &["work", "next", work, "--json"]);
+    assert_eq!(
+        next_step["currentDelivery"]["kind"],
+        "work_context_reference"
+    );
+    assert_eq!(
+        next_step["currentDelivery"]["contextIdentity"],
+        worker["contextIdentity"]
+    );
+    assert_ne!(
+        next_step["currentDelivery"]["inputsSha256"],
+        continuity["inputsSha256"]
+    );
+    let next_return = form(&root, work, &next_step, "completed");
     let next = &permit["nextAction"];
     assert_eq!(next["sameConfigRequired"], false);
     assert_eq!(next["sameExecutableRequired"], false);
@@ -203,15 +225,20 @@ fn post_permit_forms_are_current_and_old_return_binding_refuses() {
     assert!(!next_argv.iter().any(|arg| arg == "--view"));
     let changed_detail = value(run(&root, &next_argv[1..], None));
     assert_eq!(changed_detail["complete"], true);
-    let returned_output = run(
-        &root,
-        &form(&root, work, &changed_detail, "completed"),
-        Some("Produced src/result.txt"),
+    assert_eq!(
+        next_step["currentDelivery"]["contextIdentity"],
+        changed_detail["contextIdentity"]
     );
+    assert_eq!(
+        next_step["currentDelivery"]["inputsSha256"],
+        changed_detail["sections"]["assignment"]["residual"]["snapshot"]["inputsSha256"]
+    );
+    assert_eq!(next_return, form(&root, work, &changed_detail, "completed"));
+    let returned_output = run(&root, &next_return, Some("Produced src/result.txt"));
     assert!(returned_output.stdout.len() <= 256 * 1024);
     let returned = value(returned_output);
     assert_eq!(returned["effect"], "recorded");
-    assert_eq!(returned["currentDelivery"]["complete"], true);
+    assert!(returned.get("currentDelivery").is_none());
     assert_eq!(returned["effectiveAction"]["kind"], "check");
     let check = &returned["effectiveAction"]["command"];
     assert_eq!(check["sameConfigRequired"], false);
@@ -225,8 +252,106 @@ fn post_permit_forms_are_current_and_old_return_binding_refuses() {
     assert_eq!(argv[0], env!("CARGO_BIN_EXE_exitbind"));
     let checked = value(run(&root, &argv[1..], None));
     assert_eq!(checked["result"]["code"], 0);
-    assert_eq!(checked["currentDelivery"]["complete"], true);
+    assert_eq!(checked["currentDelivery"]["requiredContentComplete"], true);
     assert_eq!(checked["effectiveAction"]["kind"], "spawn");
     assert!(!checked["eventSha256"].is_null());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn changed_worker_instructions_require_current_full_context() {
+    let root = support::temp("changed recipient instructions");
+    support::git_topology::repository(&root);
+    fs::write(root.join("README.md"), "Current instruction fixture\n").unwrap();
+    let setup = invoke(
+        &root,
+        &[
+            "setup",
+            "--mode",
+            "portable",
+            "--root",
+            ".",
+            "--worker-observe",
+            "README.md",
+            "--worker-write",
+            "README.md",
+            "--worker-commands",
+            "true",
+            "--goal",
+            "Exercise changed recipient instructions",
+            "--check-command",
+            "true",
+            "--review-policy",
+            "omitted",
+            "--json",
+            "--apply",
+        ],
+    );
+    let begin_args = setup["next"]["argv"][0]
+        .as_array()
+        .unwrap()
+        .iter()
+        .skip(1)
+        .map(|word| word.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    let started = value(run(&root, &begin_args, None));
+    let work = started["work"].as_str().unwrap();
+    let scoped = value(run(
+        &root,
+        &form(&root, work, &started, "scoped"),
+        Some("scope"),
+    ));
+    let worker = &scoped["currentDelivery"];
+    assert_eq!(worker["requiredContentComplete"], true);
+    let old_recipient = worker["contextIdentity"]["recipientSha256"].clone();
+    let config: Value =
+        serde_json::from_slice(&fs::read(root.join("exitbind.json")).unwrap()).unwrap();
+    let profile = root.join(config["agents"]["worker"]["profile"].as_str().unwrap());
+    let mut content = fs::read_to_string(&profile).unwrap();
+    content.push_str("\nChanged worker instruction from the fixture owner.\n");
+    fs::write(&profile, &content).unwrap();
+    let mut permit = scoped["effectiveAction"]["beforeEditing"]["command"]["argv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|word| word.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    for word in &mut permit {
+        if word == "<OPERATION>" {
+            *word = "Apply the current instruction".into();
+        }
+    }
+    let output = run(&root, &permit[1..], None);
+    if !output.status.success() {
+        let error = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            error.contains("changed") || error.contains("stale"),
+            "{output:?}"
+        );
+        let current = invoke(&root, &["work", "detail", work, "--json"]);
+        assert_eq!(current["recipientContext"]["profile"]["content"], content);
+    } else {
+        let response = value(output);
+        let delivery = &response["currentDelivery"];
+        if delivery["kind"] == "work_context_continuity" {
+            assert_ne!(
+                delivery["contextIdentity"]["recipientSha256"],
+                old_recipient
+            );
+        } else {
+            assert_eq!(delivery["kind"], "work_actor_context");
+            assert_eq!(delivery["instructions"]["profile"]["content"], content);
+        }
+        let command = response["full"]["command"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|word| word.as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(command[0], env!("CARGO_BIN_EXE_exitbind"));
+        let current = value(run(&root, &command[1..], None));
+        assert_eq!(current["recipientContext"]["profile"]["content"], content);
+        assert_ne!(current["contextIdentity"]["recipientSha256"], old_recipient);
+    }
     fs::remove_dir_all(root).unwrap();
 }

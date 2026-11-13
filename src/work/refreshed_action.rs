@@ -4,6 +4,28 @@
 use crate::config::Loaded;
 use serde_json::{json, Value};
 
+/// This is only a display comparison. The existing grant verifier establishes
+/// that the retained pre-permit context is the immediate predecessor.
+pub(crate) fn permit_predecessor_matches(
+    loaded: &Loaded,
+    work: &str,
+    assignment: &str,
+    before: &Value,
+    response: &Value,
+) -> bool {
+    let Ok(ledger) = super::resolve(loaded, work) else {
+        return false;
+    };
+    let Ok(Some(transition)) =
+        super::permit_delivery::verified_transition(loaded, work, assignment, &ledger, None, false)
+    else {
+        return false;
+    };
+    before["binding"] == transition.before["current"]["binding"]
+        && response["currentDelivery"]["binding"] == transition.current["current"]["binding"]
+        && response["eventSha256"] == transition.event["eventSha256"]
+}
+
 pub(crate) fn attach(loaded: &Loaded, work: &str, next: &Value, response: &mut Value) {
     let Some(binding) = next["current"]["binding"].as_str() else {
         return;

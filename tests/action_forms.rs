@@ -5,6 +5,7 @@
 mod support;
 
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::{
     ffi::OsStr,
     fs,
@@ -1633,4 +1634,261 @@ fn failed_preservation_check_uses_the_same_bound_rework_form() {
         b"preservation repair boundary",
     );
     assert_eq!(repaired["next"]["role"], "worker");
+}
+
+fn step_return_template(step: &Value) -> &Value {
+    let forms = &step["currentDelivery"]["actionForms"];
+    assert_eq!(step["currentDelivery"]["complete"], true, "{step}");
+    let choices = forms["choices"].as_array().expect("current choices");
+    let templates = choices
+        .iter()
+        .filter(|choice| choice["kind"] == "outcome_template")
+        .collect::<Vec<_>>();
+    assert_eq!(templates.len(), 1, "{forms}");
+    let template = templates[0];
+    assert_eq!(template["placeholders"], json!(["OUTCOME", "REASON"]));
+    assert_eq!(template["fill"]["choice"], "<OUTCOME>");
+    assert_eq!(template["fill"]["choicePlaceholder"], "OUTCOME");
+    assert_eq!(template["fill"]["options"], json!({"REASON":"--reason"}));
+    assert_eq!(template["fill"]["artifactOption"], "--artifact-file");
+    assert_eq!(template["stdin"]["required"], true);
+    assert_eq!(
+        step["actionForms"]["choices"],
+        step["effectiveAction"]["choices"]
+    );
+    assert_eq!(
+        forms["choices"],
+        step["currentDelivery"]["effectiveAction"]["choices"]
+    );
+    template
+}
+
+fn submit_template(fixture: &Fixture, step: &Value, outcome: &str, artifact: &[u8]) -> Value {
+    let template = step_return_template(step);
+    let folded = template["outcomes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|offered| offered == outcome);
+    let result = if folded {
+        fixture.execute_choice(
+            template,
+            &[
+                ("<OUTCOME>", outcome),
+                ("<REASON>", "A real fixture decision"),
+            ],
+            artifact,
+        )
+    } else {
+        assert_eq!(outcome, "unavailable");
+        let choice = step["currentDelivery"]["actionForms"]["choices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|choice| choice["label"] == outcome)
+            .unwrap();
+        fixture.execute_choice(choice, &[("<REASON>", "provider_unavailable")], artifact)
+    };
+    assert_eq!(result["effect"], "recorded", "{result}");
+    assert_eq!(result["outcome"], outcome, "{result}");
+    let inspected = fixture.run_route(&result["nextAction"]);
+    assert!(inspected.status.success(), "{}", text(&inspected));
+    let inspected: Value = serde_json::from_slice(&inspected.stdout).unwrap();
+    assert_eq!(inspected["event"]["artifact"]["bytes"], artifact.len());
+    assert_eq!(
+        inspected["event"]["artifact"]["sha256"],
+        format!("{:x}", Sha256::digest(artifact))
+    );
+    result
+}
+
+fn begin_step(fixture: &Fixture, review: &str, basis: bool) -> Value {
+    let mut args = vec![
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "exercise the current outcome template",
+        "--check-command",
+        "true",
+        "--review-policy",
+        review,
+    ];
+    let marked = r#"{"version":1,"constraints":["preserve history"],"openZones":["worker implementation"],"decisiveCases":["return a contradiction"]}"#;
+    if basis {
+        args.extend(["--basis", marked]);
+    }
+    fixture.json(&args, b"")
+}
+
+fn advance_to_check(fixture: &Fixture, review: &str) -> (String, Value) {
+    let started = begin_step(fixture, review, false);
+    let work = started["work"].as_str().unwrap().to_owned();
+    let worker = submit_template(fixture, &started, "scoped", b"complete scope\n");
+    let pending = submit_template(fixture, &worker, "completed", b"complete worker result\n");
+    let check = pending["effectiveAction"]["command"]["argv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|arg| arg.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    let checked = fixture.run_argv(&check, b"");
+    assert!(checked.status.success(), "{}", text(&checked));
+    (work, serde_json::from_slice(&checked.stdout).unwrap())
+}
+
+#[test]
+fn public_return_choices_execute_every_offered_role_outcome_with_complete_transport() {
+    for outcome in ["scoped", "blocked"] {
+        let fixture = Fixture::new(&format!("scope-template-{outcome}"));
+        let step = begin_step(&fixture, "omitted", false);
+        assert_eq!(
+            step_return_template(&step)["outcomes"],
+            json!(["scoped", "blocked"])
+        );
+        submit_template(&fixture, &step, outcome, b"complete scope result\n");
+    }
+
+    for outcome in ["completed", "blocked", "contradiction"] {
+        let fixture = Fixture::new(&format!("worker-template-{outcome}"));
+        let started = begin_step(&fixture, "omitted", true);
+        let work = started["work"].as_str().unwrap().to_owned();
+        let step = submit_template(&fixture, &started, "scoped", b"complete scope\n");
+        let template = step_return_template(&step);
+        assert_eq!(
+            template["outcomes"],
+            json!(["completed", "blocked", "contradiction"])
+        );
+
+        // The explicit current detail retains the individual canonical forms.
+        let detail = fixture.json(&["work", "detail", &work, "--json"], b"");
+        let choices = detail["actionForms"]["choices"].as_array().unwrap();
+        assert_eq!(choices.len(), 3);
+        assert!(choices
+            .iter()
+            .all(|choice| choice.get("outcomes").is_none()));
+        for raw in choices {
+            let label = raw["label"].as_str().unwrap();
+            let substituted = template["command"]["argv"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|arg| {
+                    if arg == "<OUTCOME>" {
+                        json!(label)
+                    } else {
+                        arg.clone()
+                    }
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(&substituted, raw["command"]["argv"].as_array().unwrap());
+        }
+
+        if outcome == "completed" {
+            let mut invalid = template["command"]["argv"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|arg| arg.as_str().unwrap().to_owned())
+                .collect::<Vec<_>>();
+            for arg in &mut invalid {
+                if arg == "<OUTCOME>" {
+                    *arg = "approved".into();
+                }
+                if arg == "<REASON>" {
+                    *arg = "not an offered worker outcome".into();
+                }
+            }
+            let refused = fixture.run_argv(&invalid, b"not a valid result\n");
+            assert!(!refused.status.success(), "{}", text(&refused));
+            assert!(text(&refused).contains("not allowed"), "{}", text(&refused));
+            assert_eq!(
+                fixture.json(&["work", "detail", &work, "--json"], b"")["binding"],
+                detail["binding"]
+            );
+
+            // The retained expert fill route selects the real outcome label;
+            // it still refuses to drop the required complete artifact input.
+            let prefix = step["currentDelivery"]["actionForms"]["fillRoute"]["templatePrefix"]
+                .as_array()
+                .unwrap();
+            let mut fill = prefix
+                .iter()
+                .map(|arg| arg.as_str().unwrap().to_owned())
+                .collect::<Vec<_>>();
+            fill.extend([
+                "--choice".into(),
+                "completed".into(),
+                "--reason".into(),
+                "meaningful reason".into(),
+            ]);
+            let missing = fixture.run_argv(&fill, b"");
+            assert!(!missing.status.success(), "{}", text(&missing));
+            assert!(
+                text(&missing).contains("--artifact-file"),
+                "{}",
+                text(&missing)
+            );
+            assert_eq!(
+                fixture.json(&["work", "detail", &work, "--json"], b"")["binding"],
+                detail["binding"]
+            );
+        }
+        submit_template(
+            &fixture,
+            &step,
+            outcome,
+            b"complete worker result\nwith both lines\n",
+        );
+    }
+
+    for outcome in ["approved", "rework", "blocked", "unavailable"] {
+        let fixture = Fixture::new(&format!("review-template-{outcome}"));
+        let (work, checked) = advance_to_check(&fixture, "required");
+        assert_eq!(
+            step_return_template(&checked)["outcomes"],
+            json!(["approved", "rework", "blocked"])
+        );
+        if outcome == "unavailable" {
+            let choice = checked["currentDelivery"]["actionForms"]["choices"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|choice| choice["label"] == "unavailable")
+                .unwrap();
+            let mut invalid = choice["command"]["argv"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|arg| arg.as_str().unwrap().to_owned())
+                .collect::<Vec<_>>();
+            for arg in &mut invalid {
+                if arg == "<REASON>" {
+                    *arg = "not a provider reason".into();
+                }
+            }
+            let refused = fixture.run_argv(&invalid, b"complete reviewer result\n");
+            assert!(!refused.status.success(), "{}", text(&refused));
+            assert!(
+                text(&refused).contains("provider_unavailable"),
+                "{}",
+                text(&refused)
+            );
+            assert_eq!(
+                fixture.json(&["work", "detail", &work, "--json"], b"")["binding"],
+                checked["currentDelivery"]["binding"]
+            );
+        }
+        submit_template(&fixture, &checked, outcome, b"complete reviewer result\n");
+    }
+
+    for outcome in ["accepted", "rework", "blocked"] {
+        let fixture = Fixture::new(&format!("lead-template-{outcome}"));
+        let (_, checked) = advance_to_check(&fixture, "omitted");
+        assert_eq!(
+            step_return_template(&checked)["outcomes"],
+            json!(["accepted", "rework", "blocked"])
+        );
+        submit_template(&fixture, &checked, outcome, b"complete Lead decision\n");
+    }
 }

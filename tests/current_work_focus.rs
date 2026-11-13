@@ -67,6 +67,170 @@ fn focus_file(root: &Path) -> PathBuf {
 }
 
 #[test]
+fn full_history_and_candidate_routes_execute_with_long_portable_invocation_paths() {
+    const MAC_PATH_LIMIT: usize = 1024;
+    const STATE_PATH_HEADROOM: usize = 256;
+    let base = support::temp("focus-live-routes");
+    let mut root = base.join("project");
+    loop {
+        let config = root.join("exitbind.json");
+        if serde_json::to_vec(config.to_str().unwrap()).unwrap().len() > 1024 {
+            break;
+        }
+        root.push("\"".repeat(180));
+    }
+    assert!(root.as_os_str().len() + STATE_PATH_HEADROOM < MAC_PATH_LIMIT);
+    fs::create_dir_all(&root).unwrap();
+    let config = root.join("exitbind.json");
+    let init = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
+        .args(["init", "--mode", "portable", "--root"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(init.status.success(), "{init:?}");
+
+    let mut binary_dir = base.join("binary");
+    for _ in 0..3 {
+        binary_dir.push("\"".repeat(180));
+    }
+    fs::create_dir_all(&binary_dir).unwrap();
+    let executable = binary_dir.join("exitbind");
+    assert!(executable.as_os_str().len() < MAC_PATH_LIMIT);
+    support::place_executable(Path::new(env!("CARGO_BIN_EXE_exitbind")), &executable);
+    let executable = fs::canonicalize(executable).unwrap();
+    // POSIX permits these non-NUL bytes in names. JSON escapes each as six
+    // bytes, so the executable alone crosses the route budget while its real
+    // filesystem path and each component remain below macOS limits.
+    let mut escaped_dir = base.join("escaped-binary");
+    for _ in 0..3 {
+        escaped_dir.push("\u{0001}".repeat(160));
+    }
+    fs::create_dir_all(&escaped_dir).unwrap();
+    let escaped = escaped_dir.join("exitbind");
+    assert!(escaped.as_os_str().len() < MAC_PATH_LIMIT);
+    support::place_executable(Path::new(env!("CARGO_BIN_EXE_exitbind")), &escaped);
+    let escaped = fs::canonicalize(escaped).unwrap();
+    assert!(serde_json::to_vec(escaped.to_str().unwrap()).unwrap().len() > 2048);
+    let config = fs::canonicalize(config).unwrap();
+    let serialized_operands =
+        serde_json::to_vec(&[executable.to_str().unwrap(), config.to_str().unwrap()]).unwrap();
+    assert!(
+        serialized_operands.len() > 2048,
+        "fixture did not cross the route budget"
+    );
+
+    let invoke = |executable: &Path, args: &[&str]| {
+        support::git_topology::command(executable)
+            .current_dir(&root)
+            .args(args)
+            .arg("--config")
+            .arg(&config)
+            .output()
+            .unwrap()
+    };
+    let begin = |goal: &str| {
+        let output = invoke(
+            &executable,
+            &[
+                "work",
+                "begin",
+                "change",
+                "--goal",
+                goal,
+                "--check-command",
+                "true",
+            ],
+        );
+        assert!(output.status.success(), "{output:?}");
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()["work"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let old = begin("older live route");
+    let current = begin("focused live route");
+    let run_route = |executable: &Path, route: &Value| {
+        assert_eq!(route["sameExecutableRequired"], false, "{route}");
+        assert_eq!(route["sameConfigRequired"], false, "{route}");
+        let argv = route["command"].as_array().expect("complete route");
+        let words = argv
+            .iter()
+            .map(|word| word.as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(Path::new(words[0]), executable);
+        assert_eq!(words[words.len() - 2], "--config");
+        assert_eq!(Path::new(words[words.len() - 1]), config);
+        support::git_topology::command(words[0])
+            .current_dir(&root)
+            .args(&words[1..])
+            .output()
+            .expect("the emitted executable must launch without transport repair")
+    };
+
+    for executable in [&executable, &escaped] {
+        let full = invoke(executable, &["work", "resume", "--full", "--json"]);
+        assert!(full.status.success(), "{full:?}");
+        let full: Value = serde_json::from_slice(&full.stdout).unwrap();
+        assert_eq!(full["work"], current);
+        let history = run_route(executable, &full["history"]);
+        assert!(history.status.success(), "{history:?}");
+        let history: Value = serde_json::from_slice(&history.stdout).unwrap();
+        assert_eq!(history["status"], "history");
+        let works = history["works"].as_array().unwrap();
+        assert_eq!(works.len(), 2);
+        for candidate in works {
+            let output = run_route(executable, candidate);
+            assert!(output.status.success(), "{output:?}");
+            let next: Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(next["work"], candidate["work"]);
+        }
+    }
+
+    // A damaged older ledger keeps its exact live inspection route; failure
+    // must come from the damaged ledger, not an incomplete invocation.
+    let ledger = root
+        .join(".exitbind/runs")
+        .join(format!("work-{}.jsonl", old.strip_prefix("smw_").unwrap()));
+    fs::write(ledger, b"not-json\n").unwrap();
+    for executable in [&executable, &escaped] {
+        let full = invoke(executable, &["work", "resume", "--full", "--json"]);
+        assert!(full.status.success(), "{full:?}");
+        let full: Value = serde_json::from_slice(&full.stdout).unwrap();
+        assert_eq!(full["work"], current);
+        let unreadable = full["unreadable"].as_array().unwrap();
+        assert_eq!(unreadable.len(), 1);
+        let inspected = run_route(executable, &unreadable[0]);
+        assert!(!inspected.status.success(), "{inspected:?}");
+        let error: Value = serde_json::from_slice(&inspected.stdout).unwrap();
+        assert!(
+            error["error"]
+                .as_str()
+                .unwrap()
+                .contains("invalid run ledger"),
+            "{inspected:?}"
+        );
+    }
+
+    let compact = invoke(&executable, &["work", "resume", "--json"]);
+    assert!(compact.status.success(), "{compact:?}");
+    assert!(compact.stdout.len() <= 8 * 1024);
+    let compact: Value = serde_json::from_slice(&compact.stdout).unwrap();
+    assert_eq!(compact["work"], current);
+    if let Some(items) = compact["unreadable"].as_array() {
+        for item in items {
+            if item["command"].is_array() {
+                let output = run_route(&executable, item);
+                assert!(!output.status.success());
+            } else {
+                assert_eq!(item["available"], false);
+            }
+        }
+    } else {
+        assert_eq!(compact["complete"], false, "{compact}");
+    }
+}
+
+#[test]
 fn begin_selects_new_work_and_older_running_work_stays_history() {
     // Force the longer native temporary-path boundary on every host, rather
     // than depending on the runner's TMPDIR to reach compact fallback.

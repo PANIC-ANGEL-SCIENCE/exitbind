@@ -17,9 +17,10 @@ mod log_tail;
 mod next;
 mod presentation;
 use candidates::retain_small_candidates;
-use next::{assignment_summary, compact_next, minimal_next, preserve_next_omission_markers};
-pub(crate) use presentation::compact_goal_progress;
-use presentation::{compact_presentation, minimal_presentation};
+pub(crate) use next::compact_next;
+use next::{assignment_summary, minimal_next, preserve_next_omission_markers};
+use presentation::minimal_presentation;
+pub(crate) use presentation::{compact_goal_progress, compact_presentation};
 
 pub(crate) const MAX_RESPONSE_BYTES: usize = 8 * 1024;
 
@@ -786,7 +787,7 @@ fn bounded_text(value: &str, max: usize) -> String {
     text
 }
 
-fn current_subject(response: &Value) -> Option<Value> {
+pub(crate) fn current_subject(response: &Value) -> Option<Value> {
     response
         .get("currentSubject")
         .filter(|value| !value.is_null())

@@ -115,6 +115,635 @@ pub(crate) fn current(loaded: &Loaded, work: &str) -> Result<Value, String> {
     read(loaded, work, &snapshot, &next)
 }
 
+/// Comparable identities for current instructions and evidence. Ledger
+/// transport and governor bookkeeping are displayed separately. These are
+/// observations of content, not read receipts or permission.
+pub(crate) fn public_context_identities(detail: &Value) -> Option<Value> {
+    if detail["kind"] != "work_detail"
+        || detail["complete"] != true
+        || !detail["recipientContext"].is_object()
+        || !detail["sections"].is_object()
+    {
+        return None;
+    }
+    let sections = &detail["sections"];
+    for name in ["assignment", "evidence", "tasks"] {
+        if !sections[name].is_object() {
+            return None;
+        }
+    }
+    let mut assignment = sections["assignment"].clone();
+    content_context(assignment.pointer_mut("/assignment/context")?);
+    if let Some(context) = assignment.pointer_mut("/residual/context") {
+        content_context(context);
+    }
+    if let Some(snapshot) = assignment
+        .pointer_mut("/residual/snapshot")
+        .and_then(Value::as_object_mut)
+    {
+        snapshot.remove("eventCount");
+        snapshot.remove("headEventSha256");
+        snapshot.remove("inputsSha256");
+    }
+    let mut selected_evidence = sections["evidence"].clone();
+    for item in selected_evidence["items"].as_array_mut()? {
+        let object = item.as_object_mut()?;
+        let transport_reference = match object.get("reference") {
+            None | Some(Value::Null) => true,
+            Some(Value::String(reference)) => reference.starts_with("ref:"),
+            _ => false,
+        };
+        if transport_reference {
+            object.remove("reference");
+        }
+    }
+    let declared_evidence = content_evidence(
+        detail.pointer("/sections/assignment/assignment/context/evidence")?,
+        &detail["work"],
+    )?;
+    let residual_evidence =
+        if let Some(items) = detail.pointer("/sections/assignment/residual/context/evidence") {
+            Some(content_evidence(items, &detail["work"])?)
+        } else {
+            None
+        };
+    Some(
+        json!({"recipientSha256":crate::evidence::hash::value(&detail["recipientContext"]),
+        "assignmentContentSha256":crate::evidence::hash::value(&assignment),
+        "evidenceContentSha256":crate::evidence::hash::value(&json!({
+            "declared":declared_evidence,"residual":residual_evidence,"selected":selected_evidence})),
+        "tasksSha256":crate::evidence::hash::value(&sections["tasks"])}),
+    )
+}
+
+fn content_evidence(value: &Value, work: &Value) -> Option<Value> {
+    let mut value = value.clone();
+    for item in value.as_array_mut()? {
+        let selector = item.get("evidenceId").cloned();
+        let Some(reference) = item.get_mut("rawEventRef") else {
+            continue;
+        };
+        if reference["kind"] == "ledger_event"
+            && reference["selector"].is_string()
+            && Some(&reference["selector"]) == selector.as_ref()
+            && &reference["work"] == work
+            && reference["id"]
+                .as_str()
+                .is_some_and(|id| id.starts_with("ref:"))
+            && reference["eventCount"].is_u64()
+            && reference["headEventSha256"].is_string()
+            && reference["sha256"].is_string()
+        {
+            if let Some(reference) = reference.as_object_mut() {
+                for field in ["eventCount", "headEventSha256", "id", "sha256"] {
+                    reference.remove(field);
+                }
+            }
+        }
+    }
+    Some(value)
+}
+
+/// Separate semantic assignment content from transport and the explicit
+/// current governor state. Unknown fields remain part of the identity.
+fn content_context(value: &mut Value) {
+    let Some(context) = value.as_object_mut() else {
+        return;
+    };
+    for field in ["digest", "evidence"] {
+        context.remove(field);
+    }
+    if let Some(expansions) = context.get_mut("expansions").and_then(Value::as_array_mut) {
+        for item in expansions {
+            if matches!(
+                item["kind"].as_str(),
+                Some("ledger_event" | "ledger_history")
+            ) && item["id"].as_str().is_some_and(|id| id.starts_with("ref:"))
+                && item["eventCount"].is_u64()
+                && item["headEventSha256"].is_string()
+                && item["sha256"].is_string()
+            {
+                if let Some(reference) = item.as_object_mut() {
+                    for field in ["eventCount", "headEventSha256", "id", "sha256"] {
+                        reference.remove(field);
+                    }
+                }
+            }
+        }
+    }
+    if let Some(loop_state) = context.get_mut("loop").and_then(Value::as_object_mut) {
+        if let Some(mutation) = loop_state.get_mut("currentMutation") {
+            if mutation.is_null() {
+                loop_state.remove("currentMutation");
+            } else if let Some(fields) = mutation.as_object_mut() {
+                for field in [
+                    "attempt",
+                    "carryLineage",
+                    "checkpoint",
+                    "eventSha256",
+                    "inputSha256",
+                    "operation",
+                    "runId",
+                    "subjectSha256",
+                    "unit",
+                ] {
+                    fields.remove(field);
+                }
+                if fields.is_empty() {
+                    loop_state.remove("currentMutation");
+                }
+            }
+        }
+        for field in [
+            "attempt",
+            "consumedGrants",
+            "currentGrantEventSha256",
+            "headSha256",
+            "lineageSha256",
+            "noInformationStreak",
+            "postReplanSpent",
+            "runId",
+            "seenMutations",
+            "spent",
+            "subjectSha256",
+        ] {
+            loop_state.remove(field);
+        }
+    }
+}
+
+/// An adjacent permitted transition may carry the already delivered content
+/// identity forward. If anything required changed, keep the full delivery.
+pub(crate) fn public_context_continuity(before: &Value, after: &Value) -> Option<Value> {
+    let base = public_context_identities(before)?;
+    let current = public_context_identities(after)?;
+    if before["work"] != after["work"]
+        || before["recipient"] != after["recipient"]
+        || before["recipientContext"] != after["recipientContext"]
+        || base != current
+        || !before["binding"].is_string()
+        || !after["binding"].is_string()
+    {
+        return None;
+    }
+    let state = after.pointer("/sections/assignment/assignment/context/loop")?;
+    if !state.is_object() {
+        return None;
+    }
+    Some(json!({
+        "kind":"work_context_continuity", "complete":false,
+        "reason":"compare these content identities with the complete context already read; otherwise use current full detail",
+        "work":after["work"], "binding":after["binding"], "baseBinding":before["binding"],
+        "recipient":after["recipient"], "contextIdentity":current,
+        "inputsSha256":after["sections"]["assignment"]["residual"]["snapshot"]["inputsSha256"],
+        "governor":{"enabled":state["enabled"],"state":state["state"],"budget":state["budget"],
+            "spent":state["spent"],"noInformationStreak":state["noInformationStreak"],
+            "afterReplan":state["afterReplan"],"replanCount":state["replanCount"],
+            "postReplanSpent":state["postReplanSpent"]},
+    }))
+}
+
+/// One copy of the required content for a newly selected actor. This is a
+/// public step projection; the original complete detail stays available.
+pub(crate) fn public_actor_context(detail: &Value, reuse_recipient: bool) -> Option<Value> {
+    let identity = detail
+        .get("contextIdentity")
+        .cloned()
+        .or_else(|| public_context_identities(detail))?;
+    let recipient = &detail["recipientContext"];
+    if recipient["available"] != true || recipient["complete"] != true {
+        return None;
+    }
+    for field in ["agent", "role", "nativeName"] {
+        if recipient[field] != detail["recipient"][field] {
+            return None;
+        }
+    }
+    // Reuse the existing reference-only sanitization. Never recursively
+    // remove fields from the delivered instruction or evidence body.
+    let mut public_recipient = json!({"currentDelivery":{"recipientContext":recipient}});
+    public_embedded_delivery(&mut public_recipient);
+    let recipient = &public_recipient["currentDelivery"]["recipientContext"];
+    let profile = instruction_body(&recipient["profile"])?;
+    let rules = recipient["rules"]
+        .as_array()?
+        .iter()
+        .map(instruction_body)
+        .collect::<Option<Vec<_>>>()?;
+    let mut instructions = json!({"profile":profile,"rules":rules,
+        "displayName":recipient["displayName"],"authority":recipient["authority"]});
+    if recipient["purpose"] != detail["sections"]["assignment"]["assignment"]["purpose"] {
+        instructions["purpose"] = recipient["purpose"].clone();
+    }
+    if recipient["declaredBoundary"]
+        != detail["sections"]["assignment"]["assignment"]["declaredBoundary"]
+    {
+        instructions["declaredBoundary"] = recipient["declaredBoundary"].clone();
+    }
+    for (field, value) in recipient.as_object()? {
+        if !matches!(
+            field.as_str(),
+            "available"
+                | "complete"
+                | "agent"
+                | "role"
+                | "nativeName"
+                | "displayName"
+                | "purpose"
+                | "configurationSha256"
+                | "profile"
+                | "rules"
+                | "declaredBoundary"
+                | "authority"
+                | "guidance"
+                | "architectureContract"
+                | "capabilities"
+                | "projectLessons"
+                | "specialistExperience"
+        ) {
+            instructions[field] = value.clone();
+        }
+    }
+    for field in [
+        "guidance",
+        "architectureContract",
+        "capabilities",
+        "projectLessons",
+        "specialistExperience",
+    ] {
+        if let Some(original) = recipient.get(field).filter(|value| !value.is_null()) {
+            if incomplete_instruction_material(original) {
+                return None;
+            }
+            if field == "guidance"
+                && original["selectedCount"] == 0
+                && original["overflowCount"] == 0
+                && original["unavailableCount"] == 0
+                && ["items", "overflow", "unavailable"]
+                    .iter()
+                    .all(|key| original[*key].as_array().is_some_and(Vec::is_empty))
+                && original.as_object().is_some_and(|object| {
+                    object.keys().all(|key| {
+                        matches!(
+                            key.as_str(),
+                            "budgetBytes"
+                                | "items"
+                                | "meaning"
+                                | "overflow"
+                                | "overflowCount"
+                                | "selectedCount"
+                                | "unavailable"
+                                | "unavailableCount"
+                                | "usedBytes"
+                        )
+                    })
+                })
+            {
+                continue;
+            }
+            instructions[field] = original.clone();
+        }
+    }
+    if reuse_recipient {
+        instructions = json!({"recipientSha256":identity["recipientSha256"],
+            "reuseIfPreviouslyRead":true,
+            "meaning":"compare this recipient identity with the complete instructions already read; otherwise use full detail"});
+    }
+    let section = &detail["sections"]["assignment"];
+    let mut packet = section["assignment"].clone();
+    let original_context = packet.get("context")?.clone();
+    let selected = detail["sections"]["evidence"]["items"].as_array()?;
+    let context = public_actor_packet_context(&original_context, selected, &detail["work"])?;
+    packet.as_object_mut()?.remove("context");
+
+    let mut residual = section["residual"].clone();
+    let mut aliases = Vec::new();
+    if let Some(context) = residual.get_mut("context").and_then(Value::as_object_mut) {
+        for (key, value) in context.clone() {
+            if original_context.get(&key) == Some(&value) {
+                context.remove(&key);
+                aliases.push(key);
+            }
+        }
+        if context.is_empty() {
+            residual.as_object_mut()?.remove("context");
+        }
+    }
+    if let Some(snapshot) = residual.get_mut("snapshot").and_then(Value::as_object_mut) {
+        snapshot.remove("eventCount");
+        snapshot.remove("headEventSha256");
+    }
+    let mut preparation = section["checkPreparation"].clone();
+    if let Some(checker) = preparation.as_object_mut() {
+        checker.remove("path");
+        checker.remove("workingDirectory");
+        if let Some(input) = checker.get_mut("input").and_then(Value::as_object_mut) {
+            input.remove("path");
+        }
+    }
+    let evidence = public_actor_evidence(&detail["sections"]["evidence"])?;
+    let result = json!({"kind":"work_actor_context","complete":false,
+        "requiredContentComplete":!reuse_recipient,
+        "reason":if reuse_recipient { "assignment and evidence are included; compare the recipient identity or read full detail" }
+            else { "current actor instructions and evidence are included; original full detail remains available" },
+        "work":detail["work"],"binding":detail["binding"],"recipient":detail["recipient"],
+        "contextIdentity":identity,"instructions":instructions,"assignment":packet,
+        "context":context,"residual":residual,"equalContextAliases":aliases,
+        "checkPreparation":preparation,"memoryQuery":section["memoryQuery"],
+        "outcomes":section["outcomes"],"evidence":evidence,"tasks":detail["sections"]["tasks"]});
+    if public_context_has_transport(&result) {
+        return None;
+    }
+    Some(result)
+}
+
+fn incomplete_instruction_material(value: &Value) -> bool {
+    match value {
+        Value::Object(object) => {
+            object.get("complete") == Some(&json!(false))
+                || object.get("readable") == Some(&json!(false))
+                || (object.get("content") == Some(&Value::Null)
+                    && (object.contains_key("reference") || object.contains_key("sha256")))
+                || ["overflow", "unavailable"].iter().any(|key| {
+                    object
+                        .get(*key)
+                        .and_then(Value::as_array)
+                        .is_some_and(|items| !items.is_empty())
+                })
+                || object.values().any(incomplete_instruction_material)
+        }
+        Value::Array(items) => items.iter().any(incomplete_instruction_material),
+        _ => false,
+    }
+}
+
+fn instruction_body(value: &Value) -> Option<Value> {
+    let content = value["content"].as_str()?;
+    let sha256 = value["sha256"].as_str()?;
+    if value["complete"] != true
+        || value["bytes"].as_u64()? != content.len() as u64
+        || crate::evidence::hash::bytes(content.as_bytes()) != sha256
+    {
+        return None;
+    }
+    let mut body = value.clone();
+    let object = body.as_object_mut()?;
+    object.remove("path");
+    for field in ["access", "reason"] {
+        if object.get(field).is_some_and(Value::is_null) {
+            object.remove(field);
+        }
+    }
+    Some(body)
+}
+
+fn public_actor_packet_context(context: &Value, selected: &[Value], work: &Value) -> Option<Value> {
+    let mut result = context.clone();
+    let object = result.as_object_mut()?;
+    object.remove("digest");
+    if let Some(expansions) = object.remove("expansions") {
+        if !expansions.as_array()?.iter().all(|item| {
+            matches!(
+                item["kind"].as_str(),
+                Some("ledger_history" | "ledger_event")
+            ) && &item["work"] == work
+                && item.as_object().is_some_and(|object| {
+                    object.keys().all(|key| {
+                        matches!(
+                            key.as_str(),
+                            "eventCount"
+                                | "exact"
+                                | "headEventSha256"
+                                | "id"
+                                | "kind"
+                                | "selector"
+                                | "sha256"
+                                | "work"
+                        )
+                    })
+                })
+        }) {
+            return None;
+        }
+    }
+    if let Some(items) = object.get_mut("evidence") {
+        for item in items.as_array_mut()? {
+            for field in ["rawEventRef", "checkEventRef", "checkLogRef"] {
+                if let Some(reference) = item.get(field).filter(|value| !value.is_null()) {
+                    let selector = if field == "checkLogRef" {
+                        &reference["checkEventSha256"]
+                    } else {
+                        &reference["selector"]
+                    };
+                    let event = selected
+                        .iter()
+                        .find(|event| event["eventSha256"] == *selector)?;
+                    if &reference["work"] != work
+                        || !selector.is_string()
+                        || reference["exact"] != true
+                        || reference["kind"]
+                            != if field == "checkLogRef" {
+                                "check_log"
+                            } else {
+                                "ledger_event"
+                            }
+                        || !reference["id"]
+                            .as_str()
+                            .is_some_and(|id| id.starts_with("ref:"))
+                        || !reference.as_object().is_some_and(|object| {
+                            object.keys().all(|key| {
+                                matches!(
+                                    key.as_str(),
+                                    "eventCount"
+                                        | "exact"
+                                        | "headEventSha256"
+                                        | "id"
+                                        | "kind"
+                                        | "selector"
+                                        | "sha256"
+                                        | "work"
+                                        | "checkEventSha256"
+                                        | "stdout"
+                                        | "stderr"
+                                )
+                            })
+                        })
+                    {
+                        return None;
+                    }
+                    if field == "checkLogRef" {
+                        for stream in ["stdout", "stderr"] {
+                            if reference[stream].is_object()
+                                && (reference[stream]["sha256"] != event[stream]["sha256"]
+                                    || reference[stream]["bytes"] != event[stream]["bytes"]
+                                    || reference[stream]["exact"] != true
+                                    || event[stream]["complete"] != true)
+                            {
+                                return None;
+                            }
+                        }
+                    }
+                }
+                item.as_object_mut()?.remove(field);
+            }
+            rename_evidence_id(item, "targetEventSha256", "targetEvidenceId")?;
+            rename_evidence_id(item, "checkEventSha256", "checkEvidenceId")?;
+        }
+    }
+    if let Some(obligations) = object.get_mut("obligations") {
+        for item in obligations.as_array_mut()? {
+            rename_evidence_id(item, "targetEventSha256", "targetEvidenceId")?;
+            rename_evidence_id(item, "checkEventSha256", "checkEvidenceId")?;
+        }
+    }
+    if let Some(recovery) = object.get("recovery") {
+        if recovery["stale"]
+            .as_array()
+            .is_some_and(|items| !items.is_empty())
+            || recovery["conflicts"]
+                .as_array()
+                .is_some_and(|items| !items.is_empty())
+        {
+            return None;
+        }
+    }
+    if let Some(loop_state) = object.get_mut("loop") {
+        *loop_state = public_governor_state(loop_state)?;
+    }
+    Some(result)
+}
+
+fn public_governor_state(value: &Value) -> Option<Value> {
+    let source = value.as_object()?;
+    const KNOWN: &[&str] = &[
+        "version",
+        "enabled",
+        "budget",
+        "defaults",
+        "grantProtocol",
+        "state",
+        "afterReplan",
+        "replanCount",
+        "postReplanSpent",
+        "spent",
+        "noInformationStreak",
+        "currentReplan",
+        "currentSensorRequest",
+        "evidence",
+        "observations",
+        "consumedGrants",
+        "currentGrantEventSha256",
+        "currentMutation",
+        "headSha256",
+        "lineageSha256",
+        "runId",
+        "seenEvidenceSha256",
+        "seenMutations",
+        "seenSensors",
+        "subjectSha256",
+        "attempt",
+    ];
+    if source.keys().any(|key| !KNOWN.contains(&key.as_str())) {
+        return None;
+    }
+    if source
+        .get("currentReplan")
+        .is_some_and(|value| !value.is_null())
+        || source
+            .get("currentSensorRequest")
+            .is_some_and(|value| !value.is_null())
+        || source
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_some_and(|items| !items.is_empty())
+    {
+        return None;
+    }
+    let mut state = Map::new();
+    for field in [
+        "enabled",
+        "state",
+        "budget",
+        "defaults",
+        "grantProtocol",
+        "spent",
+        "noInformationStreak",
+        "afterReplan",
+        "replanCount",
+        "postReplanSpent",
+    ] {
+        if let Some(value) = source.get(field) {
+            state.insert(field.to_owned(), value.clone());
+        }
+    }
+    Some(Value::Object(state))
+}
+
+fn rename_evidence_id(value: &mut Value, old: &str, new: &str) -> Option<()> {
+    let object = value.as_object_mut()?;
+    if let Some(id) = object.remove(old) {
+        if object.insert(new.to_owned(), id).is_some() {
+            return None;
+        }
+    }
+    Some(())
+}
+
+fn public_actor_evidence(value: &Value) -> Option<Value> {
+    let mut evidence = value.clone();
+    for item in evidence["items"].as_array_mut()? {
+        rename_evidence_id(item, "eventSha256", "evidenceId")?;
+        let reference = item.get("reference");
+        if reference.is_some_and(|value| {
+            !value.is_null() && !value.as_str().is_some_and(|text| text.starts_with("ref:"))
+        }) {
+            return None;
+        }
+        item.as_object_mut()?.remove("reference");
+        for field in ["artifact", "stdout", "stderr"] {
+            if item[field].is_object() {
+                let kind = if field == "artifact" {
+                    "evidence"
+                } else {
+                    field
+                };
+                if item[field]
+                    .get("kind")
+                    .is_some_and(|value| value.as_str() != Some(kind))
+                {
+                    return None;
+                }
+                item[field]["kind"] = json!(kind);
+            }
+        }
+    }
+    Some(evidence)
+}
+
+fn public_context_has_transport(value: &Value) -> bool {
+    match value {
+        Value::Object(object) => object.iter().any(|(key, child)| {
+            matches!(
+                key.as_str(),
+                "path"
+                    | "root"
+                    | "ledger"
+                    | "ledgerPath"
+                    | "profilePath"
+                    | "artifactRootHint"
+                    | "artifactPathHint"
+                    | "sourcePath"
+                    | "eventSha256"
+                    | "targetEventSha256"
+                    | "checkCommand"
+                    | "exitCode"
+            ) || public_context_has_transport(child)
+        }),
+        Value::Array(items) => items.iter().any(public_context_has_transport),
+        _ => false,
+    }
+}
+
 /// The newly embedded step delivery is an agent-facing projection. Remove
 /// transport locations only from its guidance references; the complete
 /// bodies, identities and existing read routes remain intact. Explicit detail

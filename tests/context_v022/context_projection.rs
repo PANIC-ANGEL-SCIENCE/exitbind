@@ -100,8 +100,8 @@ fn agent_facing_projection_strips_memory_transport_paths() {
     let selected = assert_embedded_memory_delivery(&started, "lead");
     assert_eq!(selected, started["next"]["packet"]["memoryReferences"][0]);
 
-    // These typed paths identify the delivered profile and observed checker,
-    // not memory transport. Check them before applying the strict scan.
+    // The outer preparation exposes states, while the typed delivery retains
+    // the profile and checker identities. Neither is a memory reference.
     let profile = &started["currentDelivery"]["recipientContext"]["profile"];
     assert_eq!(profile["path"], "exitbind/agents/lead.md");
     assert_eq!(profile["complete"], true);
@@ -109,15 +109,16 @@ fn agent_facing_projection_strips_memory_transport_paths() {
     let checker = &started["beginPreparation"]["checker"];
     assert_eq!(checker["program"], "true");
     assert_eq!(checker["state"], "runnable");
-    let checker_path = checker["path"].as_str().unwrap();
+    assert!(checker.get("path").is_none());
+    assert!(checker.get("workingDirectory").is_none());
+    let delivered_checker =
+        &started["currentDelivery"]["sections"]["assignment"]["checkPreparation"];
+    assert_eq!(delivered_checker["program"], "true");
+    assert_eq!(delivered_checker["state"], "runnable");
+    let checker_path = delivered_checker["path"].as_str().unwrap();
     assert!(std::path::Path::new(checker_path).is_absolute());
-    assert_eq!(
-        started["currentDelivery"]["sections"]["assignment"]["checkPreparation"]["path"],
-        checker_path
-    );
     let mut transport_checked = started.clone();
     for pointer in [
-        "/beginPreparation/checker",
         "/currentDelivery/recipientContext/profile",
         "/currentDelivery/sections/assignment/checkPreparation",
     ] {

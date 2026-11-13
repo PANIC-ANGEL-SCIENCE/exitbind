@@ -48,7 +48,7 @@ pub(super) fn minimal_presentation(presentation: &Value) -> Value {
     Value::Object(result)
 }
 
-pub(super) fn compact_presentation(presentation: &Value) -> Value {
+pub(crate) fn compact_presentation(presentation: &Value) -> Value {
     // Keep terminal and transition meaning, while bounding the additive goal
     // projection by field. Full goal status remains available from
     // `goal status --json`.

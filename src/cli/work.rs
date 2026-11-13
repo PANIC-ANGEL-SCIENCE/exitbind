@@ -11,6 +11,449 @@ mod detail;
 mod fill;
 mod recovery;
 
+// These are live navigation metadata, not saved evidence or user artifacts.
+// Keep completion and whole-command omission aligned across public views.
+const LIVE_NAVIGATION: &[&str] = &[
+    "/continuation",
+    "/history",
+    "/works",
+    "/unreadable",
+    "/presentation/goalProgress/adoptRoute",
+    "/warnings",
+    "/next/warnings",
+];
+
+fn complete_live_navigation(value: &mut Value, config: &std::path::Path) -> bool {
+    let mut complete = true;
+    for pointer in LIVE_NAVIGATION {
+        if let Some(routes) = value.pointer_mut(pointer) {
+            complete &= crate::emitted::complete_known(routes, config);
+        }
+    }
+    complete
+}
+
+fn omit_live_navigation(value: &mut Value) {
+    for pointer in LIVE_NAVIGATION {
+        if let Some(routes) = value.pointer_mut(pointer) {
+            crate::emitted::omit_commands(routes);
+        }
+    }
+}
+
+/// Keep one current executable form and one full-detail route on ordinary
+/// steps. Explicit full/detail readers and native packets use their own path.
+fn project_public_step(loaded: &config::Loaded, value: &mut Value) {
+    let Some(work) = value["work"].as_str().map(str::to_owned) else {
+        return;
+    };
+    if value.get("effect").is_none()
+        && value["beginPreparation"].is_object()
+        && value["currentDelivery"]["kind"] == "work_detail"
+    {
+        value["effect"] = json!("recorded");
+    }
+    if !value["current"].is_object()
+        || !value["effectiveAction"].is_object()
+        || !matches!(value["effect"].as_str(), Some("recorded" | "no-change"))
+        || value["projectionError"].is_string()
+        || value["diagnostic"].is_object()
+        || value["warnings"]
+            .as_array()
+            .is_some_and(|warnings| !warnings.is_empty())
+        || value
+            .pointer("/next/warnings")
+            .and_then(Value::as_array)
+            .is_some_and(|warnings| !warnings.is_empty())
+    {
+        return;
+    }
+    if value["currentDelivery"]["kind"] == "work_detail" {
+        let reuse_recipient = value["currentDelivery"]["recipient"]["role"] == "lead"
+            && matches!(
+                value["actionForms"]["state"].as_str(),
+                Some(
+                    "lead_acceptance"
+                        | "failed_check"
+                        | "pending_review_finding"
+                        | "failed_check_observation"
+                        | "unresolved_check_observation"
+                )
+            );
+        if value["currentDelivery"]["recipient"]["actor"] == "exitbind" {
+            value.as_object_mut().unwrap().remove("currentDelivery");
+        } else if let Some(context) =
+            crate::work::readable::public_actor_context(&value["currentDelivery"], reuse_recipient)
+        {
+            value["currentDelivery"] = context;
+        } else {
+            value["currentDelivery"] = json!({"kind":"work_actor_context", "complete":false,
+                "requiredContentComplete":false,
+                "reason":"required current context needs the complete detail route"});
+            value["effectiveAction"]["requiresDetail"] = json!(true);
+        }
+    }
+    let mut action = value["effectiveAction"].clone();
+    if let Some(forms) = value["actionForms"].as_object() {
+        let mut merged = action.clone();
+        let target = merged.as_object_mut().expect("effective action object");
+        let mut compatible = true;
+        for (key, item) in forms {
+            if key == "state" {
+                target.insert("formState".to_owned(), item.clone());
+            } else if let Some(existing) = target.get(key) {
+                if existing != item {
+                    compatible = false;
+                    break;
+                }
+            } else {
+                target.insert(key.clone(), item.clone());
+            }
+        }
+        if compatible {
+            action = merged;
+            value.as_object_mut().unwrap().remove("actionForms");
+            if compact_form_is_redundant(&value["current"]["actionForm"], &action) {
+                value["current"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("actionForm");
+            }
+        }
+    }
+    value["effectiveAction"] = action;
+    let action_detail = value["effectiveAction"]["detail"].clone();
+    if action_detail.is_object() {
+        if let Some(details) = value["current"]
+            .get_mut("details")
+            .and_then(Value::as_object_mut)
+        {
+            if details.get("grouped") == Some(&action_detail) {
+                details.remove("grouped");
+            }
+        }
+    }
+    let mut full = crate::emitted::Route::new(["work", "detail", &work, "--json"])
+        .config(&loaded.path)
+        .within(1024)
+        .command_json();
+    if !crate::emitted::complete_known(&mut full, &loaded.path) {
+        crate::emitted::omit_commands(&mut full);
+        full["reason"] = json!("complete full-detail route unavailable");
+    }
+    full["readOnly"] = json!(true);
+    full["binding"] = value["current"]["binding"].clone();
+    value["full"] = full;
+}
+
+fn compact_form_is_redundant(compact: &Value, action: &Value) -> bool {
+    let Some(compact) = compact.as_object() else {
+        return false;
+    };
+    const KNOWN: &[&str] = &[
+        "actor",
+        "assignment",
+        "beforeEditing",
+        "binding",
+        "choices",
+        "choiceActor",
+        "currentGrant",
+        "detail",
+        "leadChoiceRequired",
+        "mechanicalAction",
+        "state",
+        "version",
+        "work",
+    ];
+    if compact.keys().any(|key| !KNOWN.contains(&key.as_str()))
+        || compact.get("state") != action.get("formState")
+        || compact.get("binding") != action.get("binding")
+    {
+        return false;
+    }
+    for field in [
+        "actor",
+        "assignment",
+        "beforeEditing",
+        "choiceActor",
+        "currentGrant",
+        "leadChoiceRequired",
+        "mechanicalAction",
+        "version",
+        "work",
+    ] {
+        if compact
+            .get(field)
+            .is_some_and(|value| action.get(field) != Some(value))
+        {
+            return false;
+        }
+    }
+    let labels = |choices: &Value| -> Option<Vec<String>> {
+        let mut result = Vec::new();
+        for choice in choices.as_array()? {
+            if choice["kind"] == "outcome_template" {
+                result.extend(
+                    choice["outcomes"]
+                        .as_array()?
+                        .iter()
+                        .map(|item| item.as_str().map(str::to_owned))
+                        .collect::<Option<Vec<_>>>()?,
+                );
+            } else {
+                result.push(choice["label"].as_str()?.to_owned());
+            }
+        }
+        Some(result)
+    };
+    matches!((labels(compact.get("choices").unwrap_or(&Value::Null)), labels(&action["choices"])),
+        (Some(left), Some(right)) if left == right)
+}
+
+fn navigation_step(loaded: &config::Loaded, work: &str, original: &Value) -> Option<Value> {
+    if original["reason"]["code"] != "explicit_handle"
+        || original["effect"] != "no-change"
+        || original["next"]["held"].is_object()
+        || original["next"]["heldResults"].is_array()
+        || original["warnings"]
+            .as_array()
+            .is_some_and(|warnings| !warnings.is_empty())
+        || original["next"]["warnings"]
+            .as_array()
+            .is_some_and(|warnings| !warnings.is_empty())
+    {
+        return None;
+    }
+    // The compact projector can discard the current form to meet its budget.
+    // Validate against the unabridged current snapshot before projecting a
+    // normal navigation step; exceptional states keep the compact fallback.
+    let mut detail = crate::work::readable::current(loaded, work).ok()?;
+    if detail["binding"] != original["next"]["current"]["binding"]
+        || detail["complete"] != true
+        || !detail["actionForms"].is_object()
+        || detail["actionForms"]["binding"] != detail["binding"]
+        || original["next"]["current"]["actionForm"]["binding"] != detail["binding"]
+        || detail["actionForms"]["state"] != original["next"]["current"]["actionForm"]["state"]
+    {
+        return None;
+    }
+    if !matches!(
+        detail["actionForms"]["state"].as_str(),
+        Some("initial_scope" | "pending_assignment" | "check" | "lead_acceptance")
+    ) {
+        return None;
+    }
+    crate::work::readable::public_delivery(&mut detail);
+    let identity = crate::work::readable::public_context_identities(&detail)?;
+    let delivery = json!({"kind":"work_context_reference","complete":false,
+        "reason":"compare the current content identities with complete context already read; otherwise use full detail",
+        "binding":detail["binding"],"recipient":detail["recipient"],"contextIdentity":identity,
+        "inputsSha256":detail["sections"]["assignment"]["residual"]["snapshot"]["inputsSha256"]});
+    let current = navigation_current(&original["next"]["current"])?;
+    let mut next = crate::work::compact::compact_next(&original["next"]);
+    if let Some(next) = next.as_object_mut() {
+        next.remove("packet");
+        next.remove("goal");
+        if let Some(progress) = next.get_mut("progress").and_then(Value::as_object_mut) {
+            if progress.keys().all(|key| {
+                matches!(
+                    key.as_str(),
+                    "applicable" | "components" | "percent" | "reason" | "state" | "weights"
+                )
+            }) {
+                progress.retain(|key, _| {
+                    matches!(key.as_str(), "applicable" | "percent" | "reason" | "state")
+                });
+            }
+        }
+    }
+    let mut step = json!({"compact":true,"work":work,"effect":"no-change",
+        "reason":original["reason"],"current":current,"next":next,
+        "currentDelivery":delivery,"actionForms":detail["actionForms"],"navigationStep":true});
+    for field in [
+        "producer",
+        "recorder",
+        "ledgerProducer",
+        "recorderLimitation",
+        "continuation",
+    ] {
+        if let Some(value) = original.get(field) {
+            step[field] = value.clone();
+        }
+    }
+    if let Some(presentation) = original.get("presentation") {
+        step["presentation"] = crate::work::compact::compact_presentation(presentation);
+    }
+    if let Some(help) = original.pointer("/residual/humanHelp") {
+        let mut help = help.clone();
+        omit_self_navigation(&mut help, &step["current"], loaded, work);
+        step["humanHelp"] = help;
+    }
+    if let Some(subject) = crate::work::compact::current_subject(original) {
+        step["currentSubject"] = navigation_subject(&subject, &step["current"]);
+    }
+    let mut step = crate::work::effective_action::attach(&step);
+    if step["effectiveAction"]["delegation"]
+        .as_object()
+        .is_some_and(|object| {
+            object.keys().all(|key| {
+                matches!(
+                    key.as_str(),
+                    "agent"
+                        | "assignment"
+                        | "meaning"
+                        | "nativeName"
+                        | "nextAction"
+                        | "role"
+                        | "text"
+                )
+            }) && object.get("nextAction").is_some_and(Value::is_string)
+                && object.get("text").is_some_and(Value::is_string)
+        })
+    {
+        let delegation = &step["effectiveAction"]["delegation"];
+        let summary = json!({"nextAction":delegation["nextAction"],"text":delegation["text"]});
+        step["effectiveAction"]["delegation"] = summary;
+    }
+    Some(step)
+}
+
+/// Present current action facts; the complete subject and assignment remain
+/// accessible from the full route when their content identities differ.
+fn navigation_current(current: &Value) -> Option<Value> {
+    let object = current.as_object()?;
+    if !current["binding"].is_string()
+        || !current["recipient"]["actor"].is_string()
+        || !current["repair"].is_null()
+        || !current["uncreditedChild"].is_null()
+        || !current["checkReplacement"].is_null()
+    {
+        return None;
+    }
+    let mut summary = serde_json::Map::new();
+    for key in [
+        "action",
+        "binding",
+        "phase",
+        "readiness",
+        "recipient",
+        "result",
+        "missing",
+    ] {
+        if let Some(value) = object.get(key) {
+            summary.insert(key.to_owned(), value.clone());
+        }
+    }
+    Some(Value::Object(summary))
+}
+
+fn navigation_subject(subject: &Value, current: &Value) -> Value {
+    let displayed = &current["result"]["subject"];
+    let mut subject_content = subject.clone();
+    let Some(subject_object) = subject_content.as_object_mut() else {
+        return subject.clone();
+    };
+    subject_object.remove("sha256");
+    if !subject["sha256"].is_string()
+        || subject["sha256"] != crate::evidence::hash::value(&subject_content)
+        || subject["sha256"] != displayed["sha256"]
+        || subject["attempt"] != displayed["attempt"]
+        || subject["workerArtifactSha256"] != displayed["workerArtifactSha256"]
+    {
+        return subject.clone();
+    }
+    let mut summary =
+        json!({"sha256":subject["sha256"], "attempt":subject["attempt"], "complete":false});
+    for field in [
+        "workerArtifactSha256",
+        "previousSubjectSha256",
+        "transitionSha256",
+    ] {
+        if !subject[field].is_null() {
+            summary[field] = subject[field].clone();
+        }
+    }
+    summary
+}
+
+/// Omit only the known route back to this same step. Different help or
+/// recovery routes remain available with their original semantics.
+fn omit_self_navigation(help: &mut Value, current: &Value, loaded: &config::Loaded, work: &str) {
+    let action = &help["nextAction"];
+    let command = &action["command"];
+    let exact_route = crate::emitted::executable()
+        .ok()
+        .zip(loaded.path.to_str())
+        .is_some_and(|(executable, config)| {
+            command["argv"] == json!([executable, "work", "next", work, "--config", config])
+        });
+    if exact_route
+        && action["actor"] == current["recipient"]["actor"]
+        && action["summary"] == "run the pending worker assignment"
+        && action.as_object().is_some_and(|object| {
+            object
+                .keys()
+                .all(|key| matches!(key.as_str(), "actor" | "command" | "summary"))
+        })
+        && command.as_object().is_some_and(|object| {
+            object
+                .keys()
+                .all(|key| matches!(key.as_str(), "args" | "argv" | "program"))
+        })
+        && command["args"] == json!(["work", "next", work])
+        && command["program"] == "exitbind"
+    {
+        help.as_object_mut()
+            .expect("human help object")
+            .remove("nextAction");
+    }
+}
+
+#[cfg(test)]
+mod navigation_delta_tests {
+    use super::*;
+
+    #[test]
+    fn current_projection_preserves_identity_and_refuses_repair_state() {
+        let current = json!({"binding":"binding", "action":"spawn", "readiness":"IN_PROGRESS",
+            "recipient":{"actor":"worker"}, "result":{"subject":{"sha256":"subject"}},
+            "missing":{"items":[{"obligation":"implementation"}]}});
+        let projected = navigation_current(&current).unwrap();
+        for key in [
+            "binding",
+            "action",
+            "readiness",
+            "recipient",
+            "result",
+            "missing",
+        ] {
+            assert_eq!(projected[key], current[key]);
+        }
+        let mut repair = current.clone();
+        repair["repair"] = json!({"required":true});
+        assert!(navigation_current(&repair).is_none());
+        repair = current;
+        repair["uncreditedChild"] = json!({"state":"pending"});
+        assert!(navigation_current(&repair).is_none());
+
+        let mut subject = json!({"attempt":1,"goalSha256":"goal", "workerArtifactSha256":null,
+            "previousSubjectSha256":null,"transitionSha256":null});
+        let subject_sha256 = crate::evidence::hash::value(&subject);
+        subject["sha256"] = json!(subject_sha256);
+        let current = json!({"result":{"subject":{"sha256":subject["sha256"],
+            "attempt":1,"workerArtifactSha256":null}}});
+        let summary = navigation_subject(&subject, &current);
+        assert_eq!(summary["sha256"], subject["sha256"]);
+        assert_eq!(summary["complete"], false);
+        let mut forged = subject.clone();
+        forged["goalSha256"] = json!("different");
+        assert_eq!(navigation_subject(&forged, &current), forged);
+        let mut changed_current = current;
+        changed_current["result"]["subject"]["sha256"] = json!("different");
+        assert_eq!(navigation_subject(&subject, &changed_current), subject);
+    }
+}
+
 fn print_work_json(value: &serde_json::Value) -> Result<(), String> {
     let mut value = crate::work::effective_action::attach(value);
     crate::work::readable::public_delivery(&mut value);
@@ -43,6 +486,7 @@ fn print_active_read_json(
             routes_complete &= crate::emitted::complete_known(routes, &loaded.path);
         }
     }
+    routes_complete &= complete_live_navigation(&mut value, &loaded.path);
     if !routes_complete {
         value["transportCompletion"] = json!({"complete":false,
             "reason":"a complete current route is unavailable"});
@@ -60,8 +504,11 @@ fn print_compact_read(loaded: &config::Loaded, value: &serde_json::Value) -> Res
     let locations = [
         "/current",
         "/next/current",
+        "/actionForms",
         "/effectiveAction",
         "/nextAction",
+        "/full",
+        "/humanHelp",
         "/pauseRecord",
         "/history",
         "/presentation",
@@ -71,11 +518,38 @@ fn print_compact_read(loaded: &config::Loaded, value: &serde_json::Value) -> Res
             routes_complete &= crate::emitted::complete_known(routes, &loaded.path);
         }
     }
+    routes_complete &= complete_live_navigation(&mut value, &loaded.path);
     routes_complete &=
         crate::work::compact::complete_transport_full_command(&mut value, &loaded.path);
     if !routes_complete {
         value["transportCompletion"] = json!({"complete":false,
             "reason":"a complete route is unavailable"});
+    }
+    if value["navigationStep"] == true {
+        value.as_object_mut().unwrap().remove("navigationStep");
+        crate::work::action_forms::public_return_templates(&mut value, &loaded.path);
+        project_public_step(loaded, &mut value);
+        // The direct full route supersedes the earlier compact section and
+        // recovery routes for this verified current navigation step.
+        if value["currentDelivery"]["kind"] == "work_context_reference"
+            && value["full"]["command"].is_array()
+        {
+            if let Some(current) = value["current"].as_object_mut() {
+                current.remove("details");
+            }
+            if let Some(object) = value.as_object_mut() {
+                for field in [
+                    "references",
+                    "omitted",
+                    "truncated",
+                    "fullCommand",
+                    "fullCommandSameConfigRequired",
+                    "fullCommandSameExecutableRequired",
+                ] {
+                    object.remove(field);
+                }
+            }
+        }
     }
     let fits = |value: &serde_json::Value| {
         serde_json::to_vec(value)
@@ -129,6 +603,7 @@ fn print_compact_read(loaded: &config::Loaded, value: &serde_json::Value) -> Res
                 crate::emitted::omit_commands(routes);
             }
         }
+        omit_live_navigation(&mut value);
         value["transportCompletion"] = json!({"complete":false,
             "reason":"complete routes were omitted at the compact response bound"});
         // Restore each whole priority route only when it fits. Never restore a
@@ -172,7 +647,7 @@ fn print_compact_read(loaded: &config::Loaded, value: &serde_json::Value) -> Res
 }
 
 fn print_step_json(loaded: &config::Loaded, value: &serde_json::Value) -> Result<(), String> {
-    print_bounded_step_json(loaded, value, false)
+    print_bounded_step_json(loaded, value, false, None)
 }
 
 /// A grouped expansion preserves its section payloads; only its current forms
@@ -181,10 +656,37 @@ fn print_bounded_step_json(
     loaded: &config::Loaded,
     value: &serde_json::Value,
     forms_only: bool,
+    previous: Option<&serde_json::Value>,
 ) -> Result<(), String> {
+    print_json(&bounded_step_json(loaded, value, forms_only, previous)?)
+}
+
+fn bounded_step_json(
+    loaded: &config::Loaded,
+    value: &serde_json::Value,
+    forms_only: bool,
+    previous: Option<&serde_json::Value>,
+) -> Result<Value, String> {
     let mut value = crate::work::effective_action::attach(value);
-    crate::work::readable::public_embedded_delivery(&mut value);
     crate::work::readable::public_delivery(&mut value);
+    if let Some(identity) = crate::work::readable::public_context_identities(&value) {
+        value["contextIdentity"] = identity;
+    }
+    if let Some(identity) =
+        crate::work::readable::public_context_identities(&value["currentDelivery"])
+    {
+        value["currentDelivery"]["contextIdentity"] = identity;
+    }
+    if let Some(previous) = previous {
+        let mut previous = previous.clone();
+        crate::work::readable::public_delivery(&mut previous);
+        if let Some(continuity) =
+            crate::work::readable::public_context_continuity(&previous, &value["currentDelivery"])
+        {
+            value["currentDelivery"] = continuity;
+        }
+    }
+    crate::work::readable::public_embedded_delivery(&mut value);
     crate::work::action_forms::public_permit_guidance(&mut value);
     crate::work::action_forms::public_fill_guidance(&mut value);
     let mut completed = value.clone();
@@ -195,6 +697,7 @@ fn print_bounded_step_json(
         "/current",
         "/next/current",
         "/nextAction",
+        "/full",
         "/recipientContext/guidance",
         "/sections/tasks",
         "/sections/assignment/residual/humanHelp",
@@ -214,6 +717,9 @@ fn print_bounded_step_json(
             routes_complete &= crate::emitted::complete_known(routes, &loaded.path);
         }
     }
+    if !forms_only {
+        routes_complete &= complete_live_navigation(&mut completed, &loaded.path);
+    }
     if !forms_only && completed["kind"] == "work_section" {
         if let Some(route) = completed.get_mut("next") {
             routes_complete &= crate::emitted::complete_known(route, &loaded.path);
@@ -222,6 +728,10 @@ fn print_bounded_step_json(
     if !routes_complete {
         completed["transportCompletion"] = json!({"complete":false,
             "reason":"a complete route is unavailable"});
+    }
+    if !forms_only && completed["kind"] != "work_detail" {
+        crate::work::action_forms::public_return_templates(&mut completed, &loaded.path);
+        project_public_step(loaded, &mut completed);
     }
     if serde_json::to_vec(&completed)
         .map_err(|error| error.to_string())?
@@ -236,6 +746,9 @@ fn print_bounded_step_json(
             if let Some(routes) = completed.pointer_mut(pointer) {
                 crate::emitted::omit_commands(routes);
             }
+        }
+        if !forms_only {
+            omit_live_navigation(&mut completed);
         }
         completed["transportCompletion"] = json!({"complete":false,
             "reason":"complete routes were omitted at the readable response bound; inspect current detail"});
@@ -273,7 +786,7 @@ fn print_bounded_step_json(
         }
         value = completed;
     }
-    print_json(&value)
+    Ok(value)
 }
 
 fn print_work_result(loaded: &config::Loaded, value: &serde_json::Value) -> Result<(), String> {
@@ -610,6 +1123,12 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
             let route = crate::session_goal::same_host_child_route(l, work, &result);
             let mut result = if a.flags.contains_key("full") {
                 result
+            } else if !a.flags.contains_key("themed") {
+                if let Some(step) = navigation_step(l, work, &result) {
+                    step
+                } else {
+                    crate::work::compact::project(&result, &l.path, "next")?
+                }
             } else {
                 crate::work::compact::project(&result, &l.path, "next")?
             };
@@ -678,13 +1197,22 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
         "permit" => {
             args::assert_options("work permit", a, &["config", "operation", "request-id"])?;
             args::assert_positionals("work permit", a, 3)?;
-            print_step_json(l, &crate::work::permit(
-                l,
-                positional(a, 1, "work permit requires WORK ASSIGNMENT")?,
-                positional(a, 2, "work permit requires WORK ASSIGNMENT")?,
+            let work = positional(a, 1, "work permit requires WORK ASSIGNMENT")?;
+            let assignment = positional(a, 2, "work permit requires WORK ASSIGNMENT")?;
+            // Failure to obtain a comparable predecessor never changes the
+            // actual permit; the ordinary complete delivery remains the fallback.
+            let previous = crate::work::readable::current(l, work).ok();
+            let result = crate::work::permit(
+                l, work, assignment,
                 option(a, "operation", "work permit requires --operation OPERATION")?,
                 a.options.get("request-id").map(String::as_str),
-            )?)
+            )?;
+            let previous = previous.as_ref().filter(|before| {
+                crate::work::refreshed_action::permit_predecessor_matches(
+                    l, work, assignment, before, &result,
+                )
+            });
+            print_bounded_step_json(l, &result, false, previous)
         }
         "replan" => {
             args::assert_options(
@@ -823,11 +1351,25 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
         "check" => {
             args::assert_options("work check", a, &["config", "json", "timeout-ms"])?;
             args::assert_positionals("work check", a, 2)?;
-            let result = crate::work::check_with_timeout(
+            let result = match crate::work::check_with_timeout(
                 l,
                 positional(a, 1, "work check requires WORK")?,
                 a.options.get("timeout-ms").map(String::as_str),
-            )?;
+            ) {
+                Ok(result) => result,
+                Err(error) => {
+                    if let Some(raw) = error.strip_prefix(MACHINE_PREFIX) {
+                        if let Ok(value) = serde_json::from_str::<Value>(raw) {
+                            if let Ok(projected) = bounded_step_json(l, &value, false, None) {
+                                if let Ok(serialized) = serde_json::to_string(&projected) {
+                                    return Err(format!("{MACHINE_PREFIX}{serialized}"));
+                                }
+                            }
+                        }
+                    }
+                    return Err(error);
+                }
+            };
             print_work_result(l, &result)
         }
         "validate" => {
@@ -852,7 +1394,7 @@ pub(super) fn work_command(l: &config::Loaded, a: &Arguments) -> Result<(), Stri
                 positional(a, 2, "work expand requires WORK REF")?,
             )?;
             if expanded["kind"] == "work_detail" {
-                print_bounded_step_json(l, &expanded, true)
+                print_bounded_step_json(l, &expanded, true, None)
             } else {
                 print_work_json(&expanded)
             }

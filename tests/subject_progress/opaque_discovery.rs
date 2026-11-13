@@ -151,6 +151,95 @@ fn opaque_oracle_binds_public_operands_to_the_fixture_and_their_roles() {
 }
 
 #[test]
+fn opaque_oracle_validates_typed_delivery_without_trusting_its_neighbors() {
+    let fixture = Fixture::new_single();
+    let started = fixture.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "typed delivery boundary",
+            "--check-command",
+            "true",
+        ],
+        None,
+    );
+    assert_opaque_envelope(&started, &fixture.root);
+    let rejects = |value: &Value| {
+        assert!(
+            std::panic::catch_unwind(|| assert_opaque_envelope(value, &fixture.root)).is_err(),
+            "forged typed delivery was accepted"
+        );
+    };
+
+    let mut bad_binding = started.clone();
+    bad_binding["currentDelivery"]["binding"] = serde_json::json!("forged");
+    rejects(&bad_binding);
+    let mut bad_transport = started.clone();
+    bad_transport["currentDelivery"]["transport"]["exact"] = serde_json::json!(false);
+    rejects(&bad_transport);
+    let mut bad_profile = started.clone();
+    bad_profile["currentDelivery"]["recipientContext"]["profile"]["path"] =
+        serde_json::json!("exitbind.json");
+    rejects(&bad_profile);
+    let mut bad_content = started.clone();
+    bad_content["currentDelivery"]["recipientContext"]["profile"]["content"] =
+        serde_json::json!("different profile");
+    rejects(&bad_content);
+    let mut bad_checker = started.clone();
+    bad_checker["currentDelivery"]["sections"]["assignment"]["checkPreparation"]["path"] =
+        serde_json::json!(fixture.root.join("exitbind.json"));
+    rejects(&bad_checker);
+
+    let mut bad_executable = started.clone();
+    bad_executable["currentDelivery"]["actionForms"]["choices"][0]["command"]["argv"][0] =
+        serde_json::json!("/bin/sh");
+    rejects(&bad_executable);
+    let mut bad_config = started.clone();
+    let argv = bad_config["currentDelivery"]["actionForms"]["choices"][0]["command"]["argv"]
+        .as_array_mut()
+        .unwrap();
+    *argv.last_mut().unwrap() = serde_json::json!("/tmp/other-config.json");
+    rejects(&bad_config);
+    let mut misplaced = started.clone();
+    misplaced["currentDelivery"]["unknown"] = serde_json::json!(fixture.root.join("exitbind.json"));
+    rejects(&misplaced);
+    let mut forged_exact = started.clone();
+    forged_exact["currentDelivery"]["unknown"] = serde_json::json!({"exact":true});
+    rejects(&forged_exact);
+    let mut memory_transport = started.clone();
+    memory_transport["currentDelivery"]["recipientContext"]["guidance"]["unknown"] =
+        serde_json::json!({"ledgerPath":"private/transport"});
+    rejects(&memory_transport);
+
+    let private = fixture.root.join(".exitbind");
+    let aliases = support::temp("typed-delivery-aliases");
+    let alias = aliases.join("typed-private-alias");
+    std::os::unix::fs::symlink(&private, &alias).unwrap();
+    let mut private_alias = started.clone();
+    private_alias["currentDelivery"]["unknown"] = serde_json::json!(alias.join("missing"));
+    rejects(&private_alias);
+    let cycle_a = aliases.join("typed-cycle-a");
+    let cycle_b = aliases.join("typed-cycle-b");
+    std::os::unix::fs::symlink("typed-cycle-b", &cycle_a).unwrap();
+    std::os::unix::fs::symlink("typed-cycle-a", &cycle_b).unwrap();
+    let mut cycle = started.clone();
+    cycle["currentDelivery"]["unknown"] = serde_json::json!(cycle_a);
+    rejects(&cycle);
+
+    // A verified evidence body can mention a private-looking string as data;
+    // its typed content is compared with the current direct evidence.
+    let work = started["work"].as_str().unwrap();
+    let assignment = started["next"]["assignment"].as_str().unwrap();
+    let scoped = fixture.value(
+        &["work", "return", work, assignment, "--outcome", "scoped"],
+        Some(b"scope mentions .exitbind as ordinary evidence\n"),
+    );
+    assert_opaque_envelope(&scoped, &fixture.root);
+}
+
+#[test]
 fn opaque_oracle_accepts_real_bounded_producer_routes() {
     const ROUTE_BUDGET: usize = 1024;
     const MAC_PATH_LIMIT: usize = 1024;
@@ -240,9 +329,24 @@ fn opaque_oracle_accepts_real_bounded_producer_routes() {
         Some(b"scope"),
     );
     assert_opaque_envelope(&scoped, &root);
-    assert_eq!(scoped["continuation"]["sameConfigRequired"], true,
-        "fixture must exercise the producer's bounded continuation route; config {config_bytes} filesystem bytes, {config_json_bytes} JSON bytes; scoped={scoped}");
-    assert!(scoped["continuation"]["command"].is_array(), "{scoped}");
+    let continuation = &scoped["continuation"];
+    assert_eq!(continuation["sameConfigRequired"], false, "{scoped}");
+    assert_eq!(continuation["sameExecutableRequired"], false, "{scoped}");
+    let argv = continuation["command"]
+        .as_array()
+        .expect("the current continuation must be complete")
+        .iter()
+        .map(|word| word.as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(argv[0], executable);
+    assert_eq!(argv[argv.len() - 2], "--config");
+    assert_eq!(argv[argv.len() - 1], config.to_str().unwrap());
+    let continued = support::git_topology::command(argv[0])
+        .current_dir(&root)
+        .args(&argv[1..])
+        .output()
+        .unwrap();
+    assert!(continued.status.success(), "{continued:?}");
 
     let mut state_paths = vec![root.join(".exitbind")];
     let mut longest_state_path = 0;

@@ -570,32 +570,83 @@ pub(crate) fn work_preparation_from_checker(loaded: &Loaded, mut checker: Value)
         for command in &agent.commands {
             total += 1;
             if declared.len() < DECLARED_COMMAND_LIMIT {
-                declared.push(json!({"agent": name, "command": command,
-                    "observation": checker_preparation(&loaded.product_root, Some(command))}));
+                let observation = checker_preparation(&loaded.product_root, Some(command));
+                declared.push(json!({"agent": name,
+                    "observation": {"state":observation["state"],
+                        "input":{"state":observation["input"]["state"]}}}));
             }
         }
     }
     let proposal = if crate::project::commands::is_empty_starter(&loaded.agents) {
-        let observe = checker["input"]["argument"]
+        let input = checker["input"]["argument"]
             .as_str()
-            .filter(|_| checker["input"]["state"] == "readable")
-            .and_then(|path| crate::project::path::inputs::relative(&loaded.product_root, path))
+            .filter(|_| checker["input"]["state"] == "readable");
+        let observe = input
+            .and_then(|path| public_proposal_path(loaded, path))
             .into_iter()
             .collect::<Vec<_>>();
-        let commands = checker["program"]
+        let program = checker["program"]
             .as_str()
-            .filter(|_| matches!(checker["state"].as_str(), Some("runnable" | "unresolved")))
+            .filter(|_| matches!(checker["state"].as_str(), Some("runnable" | "unresolved")));
+        let commands = program
+            .and_then(public_program)
             .into_iter()
             .collect::<Vec<_>>();
+        let observe_omitted = input.is_some() && observe.is_empty();
+        let commands_omitted = program.is_some() && commands.is_empty();
         json!({"kind":"proposal", "authority":"none", "observe":observe,
             "write":[], "commands":commands, "writeSelectionRequired":true,
+            "observeOmitted":observe_omitted, "commandsOmitted":commands_omitted,
             "meaning":"Review task-specific paths and commands. This suggestion grants nothing and is not a run boundary manifest. Changes to the frozen configuration need the existing authorized successor route."})
     } else {
         Value::Null
     };
+    let checker = json!({"state":checker["state"],
+        "program":checker["program"].as_str().and_then(public_program),
+        "workingDirectoryState":checker["workingDirectoryState"],
+        "input":{"state":checker["input"]["state"]}});
     json!({"checker":checker, "declaredCommands":{"items":declared, "total":total,
         "omitted":total.saturating_sub(DECLARED_COMMAND_LIMIT)}, "boundaryProposal":proposal,
-        "meaning":"Read-only observations at this response; producing them does not run the frozen check."})
+        "meaning":"Read-only states; consult the declared configuration and explicit readiness view for omitted paths and command details. Producing these states does not run the frozen check."})
+}
+
+// A proposal can name an ordinary bare program, but must not copy a local
+// executable path from the richer readiness observation into a Work envelope.
+fn public_program(program: &str) -> Option<&str> {
+    (!program.is_empty()
+        && !program.starts_with('.')
+        && program
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '+' | '.')))
+    .then_some(program)
+}
+
+// Keep useful project-relative input suggestions only when their actual file
+// does not resolve through an alias into private state or outside the project.
+fn public_proposal_path(loaded: &Loaded, argument: &str) -> Option<String> {
+    let relative = crate::project::path::inputs::relative(&loaded.product_root, argument)?;
+    if [".exitbind", "runs/", "artifacts/", "state/"]
+        .iter()
+        .any(|marker| relative.contains(marker))
+    {
+        return None;
+    }
+    let root = loaded.product_root.canonicalize().ok()?;
+    let resolved = loaded.product_root.join(&relative).canonicalize().ok()?;
+    if !resolved.starts_with(&root) {
+        return None;
+    }
+    let state = loaded.state_root.canonicalize().ok()?;
+    if (state != root && resolved.starts_with(&state))
+        || loaded
+            .state_root
+            .join(crate::project::layout_types::state_namespace())
+            .canonicalize()
+            .is_ok_and(|private| resolved.starts_with(private))
+    {
+        return None;
+    }
+    Some(relative)
 }
 
 fn checker_fact(root: &Path, command: Option<&str>) -> Value {

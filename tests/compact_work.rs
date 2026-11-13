@@ -46,20 +46,22 @@ fn default_work_next_is_bounded_json_with_recovery_identity() {
     assert_eq!(value["compact"], true);
     assert!(value["next"]["action"].is_string());
     assert!(value["next"]["assignment"].is_string());
-    for key in ["recorder", "currentSubject"] {
-        if !value[key].is_object() {
-            assert!(value[key].is_null());
-            assert_eq!(value["truncated"], true);
-        }
-    }
-    if let Some(references) = value.get("references") {
-        assert!(references.is_array());
-    } else {
-        assert_eq!(value["truncated"], true);
-    }
-    assert!(value["omitted"].is_array());
-    let command = value["fullCommand"].as_array().unwrap();
-    assert!(command.iter().any(|arg| arg == "--full"));
+    assert_eq!(value["currentDelivery"]["kind"], "work_context_reference");
+    assert_eq!(value["currentDelivery"]["complete"], false);
+    assert_eq!(
+        value["currentDelivery"]["binding"],
+        value["current"]["binding"]
+    );
+    assert!(value["currentDelivery"]["contextIdentity"]["recipientSha256"].is_string());
+    assert!(!value["effectiveAction"]["choices"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert_eq!(value["full"]["readOnly"], true);
+    assert_eq!(value["full"]["binding"], value["current"]["binding"]);
+    let command = value["full"]["command"].as_array().unwrap();
+    assert_eq!(command[1], "work");
+    assert_eq!(command[2], "detail");
     assert_eq!(command[command.len() - 2], "--config");
     assert_eq!(command.last().unwrap(), config.to_str().unwrap());
     let recovered = support::git_topology::command(command[0].as_str().unwrap())
@@ -78,25 +80,26 @@ fn default_work_next_is_bounded_json_with_recovery_identity() {
     assert!(full.status.success(), "{full:?}");
     let full: Value = serde_json::from_slice(&full.stdout).unwrap();
     assert_eq!(full["next"]["assignment"], value["next"]["assignment"]);
-    assert_eq!(recovered["next"]["assignment"], full["next"]["assignment"]);
+    assert_eq!(recovered["kind"], "work_detail");
+    assert_eq!(recovered["complete"], true);
+    assert_eq!(recovered["binding"], value["current"]["binding"]);
+    assert_eq!(
+        recovered["actionForms"]["assignment"],
+        full["next"]["assignment"]
+    );
     assert!(full["recorder"].is_object());
     assert!(full["residual"]["currentSubject"].is_object());
     assert_eq!(
         value["current"]["result"]["subject"]["sha256"],
         full["residual"]["currentSubject"]["sha256"]
     );
-    for (key, complete) in [
-        ("recorder", &full["recorder"]),
-        ("currentSubject", &full["residual"]["currentSubject"]),
-    ] {
-        if let Some(inline) = value.get(key) {
-            assert_eq!(inline, complete);
-        }
-    }
+    assert_eq!(value["recorder"], full["recorder"]);
+    assert_eq!(
+        value["currentSubject"]["sha256"],
+        full["residual"]["currentSubject"]["sha256"]
+    );
     assert!(full["residual"]["context"].is_object());
-    let history = value
-        .get("references")
-        .unwrap_or(&full["residual"]["context"]["expansions"])
+    let history = full["residual"]["context"]["expansions"]
         .as_array()
         .unwrap()
         .iter()

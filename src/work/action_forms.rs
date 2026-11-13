@@ -92,6 +92,147 @@ pub(crate) fn public_fill_guidance(value: &mut Value) {
     }
 }
 
+/// Fold only equivalent current return choices in a public step copy. The
+/// canonical forms and explicit detail remain untouched.
+pub(crate) fn public_return_templates(value: &mut Value, config: &std::path::Path) {
+    let Some(binding) = value
+        .pointer("/current/binding")
+        .or_else(|| value.pointer("/next/current/binding"))
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+    else {
+        return;
+    };
+    if value["effectiveAction"]["exists"] != true {
+        return;
+    }
+    let (Ok(executable), Some(config)) = (crate::emitted::executable(), config.to_str()) else {
+        return;
+    };
+    let embedded_current = value["currentDelivery"]["complete"] == true
+        && value["currentDelivery"]["binding"] == binding;
+    for pointer in [
+        "/actionForms",
+        "/effectiveAction",
+        "/current/actionForm",
+        "/next/current/actionForm",
+        "/currentDelivery/actionForms",
+        "/currentDelivery/effectiveAction",
+    ] {
+        if pointer.starts_with("/currentDelivery/") && !embedded_current {
+            continue;
+        }
+        let Some(form) = value.pointer_mut(pointer) else {
+            continue;
+        };
+        if form["binding"] != binding {
+            continue;
+        }
+        if let Some(choices) = form.get_mut("choices").and_then(Value::as_array_mut) {
+            fold_return_choices(choices, &executable, config);
+        }
+    }
+}
+
+/// Normalize a current, complete return form while retaining every common
+/// field. Any other command, missing input, or differing metadata stays alone.
+fn return_template(choice: &Value, executable: &str, config: &str) -> Option<(Value, String)> {
+    let outcome = choice["label"].as_str()?;
+    let command = &choice["command"];
+    let argv = command["argv"].as_array()?;
+    if outcome.is_empty()
+        || outcome.starts_with('<')
+        // Reviewer unavailability has a distinct, bounded reason vocabulary
+        // enforced by the reducer; do not merge it with ordinary returns.
+        || outcome == "unavailable"
+        || choice.get("kind").is_some()
+        || choice.get("outcomes").is_some()
+        || choice["fill"].get("choicePlaceholder").is_some()
+        || command["sameExecutableRequired"] != false
+        || command["sameConfigRequired"] != false
+        || argv.len() < 8
+        || argv[0] != executable
+        || argv[1] != "work"
+        || argv[2] != "return"
+        || argv[argv.len() - 2] != "--config"
+        || argv[argv.len() - 1] != config
+        || choice["placeholders"] != json!(["REASON"])
+        || choice["stdin"]["required"] != true
+        || choice["fill"]["choice"] != outcome
+        || choice["fill"]["options"] != json!({"REASON":"--reason"})
+        || choice["fill"]["artifactOption"] != "--artifact-file"
+    {
+        return None;
+    }
+    let mut outcome_options = argv
+        .windows(2)
+        .enumerate()
+        .filter(|(_, pair)| pair[0] == "--outcome");
+    let (index, pair) = outcome_options.next()?;
+    if pair[1] != outcome || outcome_options.next().is_some() {
+        return None;
+    }
+    let mut reasons = argv.windows(2).filter(|pair| pair[0] == "--reason");
+    if reasons.next()?[1] != crate::emitted::slot("REASON") || reasons.next().is_some() {
+        return None;
+    }
+    let mut template = choice.clone();
+    template["label"] = json!("return");
+    template["kind"] = json!("outcome_template");
+    template["command"]["argv"][index + 1] = json!(crate::emitted::slot("OUTCOME"));
+    template["placeholders"] = json!(["OUTCOME", "REASON"]);
+    template["fill"]["choice"] = json!(crate::emitted::slot("OUTCOME"));
+    template["fill"]["choicePlaceholder"] = json!("OUTCOME");
+    Some((template, outcome.to_owned()))
+}
+
+fn fold_return_choices(choices: &mut Vec<Value>, executable: &str, config: &str) {
+    let mut groups: Vec<(Value, Vec<(usize, String)>)> = Vec::new();
+    for (index, choice) in choices.iter().enumerate() {
+        let Some((template, outcome)) = return_template(choice, executable, config) else {
+            continue;
+        };
+        if let Some((_, entries)) = groups
+            .iter_mut()
+            .find(|(candidate, _)| *candidate == template)
+        {
+            entries.push((index, outcome));
+        } else {
+            groups.push((template, vec![(index, outcome)]));
+        }
+    }
+    groups.retain(|(_, entries)| {
+        entries.len() > 1
+            && entries.iter().enumerate().all(|(index, (_, outcome))| {
+                entries[..index]
+                    .iter()
+                    .all(|(_, earlier)| earlier != outcome)
+            })
+    });
+    if groups.is_empty() {
+        return;
+    }
+    let mut folded = Vec::with_capacity(choices.len());
+    for (index, choice) in choices.iter().enumerate() {
+        if let Some((template, entries)) = groups
+            .iter()
+            .find(|(_, entries)| entries.iter().any(|(member, _)| *member == index))
+        {
+            if entries[0].0 == index {
+                let mut template = template.clone();
+                template["outcomes"] = json!(entries
+                    .iter()
+                    .map(|(_, outcome)| outcome)
+                    .collect::<Vec<_>>());
+                folded.push(template);
+            }
+        } else {
+            folded.push(choice.clone());
+        }
+    }
+    *choices = folded;
+}
+
 /// Forward the held-result admission check to its existing owner. Recovery
 /// must not create a successor while bytes for this exact assignment await
 /// return, and an unreadable held directory is also a refusal.
@@ -800,4 +941,95 @@ fn forms(
     }
     repair::attach(loaded, work, assignment, binding, next, &mut result, offer);
     result
+}
+
+#[cfg(test)]
+mod public_template_tests {
+    use super::*;
+
+    fn return_choice(outcome: &str) -> Value {
+        json!({"label":outcome,
+            "command":{"argv":["/bin/exitbind","work","return","smw_x","sma_x",
+                "--current-binding","binding","--outcome",outcome,
+                "--reason","<REASON>","--config","/tmp/config.json"],
+                "sameExecutableRequired":false,"sameConfigRequired":false},
+            "placeholders":["REASON"],
+            "fill":{"choice":outcome,"options":{"REASON":"--reason"},
+                "artifactOption":"--artifact-file"},
+            "stdin":{"required":true,"kind":"result_artifact"},
+            "sideEffect":"records the result"})
+    }
+
+    #[test]
+    fn equivalent_returns_share_only_the_documented_semantic_slots() {
+        let original = vec![return_choice("scoped"), return_choice("blocked")];
+        let mut choices = original.clone();
+        fold_return_choices(&mut choices, "/bin/exitbind", "/tmp/config.json");
+        assert_eq!(choices.len(), 1);
+        let template = &choices[0];
+        assert_eq!(template["kind"], "outcome_template");
+        assert_eq!(template["outcomes"], json!(["scoped", "blocked"]));
+        assert_eq!(template["placeholders"], json!(["OUTCOME", "REASON"]));
+        assert_eq!(template["fill"]["choice"], "<OUTCOME>");
+        assert_eq!(template["fill"]["choicePlaceholder"], "OUTCOME");
+        assert_eq!(template["fill"]["options"], json!({"REASON":"--reason"}));
+        assert_eq!(template["stdin"], original[0]["stdin"]);
+        for (index, outcome) in ["scoped", "blocked"].into_iter().enumerate() {
+            let actual = template["command"]["argv"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|word| {
+                    if word == "<OUTCOME>" {
+                        json!(outcome)
+                    } else {
+                        word.clone()
+                    }
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                actual,
+                *original[index]["command"]["argv"].as_array().unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn differing_forms_partial_routes_and_other_actions_are_never_folded() {
+        let baseline = return_choice("scoped");
+        let mut cases = Vec::new();
+        let mut other_binding = return_choice("blocked");
+        other_binding["command"]["argv"][6] = json!("another-binding");
+        cases.push(other_binding);
+        let mut other_input = return_choice("blocked");
+        other_input["stdin"]["required"] = json!(false);
+        cases.push(other_input);
+        let mut partial = return_choice("blocked");
+        partial["command"]["sameConfigRequired"] = json!(true);
+        cases.push(partial);
+        let mut unknown = return_choice("blocked");
+        unknown["unknown"] = json!("different semantic fact");
+        cases.push(unknown);
+        let mut mislabeled = return_choice("blocked");
+        mislabeled["label"] = json!("different label");
+        cases.push(mislabeled);
+        let mut other_action = return_choice("blocked");
+        other_action["command"]["argv"][2] = json!("check");
+        cases.push(other_action);
+        cases.push(return_choice("unavailable"));
+        cases.push(return_choice("scoped"));
+        for other in cases {
+            let mut choices = vec![baseline.clone(), other];
+            let original = choices.clone();
+            fold_return_choices(&mut choices, "/bin/exitbind", "/tmp/config.json");
+            assert_eq!(choices, original);
+        }
+
+        let unrelated = json!({"label":"preview recovery", "command":{"argv":["recovery"]}});
+        let mut choices = vec![baseline, unrelated.clone(), return_choice("blocked")];
+        fold_return_choices(&mut choices, "/bin/exitbind", "/tmp/config.json");
+        assert_eq!(choices.len(), 2);
+        assert_eq!(choices[0]["outcomes"], json!(["scoped", "blocked"]));
+        assert_eq!(choices[1], unrelated);
+    }
 }

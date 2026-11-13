@@ -4,7 +4,7 @@ use serde_json::{json, Map, Value};
 
 use super::{bounded_text, copy_if_present};
 
-pub(super) fn compact_next(next: &Value) -> Value {
+pub(crate) fn compact_next(next: &Value) -> Value {
     let mut result = Map::new();
     for key in [
         "action",
