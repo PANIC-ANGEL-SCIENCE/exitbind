@@ -225,27 +225,76 @@ fn action_view_text_and_json_name_the_same_guidance_items_and_routes() {
 /// The views `work detail --view` accepts that this runtime test covers.
 const COVERED_VIEWS: &[&str] = &["action"];
 
-/// Run an emitted route, restoring an executable or config it left out.
-fn run_route(fixture: &Fixture, route: &Value) -> String {
-    let mut argv: Vec<String> = route["command"]
+/// Run the current detail route exactly as emitted and compare its delivery.
+fn run_route(fixture: &Fixture, work: &str, next: &Value, detail: &Value) -> String {
+    let route = &next["full"];
+    assert_eq!(route["readOnly"], true);
+    assert_eq!(next["work"], work);
+    assert_eq!(route["binding"], next["current"]["binding"]);
+    assert_eq!(route["binding"], detail["binding"]);
+    assert_eq!(next["currentDelivery"]["binding"], detail["binding"]);
+    for field in ["actor", "agent", "assignment", "nativeName", "role"] {
+        assert_eq!(
+            next["current"]["recipient"][field],
+            detail["recipient"][field]
+        );
+    }
+    let recipient = serde_json::to_vec(&detail["recipientContext"]).unwrap();
+    assert_eq!(
+        next["currentDelivery"]["contextIdentity"]["recipientSha256"],
+        sha(&recipient)
+    );
+    assert_eq!(
+        next["currentDelivery"]["inputsSha256"],
+        detail["sections"]["assignment"]["residual"]["snapshot"]["inputsSha256"]
+    );
+    for flag in ["sameExecutableRequired", "sameConfigRequired"] {
+        assert_eq!(
+            route.get(flag).or_else(|| next["routeDefaults"].get(flag)),
+            Some(&json!(false)),
+            "{flag} must describe the complete emitted command"
+        );
+    }
+    let argv: Vec<&str> = route["command"]
         .as_array()
         .expect("route argv")
         .iter()
-        .map(|item| item.as_str().unwrap().to_owned())
+        .map(|item| item.as_str().unwrap())
         .collect();
-    if route["sameExecutableRequired"] == true {
-        argv.insert(0, env!("CARGO_BIN_EXE_exitbind").to_owned());
-    }
-    if argv.last().map(String::as_str) == Some("--config") {
-        argv.push("exitbind.json".to_owned());
-    }
-    let output = super::super::support::git_topology::command(&argv[0])
+    assert_eq!(argv.len(), 7, "complete current detail route: {argv:?}");
+    assert_eq!(
+        std::fs::canonicalize(argv[0]).unwrap(),
+        std::fs::canonicalize(env!("CARGO_BIN_EXE_exitbind")).unwrap()
+    );
+    assert_eq!(&argv[1..6], &["work", "detail", work, "--json", "--config"]);
+    assert_eq!(
+        fixture.root.join(argv[6]).canonicalize().unwrap(),
+        fixture.root.join("exitbind.json").canonicalize().unwrap()
+    );
+    let output = super::super::support::git_topology::command(argv[0])
         .args(&argv[1..])
         .current_dir(&fixture.root)
         .output()
         .unwrap();
     assert!(output.status.success(), "{argv:?}: {}", text(&output));
-    String::from_utf8(output.stdout).unwrap()
+    let routed: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(routed["kind"], "work_detail");
+    assert_eq!(routed["complete"], true);
+    assert_eq!(routed["work"], work);
+    assert_eq!(routed["binding"], detail["binding"]);
+    assert_eq!(routed["recipient"], detail["recipient"]);
+    assert_eq!(routed["recipientContext"], detail["recipientContext"]);
+    for section in ["assignment", "evidence", "tasks"] {
+        assert_eq!(routed["sections"][section], detail["sections"][section]);
+    }
+    let profile = routed["recipientContext"]["profile"]["content"]
+        .as_str()
+        .unwrap();
+    assert_eq!(
+        routed["recipientContext"]["profile"]["sha256"],
+        sha(profile.as_bytes())
+    );
+    serde_json::to_string(&routed).unwrap()
 }
 
 fn subagent_start(fixture: &Fixture, native: &str) -> String {
@@ -315,9 +364,9 @@ fn every_recipient_surface_carries_the_delivered_guidance_or_its_route() {
         );
     }
 
-    // work next: the exact grouped detail route returns the same items.
+    // work next: the exact current full-detail route returns the same items.
     let next = fixture.value(&["work", "next", &work, "--json"], b"");
-    let routed = run_route(&fixture, &next["current"]["details"]["grouped"]);
+    let routed = run_route(&fixture, &work, &next, &detail);
     assert!(routed.contains(escaped) && routed.contains(FACT));
 
     // SubagentStart context for the recipient: carries (its own envelope
@@ -468,7 +517,7 @@ fn default_roles_reach_recipient_views_and_the_optional_reference_is_readable() 
         .get("phaseGuidance")
         .is_none());
     let next = fixture.value(&["work", "next", work, "--json"], b"");
-    let routed = run_route(&fixture, &next["current"]["details"]["grouped"]);
+    let routed = run_route(&fixture, work, &next, &detail);
     assert!(routed.contains("trace the contract to its consumers"));
     let context = subagent_start(&fixture, "worker");
     assert!(

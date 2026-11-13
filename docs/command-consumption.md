@@ -111,13 +111,18 @@ If the first response has already been cut and cannot be parsed, use
 `work next WORK --json` with the same executable/configuration when the Work
 is known, or `work resume --json` when its handle was lost. These are read-only
 recovery; do not repeat the original mutation. Follow `current.details` for
-assignment, evidence, tasks and **recipient** independently. The recipient
-section contains the current role profile, project rules and selected lessons.
-Current v2 section routes page 4 KiB of exact content, including profiles too
-large for inline detail. Verify every page's binding, offset and final hash.
-Historical section routes retain their 24 KiB paging. The host's output limit
-must still fit one page's encoded response; Exitbind cannot recover text a host
-discarded or change that host's limit.
+assignment, evidence, tasks and **recipient** independently when those section
+routes are present. A current navigation step may instead provide a complete
+`full.command`: execute its argv unchanged and compare its Work and binding.
+That route returns `work_detail` with `actionForms` and `recipientContext`; it
+does not return the `next` shape of `work next --full`. Exceptional or partial
+responses can name another read-only recovery route; follow the route actually
+emitted. The recipient section contains the current role profile, project rules
+and selected lessons. Current v2 section routes page 4 KiB of exact content,
+including profiles too large for inline detail. Verify every page's binding,
+offset and final hash. Historical section routes retain their 24 KiB paging.
+The host's output limit must still fit one page's encoded response; Exitbind
+cannot recover text a host discarded or change that host's limit.
 
 ## Routine Lead decisions
 

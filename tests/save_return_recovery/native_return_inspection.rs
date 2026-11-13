@@ -275,28 +275,59 @@ fn failed_native_inspection_keeps_git_precondition_typed_and_private() {
         Some("check" | "inspect")
     ));
     assert_eq!(after["effectiveAction"]["kind"], "check");
-    let route = json!({
-        "argv": after["fullCommand"],
-        "sameExecutableRequired": after["fullCommandSameExecutableRequired"] == true,
-        "sameConfigRequired": after["fullCommandSameConfigRequired"] == true,
-    });
-    let argv = support::reconstruct_work_command(
-        &route,
-        std::path::Path::new(env!("CARGO_BIN_EXE_exitbind")),
-        &fixture.root.join("exitbind.json"),
-        &fixture.root,
+    // The current full route names grouped detail, whose current forms differ
+    // from the legacy next --full response. Run its complete argv unchanged.
+    let route = &after["full"];
+    assert_eq!(route["readOnly"], true);
+    assert_eq!(route["binding"], after["current"]["binding"]);
+    for flag in ["sameExecutableRequired", "sameConfigRequired"] {
+        assert_eq!(
+            route.get(flag).or_else(|| after["routeDefaults"].get(flag)),
+            Some(&json!(false)),
+            "{flag} must describe the complete emitted command"
+        );
+    }
+    let argv: Vec<&str> = route["command"]
+        .as_array()
+        .expect("current full detail command")
+        .iter()
+        .map(|value| value.as_str().unwrap())
+        .collect();
+    assert_eq!(argv.len(), 7, "{argv:?}");
+    assert_eq!(
+        std::fs::canonicalize(argv[0]).unwrap(),
+        std::fs::canonicalize(env!("CARGO_BIN_EXE_exitbind")).unwrap()
     );
-    assert!(argv.iter().any(|arg| arg == "--full"), "{argv:?}");
-    assert!(argv.iter().any(|arg| arg == &work), "{argv:?}");
-    let output = support::git_topology::command(&argv[0])
+    assert_eq!(
+        &argv[1..6],
+        &["work", "detail", work.as_str(), "--json", "--config"]
+    );
+    assert_eq!(
+        fixture.root.join(argv[6]).canonicalize().unwrap(),
+        fixture.root.join("exitbind.json").canonicalize().unwrap()
+    );
+    let output = support::git_topology::command(argv[0])
         .current_dir(&fixture.root)
         .args(&argv[1..])
         .output()
         .unwrap();
     assert!(output.status.success(), "{}", text(&output));
-    let full: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let detail: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(detail["kind"], "work_detail");
+    assert_eq!(detail["complete"], true);
+    assert_eq!(detail["work"], work);
+    assert_eq!(detail["binding"], route["binding"]);
+    assert_eq!(detail["recipient"], after["current"]["recipient"]);
+    assert_eq!(detail["actionForms"]["binding"], detail["binding"]);
+    assert_eq!(detail["actionForms"]["state"], "check");
+    assert_eq!(detail["effectiveAction"]["kind"], "check");
+
+    // Independently check the supported explicit next --full shape as well;
+    // it is not the command advertised by the detail route above.
+    let full = fixture.value(&["work", "next", &work, "--full"], b"");
     assert_eq!(full["work"], work);
     assert_eq!(full["next"]["action"], "check");
+    assert_eq!(full["next"]["current"]["binding"], detail["binding"]);
 }
 
 #[test]
