@@ -238,6 +238,13 @@ fn push_form(lines: &mut Vec<String>, context: &Context, fill: &Value, label: &s
         form
     };
     if !command["argv"].is_array() {
+        // A bounded diagnostic can omit a whole command while retaining the
+        // choices. Keep those choices visible without inventing an argv.
+        if label.starts_with("Choice ") && form["label"].is_string() {
+            lines.push(format!(
+                "{label}: command unavailable; inspect complete current detail"
+            ));
+        }
         return;
     }
     lines.push(format!("{label}: {}", argv(context, command)));
@@ -363,6 +370,23 @@ mod tests {
         assert!(text.contains("  assignment: /bin/exitbind work expand smw_1 ref:a"));
         assert!(!text.trim_start().starts_with('{'));
         assert_eq!(quote("two words"), "'two words'");
+    }
+
+    #[test]
+    fn omitted_choice_keeps_its_label_without_an_incomplete_command() {
+        let view = json!({"work":"smw_1","decision":{"readiness":"IN_PROGRESS"},
+            "effectiveAction":{"state":"action","kind":"spawn","commandsComplete":false,
+                "commandsOmitted":"complete commands omitted",
+                "choices":[{"label":"evidence","command":{"available":false}}]}});
+        let context = Context {
+            executable: "/bin/exitbind".into(),
+            config: "/p/exitbind.json".into(),
+        };
+        let text = render_with(&view, &context);
+        assert!(text
+            .contains("Choice evidence: command unavailable; inspect complete current detail\n"));
+        assert!(text.contains("Commands unavailable: complete commands omitted"));
+        assert!(!text.contains("Choice evidence: /bin/exitbind"));
     }
 
     /// W1 review F4: a command the JSON form bounded (executable and config

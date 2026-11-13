@@ -115,6 +115,40 @@ pub(crate) fn current(loaded: &Loaded, work: &str) -> Result<Value, String> {
     read(loaded, work, &snapshot, &next)
 }
 
+/// The newly embedded step delivery is an agent-facing projection. Remove
+/// transport locations only from its guidance references; the complete
+/// bodies, identities and existing read routes remain intact. Explicit detail
+/// and the native recipient value retain their established representation.
+pub(crate) fn public_embedded_delivery(value: &mut Value) {
+    for pointer in [
+        "/currentDelivery/recipientContext/guidance/items",
+        "/currentDelivery/recipientContext/guidance/overflow",
+        "/currentDelivery/recipientContext/projectLessons/items",
+        "/currentDelivery/recipientContext/specialistExperience/experience",
+    ] {
+        let Some(items) = value.pointer_mut(pointer).and_then(Value::as_array_mut) else {
+            continue;
+        };
+        for item in items {
+            if let Some(reference) = item.get_mut("reference") {
+                super::packet::sanitize_assignment(reference);
+                omit_reference_roots(reference);
+            }
+        }
+    }
+}
+
+fn omit_reference_roots(value: &mut Value) {
+    match value {
+        Value::Object(object) => {
+            object.remove("root");
+            object.values_mut().for_each(omit_reference_roots);
+        }
+        Value::Array(items) => items.iter_mut().for_each(omit_reference_roots),
+        _ => {}
+    }
+}
+
 /// Present grouped detail without repeating equal recovery facts in its
 /// residual context. This is applied only at the CLI output boundary: native
 /// delivery proofs continue to fingerprint the original grouped sections.

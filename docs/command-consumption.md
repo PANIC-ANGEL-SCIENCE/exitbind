@@ -63,6 +63,14 @@ current bytes; the response may therefore deliver them again after a permit.
 If the complete delivery or a complete command cannot fit the readable response
 bound, the response says so and retains the supported read-only recovery path.
 
+The embedded `currentDelivery` keeps complete guidance bodies and their
+identities while omitting memory reference transport paths. Existing scoped
+read routes remain available. Explicit `work detail` and `begin --detail`
+retain their established full-detail representation; native delivery proofs
+are computed from the canonical recipient, not this embedded projection.
+The recipient profile path and observed checker path are typed instruction and
+preparation fields, not memory transport references.
+
 `beginPreparation` is an observation and, for an empty starter, an inert
 boundary proposal. It does not execute the check or amend the configuration.
 Review and explicitly select proposed paths and commands before applying them

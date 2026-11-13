@@ -1,5 +1,48 @@
 use super::*;
 
+fn assert_embedded_memory_delivery(response: &Value, agent: &str) -> Value {
+    let delivery = &response["currentDelivery"];
+    assert_eq!(delivery["complete"], true, "{response}");
+    let recipient = &delivery["recipientContext"];
+    assert_eq!(recipient["agent"], agent);
+    let guidance = &recipient["guidance"];
+    assert_no_transport_paths(guidance);
+    let item = guidance["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["reference"]["scope"] == "invariants")
+        .expect("selected memory must be delivered");
+    assert_eq!(item["content"], "accepted invariant\n");
+    let reference = &item["reference"];
+    assert!(reference["itemId"].is_string());
+    assert!(reference["sourceSha256"].is_string());
+    assert!(reference["ledgerHeadSha256"].is_string());
+    reference.clone()
+}
+
+fn return_with_output(
+    fixture: &Fixture,
+    work: &str,
+    assignment: &str,
+    outcome: &str,
+    body: &[u8],
+) -> Output {
+    use std::io::Write;
+    let mut child = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
+        .current_dir(&fixture.root)
+        .args(["work", "return", work, assignment, "--outcome", outcome])
+        .arg("--config")
+        .arg(&fixture.config)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(body).unwrap();
+    child.wait_with_output().unwrap()
+}
+
 #[test]
 fn agent_facing_projection_strips_memory_transport_paths() {
     let fixture = Fixture::new();
@@ -12,7 +55,7 @@ fn agent_facing_projection_strips_memory_transport_paths() {
         "protocolScopes": ["invariants"],
         "syntheticScopes": []
     });
-    for agent in ["lead", "worker"] {
+    for agent in ["lead", "worker", "reviewer"] {
         config["agents"][agent]["memoryRead"] = json!(["invariants"]);
         config["agents"][agent]["crossContext"] = json!("protocol-only");
     }
@@ -54,20 +97,116 @@ fn agent_facing_projection_strips_memory_transport_paths() {
         "true",
     ]);
     let work = started["work"].as_str().unwrap().to_owned();
-    let scoped = fixture.return_body(
+    let selected = assert_embedded_memory_delivery(&started, "lead");
+    assert_eq!(selected, started["next"]["packet"]["memoryReferences"][0]);
+
+    // These typed paths identify the delivered profile and observed checker,
+    // not memory transport. Check them before applying the strict scan.
+    let profile = &started["currentDelivery"]["recipientContext"]["profile"];
+    assert_eq!(profile["path"], "exitbind/agents/lead.md");
+    assert_eq!(profile["complete"], true);
+    assert!(profile["sha256"].is_string());
+    let checker = &started["beginPreparation"]["checker"];
+    assert_eq!(checker["program"], "true");
+    assert_eq!(checker["state"], "runnable");
+    let checker_path = checker["path"].as_str().unwrap();
+    assert!(std::path::Path::new(checker_path).is_absolute());
+    assert_eq!(
+        started["currentDelivery"]["sections"]["assignment"]["checkPreparation"]["path"],
+        checker_path
+    );
+    let mut transport_checked = started.clone();
+    for pointer in [
+        "/beginPreparation/checker",
+        "/currentDelivery/recipientContext/profile",
+        "/currentDelivery/sections/assignment/checkPreparation",
+    ] {
+        transport_checked
+            .pointer_mut(pointer)
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .remove("path");
+    }
+    assert_no_transport_paths(&transport_checked);
+    // Ensure the strict selected-memory scan still catches a real leak.
+    for key in ["ledgerPath", "sourcePath", "path", "root"] {
+        let mut leaked = selected.clone();
+        leaked[key] = json!("private/transport/location");
+        assert!(std::panic::catch_unwind(|| assert_no_transport_paths(&leaked)).is_err());
+    }
+
+    // Explicit detail retains its established native reference shape, while
+    // the public copy carries the same body and stable selected identity.
+    let direct = fixture.json(&["work", "detail", &work, "--json"]);
+    let direct_item = &direct["recipientContext"]["guidance"]["items"][0];
+    assert_eq!(direct_item["reference"]["ledgerPath"], ledger);
+    assert_eq!(direct_item["reference"]["sourcePath"], "memory.md");
+    assert_eq!(direct_item["reference"]["itemId"], selected["itemId"]);
+    assert_eq!(direct_item["content"], "accepted invariant\n");
+    let resolved = fixture.json(&[
+        "project",
+        "context",
+        "memory",
+        selected["itemId"].as_str().unwrap(),
+        "--agent",
+        "lead",
+        "--task",
+        "opaque memory projection",
+        "--expected-sha256",
+        selected["sourceSha256"].as_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(resolved["content"], "accepted invariant\n");
+
+    let scoped = return_with_output(
+        &fixture,
         &work,
         started["next"]["assignment"].as_str().unwrap(),
         "scoped",
         b"scope\n",
     );
     assert!(scoped.status.success(), "{scoped:?}");
+    let scoped: Value = serde_json::from_slice(&scoped.stdout).unwrap();
+    assert_embedded_memory_delivery(&scoped, "worker");
     let next = fixture.json(&["work", "next", &work]);
 
-    assert_no_transport_paths(&started);
     assert_no_transport_paths(&next);
     assert_resolver_backed_references(&started);
     assert_resolver_backed_references(&next);
     assert!(next["next"]["packet"]["memoryReferences"].is_array());
+    let assignment = next["next"]["assignment"].as_str().unwrap();
+    let permit = fixture.json(&[
+        "work",
+        "permit",
+        &work,
+        assignment,
+        "--operation",
+        "Verify memory delivery",
+    ]);
+    assert_eq!(permit["allowed"], true);
+    assert_embedded_memory_delivery(&permit, "worker");
+    let completed =
+        return_with_output(&fixture, &work, assignment, "completed", b"worker result\n");
+    assert!(completed.status.success(), "{completed:?}");
+    let checked = fixture.json(&["work", "check", &work]);
+    assert_embedded_memory_delivery(&checked, "reviewer");
+
+    let explicit = fixture.json(&[
+        "work",
+        "begin",
+        "change",
+        "--detail",
+        "--goal",
+        "opaque memory projection",
+        "--check-command",
+        "true",
+    ]);
+    assert_eq!(explicit["kind"], "work_detail");
+    assert_eq!(
+        explicit["recipientContext"]["guidance"]["items"][0]["reference"]["sourcePath"],
+        "memory.md"
+    );
 }
 
 #[test]

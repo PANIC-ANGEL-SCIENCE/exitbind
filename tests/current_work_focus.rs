@@ -81,7 +81,10 @@ fn begin_selects_new_work_and_older_running_work_stays_history() {
     let current = started["work"].as_str().unwrap().to_owned();
     let before = ledgers(&root);
 
-    let resumed = ok(&root, &["work", "resume"]);
+    let output = call(&root, &["work", "resume"]);
+    assert!(output.status.success(), "{output:?}");
+    assert!(output.stdout.len() <= 8 * 1024, "{}", output.stdout.len());
+    let resumed: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(resumed["status"], "resumed");
     assert_eq!(resumed["work"], current.as_str());
     assert_eq!(resumed["selection"]["basis"], "current_work_focus");
@@ -93,8 +96,24 @@ fn begin_selects_new_work_and_older_running_work_stays_history() {
     assert_eq!(resumed["history"]["sameExecutableRequired"], false);
     assert_eq!(resumed["history"]["sameConfigRequired"], false);
     assert_eq!(resumed["history"]["command"][3], "--history");
+    let grouped = &resumed["current"]["details"]["grouped"];
+    assert!(grouped["command"].is_array(), "{resumed}");
+    assert_eq!(grouped["sameExecutableRequired"], false);
+    assert_eq!(grouped["sameConfigRequired"], false);
 
-    let history = ok(&root, &["work", "resume", "--history"]);
+    let route = resumed["history"]["command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|word| word.as_str().unwrap())
+        .collect::<Vec<_>>();
+    let output = support::git_topology::command(route[0])
+        .current_dir(&root)
+        .args(&route[1..])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let history: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(history["status"], "history");
     assert_eq!(
         history["works"][0]["command"][0],

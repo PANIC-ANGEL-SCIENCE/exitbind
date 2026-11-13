@@ -3,6 +3,7 @@
 //! `src/work/permit_response.rs`.
 
 use super::*;
+use serde_json::Value;
 
 mod challenge;
 mod child;
@@ -78,7 +79,29 @@ fn print_compact_read(loaded: &config::Loaded, value: &serde_json::Value) -> Res
             .map(|bytes| bytes.len() < crate::work::compact::MAX_RESPONSE_BYTES)
             .map_err(|error| error.to_string())
     };
+    // Section-specific routes duplicate the grouped read. Give the grouped
+    // current detail and the existing history route priority at the bound.
     if !fits(&value)? {
+        for pointer in ["/current/details", "/next/current/details"] {
+            if let Some(details) = value.pointer_mut(pointer).and_then(Value::as_object_mut) {
+                for (name, route) in details {
+                    if name != "grouped" {
+                        crate::emitted::omit_commands(route);
+                    }
+                }
+            }
+        }
+        value["transportCompletion"] = json!({"complete":false,
+            "reason":"some section commands were omitted at the compact response bound; use grouped current detail"});
+    }
+    if !fits(&value)? {
+        let preferred = [
+            "/current/details/grouped",
+            "/next/current/details/grouped",
+            "/history",
+            "/effectiveAction/detail",
+        ]
+        .map(|pointer| (pointer, value.pointer(pointer).cloned()));
         for pointer in locations {
             if let Some(routes) = value.pointer_mut(pointer) {
                 crate::emitted::omit_commands(routes);
@@ -86,6 +109,24 @@ fn print_compact_read(loaded: &config::Loaded, value: &serde_json::Value) -> Res
         }
         value["transportCompletion"] = json!({"complete":false,
             "reason":"complete routes were omitted at the compact response bound"});
+        // Restore each whole priority route only when it fits. Never restore a
+        // prefix or disturb the focus/history facts attached to the response.
+        let mut grouped_retained = false;
+        for (pointer, original) in preferred {
+            let Some(original) = original.filter(|route| route["command"].is_array()) else {
+                continue;
+            };
+            let Some(previous) = value.pointer(pointer).cloned() else {
+                continue;
+            };
+            *value.pointer_mut(pointer).expect("existing route") = original;
+            if fits(&value)? {
+                grouped_retained |=
+                    pointer.ends_with("/grouped") || pointer == "/effectiveAction/detail";
+            } else {
+                *value.pointer_mut(pointer).expect("existing route") = previous;
+            }
+        }
         let mut route = if let Some(work) = value["work"].as_str() {
             crate::emitted::Route::new(["work", "detail", work, "--json"])
         } else {
@@ -96,7 +137,9 @@ fn print_compact_read(loaded: &config::Loaded, value: &serde_json::Value) -> Res
         .command_json();
         crate::emitted::complete_known(&mut route, &loaded.path);
         route["readOnly"] = json!(true);
-        value["transportCompletion"]["recovery"] = route.clone();
+        if !grouped_retained {
+            value["transportCompletion"]["recovery"] = route.clone();
+        }
         if !fits(&value)? {
             value = json!({"compact":true,"complete":false,"status":value["status"],
                 "work":value["work"],"reason":"compact output could not retain complete routes",
@@ -118,6 +161,7 @@ fn print_bounded_step_json(
     forms_only: bool,
 ) -> Result<(), String> {
     let mut value = crate::work::effective_action::attach(value);
+    crate::work::readable::public_embedded_delivery(&mut value);
     crate::work::readable::public_delivery(&mut value);
     crate::work::action_forms::public_permit_guidance(&mut value);
     crate::work::action_forms::public_fill_guidance(&mut value);

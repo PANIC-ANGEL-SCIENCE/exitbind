@@ -70,6 +70,59 @@ fn fixture(label: &str, check: &str) -> (crate::test_root::TempRoot, Loaded, Str
 }
 
 #[test]
+fn embedded_delivery_hides_reference_transport_without_changing_full_detail() {
+    let reference = json!({"itemId":"item","sourceSha256":"hash",
+        "sourcePath":"private/source","ledgerPath":"private/ledger",
+        "contextSelection":{"root":"private/root","path":"private/path"}});
+    let recipient = json!({"profile":{"path":"agent.md"},
+        "guidance":{"items":[{"reference":reference,"content":{"path":"body, not a reference"}}],
+            "overflow":[{"reference":reference,"readRoute":{"command":["read","item"]}}]},
+        "projectLessons":{"items":[{"reference":reference,"lesson":{"fact":"keep"}}],
+            "detail":{"command":["resolve","lesson"]}},
+        "specialistExperience":{"snapshotId":"canonical-hash",
+            "experience":[{"reference":reference,"content":"keep"}]}});
+    let mut direct = json!({"kind":"work_detail","recipientContext":recipient});
+    let unchanged = direct.clone();
+    public_embedded_delivery(&mut direct);
+    assert_eq!(direct, unchanged);
+
+    let mut step = json!({"currentDelivery":direct});
+    public_embedded_delivery(&mut step);
+    let public = &step["currentDelivery"]["recipientContext"];
+    for pointer in [
+        "/guidance/items/0/reference",
+        "/guidance/overflow/0/reference",
+        "/projectLessons/items/0/reference",
+        "/specialistExperience/experience/0/reference",
+    ] {
+        let projected = public.pointer(pointer).unwrap();
+        assert_eq!(projected["itemId"], "item");
+        assert_eq!(projected["sourceSha256"], "hash");
+        assert!(projected.get("sourcePath").is_none());
+        assert!(projected.get("ledgerPath").is_none());
+        assert!(projected["contextSelection"].get("root").is_none());
+        assert!(projected["contextSelection"].get("path").is_none());
+    }
+    assert_eq!(public["profile"]["path"], "agent.md");
+    assert_eq!(
+        public["guidance"]["items"][0]["content"]["path"],
+        "body, not a reference"
+    );
+    assert_eq!(
+        public["guidance"]["overflow"][0]["readRoute"]["command"],
+        json!(["read", "item"])
+    );
+    assert_eq!(
+        public["projectLessons"]["detail"]["command"],
+        json!(["resolve", "lesson"])
+    );
+    assert_eq!(
+        public["specialistExperience"]["snapshotId"],
+        "canonical-hash"
+    );
+}
+
+#[test]
 fn public_detail_removes_only_recorded_equal_residual_recovery_facts() {
     let original = json!({"kind":"work_detail", "complete":true,
         "sections":{"assignment":{"projection":{"equalAliases":[]},
