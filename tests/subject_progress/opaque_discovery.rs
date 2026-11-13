@@ -248,42 +248,63 @@ fn opaque_oracle_validates_typed_delivery_without_trusting_its_neighbors() {
         );
     };
 
-    let mut bad_binding = started.clone();
+    let mut bad_partial_binding = started.clone();
+    bad_partial_binding["currentDelivery"]["binding"] = serde_json::json!("forged");
+    rejects(&bad_partial_binding);
+    let mut bad_partial_recipient = started.clone();
+    bad_partial_recipient["currentDelivery"]["recipient"] = serde_json::json!({"actor":"foreign"});
+    rejects(&bad_partial_recipient);
+    let mut bad_partial_identity = started.clone();
+    bad_partial_identity["currentDelivery"]["contextIdentity"]["recipientSha256"] =
+        serde_json::json!("0".repeat(64));
+    rejects(&bad_partial_identity);
+
+    // A complete delivery uses the explicit detail contract. Exercise its
+    // typed boundary separately from the ordinary partial actor projection.
+    let work = started["work"].as_str().unwrap();
+    let direct = fixture.value(&["work", "detail", work, "--json"], None);
+    assert_eq!(direct["kind"], "work_detail");
+    assert_eq!(direct["complete"], true);
+    let mut typed = started.clone();
+    typed["currentDelivery"] = direct;
+    assert_opaque_envelope(&typed, &fixture.root);
+
+    let mut bad_binding = typed.clone();
     bad_binding["currentDelivery"]["binding"] = serde_json::json!("forged");
     rejects(&bad_binding);
-    let mut bad_transport = started.clone();
+    let mut bad_transport = typed.clone();
     bad_transport["currentDelivery"]["transport"]["exact"] = serde_json::json!(false);
     rejects(&bad_transport);
-    let mut bad_profile = started.clone();
+    let mut bad_profile = typed.clone();
     bad_profile["currentDelivery"]["recipientContext"]["profile"]["path"] =
         serde_json::json!("exitbind.json");
     rejects(&bad_profile);
-    let mut bad_content = started.clone();
+    let mut bad_content = typed.clone();
     bad_content["currentDelivery"]["recipientContext"]["profile"]["content"] =
         serde_json::json!("different profile");
     rejects(&bad_content);
-    let mut bad_checker = started.clone();
+    let mut bad_checker = typed.clone();
     bad_checker["currentDelivery"]["sections"]["assignment"]["checkPreparation"]["path"] =
         serde_json::json!(fixture.root.join("exitbind.json"));
     rejects(&bad_checker);
 
-    let mut bad_executable = started.clone();
+    let mut bad_executable = typed.clone();
     bad_executable["currentDelivery"]["actionForms"]["choices"][0]["command"]["argv"][0] =
         serde_json::json!("/bin/sh");
     rejects(&bad_executable);
-    let mut bad_config = started.clone();
+    let mut bad_config = typed.clone();
     let argv = bad_config["currentDelivery"]["actionForms"]["choices"][0]["command"]["argv"]
         .as_array_mut()
         .unwrap();
     *argv.last_mut().unwrap() = serde_json::json!("/tmp/other-config.json");
     rejects(&bad_config);
-    let mut misplaced = started.clone();
+    let mut misplaced = typed.clone();
     misplaced["currentDelivery"]["unknown"] = serde_json::json!(fixture.root.join("exitbind.json"));
     rejects(&misplaced);
-    let mut forged_exact = started.clone();
+    let mut forged_exact = typed.clone();
     forged_exact["currentDelivery"]["unknown"] = serde_json::json!({"exact":true});
     rejects(&forged_exact);
-    let mut memory_transport = started.clone();
+    let mut memory_transport = typed.clone();
     memory_transport["currentDelivery"]["recipientContext"]["guidance"]["unknown"] =
         serde_json::json!({"ledgerPath":"private/transport"});
     rejects(&memory_transport);
@@ -292,14 +313,14 @@ fn opaque_oracle_validates_typed_delivery_without_trusting_its_neighbors() {
     let aliases = support::temp("typed-delivery-aliases");
     let alias = aliases.join("typed-private-alias");
     std::os::unix::fs::symlink(&private, &alias).unwrap();
-    let mut private_alias = started.clone();
+    let mut private_alias = typed.clone();
     private_alias["currentDelivery"]["unknown"] = serde_json::json!(alias.join("missing"));
     rejects(&private_alias);
     let cycle_a = aliases.join("typed-cycle-a");
     let cycle_b = aliases.join("typed-cycle-b");
     std::os::unix::fs::symlink("typed-cycle-b", &cycle_a).unwrap();
     std::os::unix::fs::symlink("typed-cycle-a", &cycle_b).unwrap();
-    let mut cycle = started.clone();
+    let mut cycle = typed.clone();
     cycle["currentDelivery"]["unknown"] = serde_json::json!(cycle_a);
     rejects(&cycle);
 
@@ -312,6 +333,31 @@ fn opaque_oracle_validates_typed_delivery_without_trusting_its_neighbors() {
         Some(b"scope mentions .exitbind as ordinary evidence\n"),
     );
     assert_opaque_envelope(&scoped, &fixture.root);
+    assert_eq!(scoped["currentDelivery"]["kind"], "work_actor_context");
+    assert_eq!(scoped["currentDelivery"]["requiredContentComplete"], true);
+    assert_eq!(
+        scoped["currentDelivery"]["binding"],
+        scoped["current"]["binding"]
+    );
+    let mut bad_actor_work = scoped.clone();
+    bad_actor_work["currentDelivery"]["work"] = serde_json::json!("smw_foreign");
+    rejects(&bad_actor_work);
+    let mut bad_actor_identity = scoped.clone();
+    bad_actor_identity["currentDelivery"]["contextIdentity"]["evidenceContentSha256"] =
+        serde_json::json!("0".repeat(64));
+    rejects(&bad_actor_identity);
+    let mut bad_actor_body = scoped.clone();
+    bad_actor_body["currentDelivery"]["instructions"]["profile"]["content"] =
+        serde_json::json!("forged profile content");
+    rejects(&bad_actor_body);
+    let mut bad_evidence_body = scoped.clone();
+    bad_evidence_body["currentDelivery"]["evidence"]["items"][0]["artifact"]["content"] =
+        serde_json::json!("forged evidence content");
+    rejects(&bad_evidence_body);
+    let mut bad_actor_neighbor = scoped.clone();
+    bad_actor_neighbor["currentDelivery"]["instructions"]["profile"]["sourcePath"] =
+        serde_json::json!("private/transport");
+    rejects(&bad_actor_neighbor);
 }
 
 #[test]

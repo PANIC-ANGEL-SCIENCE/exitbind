@@ -319,7 +319,12 @@ fn argv(route: &Value) -> Vec<String> {
 fn a_same_host_child_receives_its_lenses_through_the_printed_route_alone() {
     let fixture = Fixture::new("f5b-same-host-lens");
     fixture.assert_no_continuation();
-    let next = fixture.next(Some(SESSION));
+    let output = fixture.call(Some(SESSION), &["work", "next", &fixture.work], b"", true);
+    assert!(output.status.success(), "{}", text(&output));
+    assert!(output.stdout.len() <= 8 * 1024);
+    let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let binding = response["current"]["binding"].as_str().unwrap();
+    let next = &response["next"];
     let route = &next["prepareChild"];
     assert_eq!(route["sameConfigRequired"], false, "{route}");
     assert_eq!(route["sameExecutableRequired"], false, "{route}");
@@ -333,6 +338,11 @@ fn a_same_host_child_receives_its_lenses_through_the_printed_route_alone() {
     for word in ["--agent-type", "sonic", "--perspectives", "--config"] {
         assert!(argv.iter().any(|item| item == word), "{argv:?}");
     }
+    let binding_flag = argv
+        .iter()
+        .position(|word| word == "--current-binding")
+        .unwrap();
+    assert_eq!(argv[binding_flag + 1], binding);
     assert!(!argv.iter().any(|item| item == "--context"), "{argv:?}");
     assert!(
         !argv.iter().any(|item| item.starts_with('<')),

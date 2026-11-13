@@ -634,23 +634,9 @@ fn long_config_routes_require_exact_arguments_and_terminal_output_stays_bounded(
     let detail = fixture.detail(&work);
     let route = &detail["completion"]["receipt"]["export"]["command"];
     assert_eq!(route["sameConfigRequired"], true);
-    let mut argv = route["argv"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|a| a.as_str().unwrap().to_owned())
-        .collect::<Vec<_>>();
+    let raw = route["argv"].as_array().unwrap();
     assert_eq!(route["sameExecutableRequired"], false);
-    assert_eq!(argv.last().unwrap(), "--config");
-    argv.push(fixture.root.join("exitbind.json").to_str().unwrap().into());
-    let output = support::git_topology::command(&argv[0])
-        .args(&argv[1..])
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "{output:?}");
-    assert!(output.stdout.len() <= 8 * 1024);
-    let receipt: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(receipt["receipt"]["state"], "created_verified");
+    assert_eq!(raw.last().unwrap(), "--config");
     let compact = fixture.call(&["work", "next", &work], b"");
     assert!(compact.status.success(), "{compact:?}");
     assert!(compact.stdout.len() <= 8 * 1024);
@@ -661,15 +647,55 @@ fn long_config_routes_require_exact_arguments_and_terminal_output_stays_bounded(
         true
     );
     let live = &compact["current"]["completion"]["receipt"]["export"]["command"];
+    assert_eq!(live["available"], false);
     assert_eq!(live["sameConfigRequired"], false);
     assert_eq!(live["sameExecutableRequired"], false);
-    assert_eq!(live["argv"], json!(argv));
+    assert!(live.get("argv").is_none());
+    assert_eq!(compact["transportCompletion"]["complete"], false);
+    let recovery = compact["fullCommand"].as_array().unwrap();
+    let recovery_words = recovery
+        .iter()
+        .map(|word| word.as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(recovery_words[0], env!("CARGO_BIN_EXE_exitbind"));
+    assert_eq!(&recovery_words[1..4], &["work", "next", work.as_str()]);
+    assert!(recovery_words.contains(&"--full"));
+    assert_eq!(
+        recovery_words.last().unwrap(),
+        &fixture.root.join("exitbind.json").to_str().unwrap()
+    );
+    let output = support::git_topology::command(recovery_words[0])
+        .current_dir(&fixture.root)
+        .args(&recovery_words[1..])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let full: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let live = &full["next"]["current"]["completion"]["receipt"]["export"]["command"];
+    assert_eq!(live["sameConfigRequired"], false);
+    assert_eq!(live["sameExecutableRequired"], false);
     let current = live["argv"].as_array().unwrap();
+    assert_eq!(current.len(), raw.len() + 1);
+    assert_eq!(&current[..raw.len()], raw.as_slice());
+    assert_eq!(
+        current.last().unwrap(),
+        fixture.root.join("exitbind.json").to_str().unwrap()
+    );
     let words = current
         .iter()
         .map(|word| word.as_str().unwrap())
         .collect::<Vec<_>>();
     let repeated = support::git_topology::command(words[0])
+        .current_dir(&fixture.root)
+        .args(&words[1..])
+        .output()
+        .unwrap();
+    assert!(repeated.status.success(), "{repeated:?}");
+    assert!(repeated.stdout.len() <= 8 * 1024);
+    let verified: Value = serde_json::from_slice(&repeated.stdout).unwrap();
+    assert_eq!(verified["receipt"]["state"], "created_verified");
+    let repeated = support::git_topology::command(words[0])
+        .current_dir(&fixture.root)
         .args(&words[1..])
         .output()
         .unwrap();

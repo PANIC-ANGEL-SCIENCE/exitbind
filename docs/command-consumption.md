@@ -53,23 +53,35 @@ forms again. Bound both each displayed item and their combined batch to the
 host's output budget. A batch of individually valid responses can still exceed
 that budget; serialize those reads or retain them before projecting a summary.
 
-Successful begin, return, check and permit responses can carry the next
-recipient's full current detail in `currentDelivery`, together with current
-forms. `begin --detail` returns that detail as the response itself. When the
-detail says `complete: true`, consume it rather than issuing
-another detail read solely to discover the next action. A new recipient,
-binding, instruction source or evidence source still requires its applicable
-current bytes; the response may therefore deliver them again after a permit.
-If the complete delivery or a complete command cannot fit the readable response
-bound, the response says so and retains the supported read-only recovery path.
+`begin --detail` returns the complete detail as the response itself. Ordinary
+begin, return, check and permit responses may instead carry a current actor
+projection in `currentDelivery`, with the current action alongside it. A
+`work_actor_context` can have `complete: false` for the whole detail while
+`requiredContentComplete: true` identifies the included current instructions.
+Consume the applicable instruction, assignment and evidence bytes before the
+next dependent action. A same-actor continuity or reuse marker is useful only
+when the host has already read the matching content identity; it is not proof
+that anyone read it. If the recipient or required content changed, or the host
+cannot establish continuity, follow the emitted full-detail route and account
+for that read. Do not treat an incomplete projection as complete detail.
 
-The embedded `currentDelivery` keeps complete guidance bodies and their
-identities while omitting memory reference transport paths. Existing scoped
-read routes remain available. Explicit `work detail` and `begin --detail`
-retain their established full-detail representation; native delivery proofs
-are computed from the canonical recipient, not this embedded projection.
-The recipient profile path and observed checker path are typed instruction and
-preparation fields, not memory transport references.
+The actor projection keeps the selected guidance bodies and their identities
+while omitting memory reference transport paths. Existing scoped read routes
+remain available. Explicit `work detail` and `begin --detail` retain their
+full-detail representation; native delivery proofs use the canonical
+recipient. The recipient profile path and observed checker path in explicit
+detail are typed instruction and preparation fields, not memory transport
+references. If the required delivery or a complete command cannot fit the
+readable response bound, the response says so and retains its supported
+read-only recovery path.
+
+Compact `work next` and `work resume` retain their 8 KiB response bound. An
+ordinary mutation or readable detail can include a required actor body within
+the existing 256 KiB readable bound. The recorded-result regression also
+checks an independently verified actor body separately from the remaining
+metadata's 8 KiB in its fixture; that measurement is not a general 8 KiB
+guarantee for every mutation's metadata. Count every emitted byte, both streams,
+and any additional required acquisition when comparing a complete journey.
 
 `beginPreparation` is an observation and, for an empty starter, an inert
 boundary proposal. It does not execute the check or amend the configuration.

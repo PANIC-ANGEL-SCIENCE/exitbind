@@ -345,6 +345,59 @@ fn check_current_delivery(
             delivery["reason"].is_string(),
             "incomplete delivery has no reason"
         );
+        if let Some(binding) = delivery.get("binding") {
+            assert_eq!(*binding, original["current"]["binding"]);
+        }
+        if let Some(work) = delivery.get("work") {
+            assert_eq!(*work, original["work"]);
+        }
+        if let Some(recipient) = delivery.get("recipient") {
+            assert_eq!(*recipient, original["current"]["recipient"]);
+        }
+        if matches!(
+            delivery["kind"].as_str(),
+            Some("work_actor_context" | "work_context_continuity" | "work_context_reference")
+        ) {
+            let needs_full = delivery["kind"] == "work_actor_context"
+                && delivery.get("binding").is_none()
+                && delivery.get("recipient").is_none()
+                && delivery.get("contextIdentity").is_none();
+            if needs_full {
+                assert_eq!(delivery["requiredContentComplete"], false);
+                assert_eq!(original["effectiveAction"]["requiresDetail"], true);
+                assert!(delivery.as_object().unwrap().keys().all(|key| matches!(
+                    key.as_str(),
+                    "kind" | "complete" | "requiredContentComplete" | "reason"
+                )));
+                return;
+            }
+            let work = original["work"].as_str().expect("partial delivery Work");
+            assert!(delivery["binding"].is_string());
+            assert!(delivery["recipient"].is_object());
+            let direct = current_detail(identity, fixture_root, work);
+            assert_eq!(delivery["binding"], direct["binding"]);
+            assert_eq!(delivery["recipient"], direct["recipient"]);
+            assert_eq!(delivery["contextIdentity"], direct["contextIdentity"]);
+            for field in [
+                "recipientSha256",
+                "assignmentContentSha256",
+                "evidenceContentSha256",
+                "tasksSha256",
+            ] {
+                let digest = delivery["contextIdentity"][field]
+                    .as_str()
+                    .expect("partial content identity");
+                assert!(
+                    digest.len() == 64
+                        && digest
+                            .bytes()
+                            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+                );
+            }
+            if delivery["kind"] == "work_actor_context" {
+                check_actor_bodies(delivery, &direct);
+            }
+        }
         return;
     }
     assert_eq!(delivery["kind"], "work_detail");
@@ -356,14 +409,7 @@ fn check_current_delivery(
     assert_eq!(delivery["recipientContext"]["complete"], true);
 
     let work = delivery["work"].as_str().expect("delivery Work handle");
-    let direct = super::support::git_topology::command(&identity.executable.invoked)
-        .current_dir(fixture_root)
-        .args(["work", "detail", work, "--json", "--config"])
-        .arg(&identity.config.invoked)
-        .output()
-        .expect("read current detail for typed delivery identity");
-    assert!(direct.status.success(), "direct current detail: {direct:?}");
-    let direct: Value = serde_json::from_slice(&direct.stdout).unwrap();
+    let direct = current_detail(identity, fixture_root, work);
     assert_eq!(direct["complete"], true);
     assert_eq!(delivery["binding"], direct["binding"]);
     assert_eq!(delivery["recipient"], direct["recipient"]);
@@ -478,6 +524,109 @@ fn check_current_delivery(
             }
         }
     }
+}
+
+fn current_detail(identity: &FixtureIdentity, fixture_root: &Path, work: &str) -> Value {
+    let direct = super::support::git_topology::command(&identity.executable.invoked)
+        .current_dir(fixture_root)
+        .args(["work", "detail", work, "--json", "--config"])
+        .arg(&identity.config.invoked)
+        .output()
+        .expect("read current detail for typed delivery identity");
+    assert!(direct.status.success(), "direct current detail: {direct:?}");
+    serde_json::from_slice(&direct.stdout).unwrap()
+}
+
+// An ordinary actor delivery is partial overall, but its selected instruction
+// and evidence bodies must still match the exact current full detail.
+fn check_actor_bodies(delivery: &mut Value, direct: &Value) {
+    let identity = delivery["contextIdentity"].clone();
+    let complete = delivery["requiredContentComplete"] == true;
+    let instructions = &mut delivery["instructions"];
+    if complete {
+        check_actor_body(
+            &mut instructions["profile"],
+            &direct["recipientContext"]["profile"],
+        );
+        let rules = instructions["rules"].as_array_mut().expect("actor rules");
+        let expected = direct["recipientContext"]["rules"]
+            .as_array()
+            .expect("direct rules");
+        assert_eq!(rules.len(), expected.len());
+        for (rule, original) in rules.iter_mut().zip(expected) {
+            check_actor_body(rule, original);
+        }
+    } else {
+        assert_eq!(instructions["reuseIfPreviouslyRead"], true);
+        assert_eq!(instructions["recipientSha256"], identity["recipientSha256"]);
+    }
+    for pointer in [
+        "/guidance/items",
+        "/guidance/overflow",
+        "/projectLessons/items",
+        "/specialistExperience/experience",
+    ] {
+        let Some(items) = instructions
+            .pointer_mut(pointer)
+            .and_then(Value::as_array_mut)
+        else {
+            continue;
+        };
+        let expected = direct["recipientContext"]
+            .pointer(pointer)
+            .and_then(Value::as_array)
+            .expect("direct guidance items");
+        assert_eq!(items.len(), expected.len());
+        for (item, original) in items.iter_mut().zip(expected) {
+            if item["content"].is_string() {
+                assert_eq!(item["content"], original["content"]);
+                assert_eq!(item["reference"]["itemId"], original["reference"]["itemId"]);
+                assert_eq!(
+                    item["reference"]["sourceSha256"],
+                    original["reference"]["sourceSha256"]
+                );
+                item["content"] = Value::Null;
+            }
+        }
+    }
+    let expected = direct["sections"]["evidence"]["items"]
+        .as_array()
+        .expect("direct evidence");
+    let items = delivery["evidence"]["items"]
+        .as_array_mut()
+        .expect("actor evidence");
+    for item in items {
+        let id = item["evidenceId"].as_str().expect("evidence identity");
+        let matches = expected
+            .iter()
+            .filter(|entry| entry["eventSha256"] == id)
+            .collect::<Vec<_>>();
+        assert_eq!(matches.len(), 1);
+        for field in ["artifact", "stdout", "stderr"] {
+            if item[field]["content"].is_string() {
+                check_actor_body(&mut item[field], &matches[0][field]);
+            }
+        }
+    }
+}
+
+fn check_actor_body(body: &mut Value, original: &Value) {
+    assert_eq!(body["complete"], true);
+    for field in ["content", "sha256", "bytes"] {
+        assert_eq!(body[field], original[field]);
+    }
+    for field in ["complete", "encoding", "exact", "readable", "verified"] {
+        if let Some(value) = body.get(field) {
+            assert_eq!(Some(value), original.get(field));
+        }
+    }
+    if body["exact"] == true {
+        assert_eq!(body["verified"], true);
+    }
+    let content = body["content"].as_str().expect("complete body").as_bytes();
+    assert_eq!(body["bytes"].as_u64(), Some(content.len() as u64));
+    assert_eq!(body["sha256"], format!("{:x}", Sha256::digest(content)));
+    body["content"] = Value::Null;
 }
 
 fn check_instruction_file(value: &mut Value, fixture_root: &Path, identity: &FixtureIdentity) {

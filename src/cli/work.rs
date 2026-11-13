@@ -18,6 +18,7 @@ const LIVE_NAVIGATION: &[&str] = &[
     "/history",
     "/works",
     "/unreadable",
+    "/next/prepareChild",
     "/presentation/goalProgress/adoptRoute",
     "/warnings",
     "/next/warnings",
@@ -39,6 +40,98 @@ fn omit_live_navigation(value: &mut Value) {
             crate::emitted::omit_commands(routes);
         }
     }
+}
+
+// Only the owner-verified child route emitted for this current spawn may be
+// restored after compacting; never reconstruct or transfer its command.
+fn current_child_prepare(value: &Value, child: &Value, config: &std::path::Path) -> bool {
+    let Some(argv) = child["command"].as_array() else {
+        return false;
+    };
+    let (Some(work), Some(assignment), Some(binding), Some(native), Some(config)) = (
+        value["work"].as_str(),
+        value["next"]["assignment"].as_str(),
+        value["current"]["binding"].as_str(),
+        value["current"]["recipient"]["nativeName"].as_str(),
+        config.to_str(),
+    ) else {
+        return false;
+    };
+    let Ok(executable) = crate::emitted::executable() else {
+        return false;
+    };
+    let words = argv.iter().map(Value::as_str).collect::<Option<Vec<_>>>();
+    let Some(words) = words else { return false };
+    let exactly_one_pair = |flag: &str, expected: &str| {
+        words.iter().filter(|word| **word == flag).count() == 1
+            && words.windows(2).any(|pair| pair == [flag, expected])
+    };
+    value["next"]["action"] == "spawn"
+        && value["current"]["recipient"]["assignment"] == assignment
+        && child["sameExecutableRequired"] == false
+        && child["sameConfigRequired"] == false
+        && words.len() >= 6
+        && words[..6]
+            == [
+                executable.as_str(),
+                "work",
+                "child",
+                "prepare",
+                work,
+                assignment,
+            ]
+        && exactly_one_pair("--current-binding", binding)
+        && exactly_one_pair("--agent-type", native)
+        && exactly_one_pair("--config", config)
+        && words[words.len() - 2..] == ["--config", config]
+}
+
+fn retain_partial_child_prepare(
+    value: &mut Value,
+    child: &Value,
+    config: &std::path::Path,
+) -> Result<(), String> {
+    let fits = |value: &Value| {
+        serde_json::to_vec(value)
+            .map(|bytes| bytes.len() < crate::work::compact::MAX_RESPONSE_BYTES)
+            .map_err(|error| error.to_string())
+    };
+    if current_child_prepare(value, child, config) {
+        value["next"]["prepareChild"] = child.clone();
+        if fits(value)? {
+            return Ok(());
+        }
+    }
+    if let Some(next) = value.get_mut("next").and_then(Value::as_object_mut) {
+        next.insert(
+            "prepareChild".into(),
+            json!({"available":false,
+            "unavailableReason":"complete child preparation route omitted at the compact bound"}),
+        );
+    }
+    value["reason"] = json!("current child preparation omitted; use full next recovery");
+    let work = value["work"]
+        .as_str()
+        .ok_or("partial child recovery has no Work identity")?;
+    let mut recovery = crate::emitted::Route::new(["work", "next", work, "--full", "--json"])
+        .config(config)
+        .within(1024)
+        .command_json();
+    crate::emitted::complete_known(&mut recovery, config);
+    recovery["readOnly"] = json!(true);
+    value["recovery"] = recovery;
+    if !fits(value)? {
+        crate::emitted::omit_commands(&mut value["recovery"]);
+    }
+    if !fits(value)? {
+        if let Some(next) = value.get_mut("next").and_then(Value::as_object_mut) {
+            next.remove("prepareChild");
+        }
+    }
+    if !fits(value)? {
+        return Err("bounded child recovery exceeds the output budget".into());
+    }
+    Ok(())
 }
 
 /// Keep one current executable form and one full-detail route on ordinary
@@ -958,6 +1051,90 @@ fn omit_self_navigation(help: &mut Value, current: &Value, loaded: &config::Load
 }
 
 #[cfg(test)]
+mod child_prepare_partial_tests {
+    use super::*;
+    use std::path::Path;
+
+    fn fixture() -> (Value, Value) {
+        let executable = crate::emitted::executable().unwrap();
+        let value = json!({"work":"smw_work", "current":{"binding":"binding",
+            "recipient":{"assignment":"sma_actor", "nativeName":"sonic"}},
+            "next":{"action":"spawn","assignment":"sma_actor"}});
+        let child = json!({"command":[executable,"work","child","prepare","smw_work","sma_actor",
+            "--agent-type","sonic","--current-binding","binding","--config","/tmp/config"],
+            "sameExecutableRequired":false,"sameConfigRequired":false});
+        (value, child)
+    }
+
+    #[test]
+    fn child_prepare_survives_partial_only_for_current_complete_route() {
+        let (mut value, child) = fixture();
+        retain_partial_child_prepare(&mut value, &child, Path::new("/tmp/config")).unwrap();
+        assert_eq!(value["next"]["prepareChild"], child);
+        assert!(
+            serde_json::to_vec(&value).unwrap().len() < crate::work::compact::MAX_RESPONSE_BYTES
+        );
+
+        for index in [0, 4, 5, 7, 9, 11] {
+            let (mut value, mut child) = fixture();
+            child["command"][index] = json!("forged");
+            retain_partial_child_prepare(&mut value, &child, Path::new("/tmp/config")).unwrap();
+            assert_eq!(value["next"]["prepareChild"]["available"], false);
+            assert!(value["next"]["prepareChild"].get("command").is_none());
+            let recovery = value["recovery"]["command"].as_array().unwrap();
+            assert_eq!(
+                &recovery[1..4],
+                &[json!("work"), json!("next"), json!("smw_work")]
+            );
+            assert!(value["recovery"]["command"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|v| v == "--full"));
+        }
+        for flag in ["sameExecutableRequired", "sameConfigRequired"] {
+            let (mut value, mut child) = fixture();
+            child[flag] = json!(true);
+            retain_partial_child_prepare(&mut value, &child, Path::new("/tmp/config")).unwrap();
+            assert_eq!(value["next"]["prepareChild"]["available"], false);
+            assert!(value["next"]["prepareChild"].get("command").is_none());
+        }
+    }
+
+    #[test]
+    fn oversized_child_prepare_is_wholly_omitted_with_full_next_recovery() {
+        let (mut value, mut child) = fixture();
+        let argv = child["command"].as_array_mut().unwrap();
+        drop(argv.splice(10..10, [json!("--perspectives"), json!("x".repeat(9_000))]));
+        retain_partial_child_prepare(&mut value, &child, Path::new("/tmp/config")).unwrap();
+        assert!(
+            serde_json::to_vec(&value).unwrap().len() < crate::work::compact::MAX_RESPONSE_BYTES
+        );
+        assert_eq!(value["next"]["prepareChild"]["available"], false);
+        assert!(value["next"]["prepareChild"].get("command").is_none());
+        assert_eq!(value["recovery"]["sameExecutableRequired"], false);
+        assert_eq!(value["recovery"]["sameConfigRequired"], false);
+        assert!(value["recovery"]["command"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|v| v == "--full"));
+
+        let (mut value, mut child) = fixture();
+        let config = format!("/tmp/{}", "x".repeat(9_000));
+        let argv = child["command"].as_array_mut().unwrap();
+        *argv.last_mut().unwrap() = json!(config.as_str());
+        retain_partial_child_prepare(&mut value, &child, Path::new(&config)).unwrap();
+        assert!(
+            serde_json::to_vec(&value).unwrap().len() < crate::work::compact::MAX_RESPONSE_BYTES
+        );
+        assert_eq!(value["next"]["prepareChild"]["available"], false);
+        assert_eq!(value["recovery"]["available"], false);
+        assert!(value["recovery"].get("command").is_none());
+    }
+}
+
+#[cfg(test)]
 mod navigation_delta_tests {
     use super::*;
 
@@ -1237,6 +1414,8 @@ fn print_active_read_json(
         "/current/details",
         "/next/current/actionForm",
         "/next/current/details",
+        "/next/current/completion/detail/command",
+        "/next/current/completion/receipt/export/command",
         "/effectiveAction",
         "/nextAction",
         "/pauseRecord",
@@ -1280,6 +1459,7 @@ fn print_compact_read(loaded: &config::Loaded, value: &serde_json::Value) -> Res
     routes_complete &= complete_live_navigation(&mut value, &loaded.path);
     routes_complete &=
         crate::work::compact::complete_transport_full_command(&mut value, &loaded.path);
+    let child_prepare = value.pointer("/next/prepareChild").cloned();
     if !routes_complete {
         value["transportCompletion"] = json!({"complete":false,
             "reason":"a complete route is unavailable"});
@@ -1354,6 +1534,7 @@ fn print_compact_read(loaded: &config::Loaded, value: &serde_json::Value) -> Res
     }
     if !fits(&value)? {
         let preferred = [
+            "/next/prepareChild",
             "/current/details/grouped",
             "/next/current/details/grouped",
             "/presentation/goalProgress/adoptRoute",
@@ -1402,8 +1583,17 @@ fn print_compact_read(loaded: &config::Loaded, value: &serde_json::Value) -> Res
         if !grouped_retained {
             value["transportCompletion"]["recovery"] = route.clone();
         }
-        if !fits(&value)? {
+        let child_omitted = child_prepare.as_ref().is_some_and(|child| {
+            child["command"].is_array()
+                && !value
+                    .pointer("/next/prepareChild/command")
+                    .is_some_and(Value::is_array)
+        });
+        if !fits(&value)? || child_omitted {
             value = crate::work::compact::semantic_partial(&value, route)?;
+            if let Some(child) = child_prepare.as_ref() {
+                retain_partial_child_prepare(&mut value, child, &loaded.path)?;
+            }
         }
     }
     // The compact fallback needs individual flags to omit whole routes.

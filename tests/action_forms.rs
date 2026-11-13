@@ -208,9 +208,21 @@ impl Fixture {
     }
 
     fn execute_choice(&self, choice: &Value, replacements: &[(&str, &str)], input: &[u8]) -> Value {
+        self.execute_choice_with_defaults(choice, &Value::Null, replacements, input)
+    }
+
+    fn execute_choice_with_defaults(
+        &self,
+        choice: &Value,
+        defaults: &Value,
+        replacements: &[(&str, &str)],
+        input: &[u8],
+    ) -> Value {
         let command = &choice["command"];
-        assert_eq!(command["sameExecutableRequired"], false, "{command}");
-        assert_eq!(command["sameConfigRequired"], false, "{command}");
+        assert!(
+            complete_context_flags(command, defaults),
+            "{command}; defaults: {defaults}"
+        );
         let mut argv = command["argv"]
             .as_array()
             .expect("complete action argv")
@@ -1636,6 +1648,38 @@ fn failed_preservation_check_uses_the_same_bound_rework_form() {
     assert_eq!(repaired["next"]["role"], "worker");
 }
 
+fn complete_context_flags(command: &Value, defaults: &Value) -> bool {
+    ["sameExecutableRequired", "sameConfigRequired"]
+        .iter()
+        .all(|field| {
+            command
+                .get(*field)
+                .or_else(|| defaults.get(*field))
+                .and_then(Value::as_bool)
+                == Some(false)
+        })
+}
+
+#[test]
+fn public_route_defaults_require_both_flags_to_be_explicitly_false() {
+    let defaults = json!({"sameExecutableRequired":false,"sameConfigRequired":false});
+    assert!(complete_context_flags(&json!({}), &defaults));
+    assert!(complete_context_flags(&defaults, &Value::Null));
+    assert!(!complete_context_flags(
+        &json!({"sameConfigRequired":true}),
+        &defaults
+    ));
+    assert!(!complete_context_flags(
+        &json!({"sameConfigRequired":"false"}),
+        &defaults
+    ));
+    assert!(!complete_context_flags(&json!({}), &Value::Null));
+    assert!(!complete_context_flags(
+        &json!({}),
+        &json!({"sameConfigRequired":false})
+    ));
+}
+
 fn step_return_template(step: &Value) -> &Value {
     let forms = &step["effectiveAction"];
     assert_eq!(forms["binding"], step["current"]["binding"], "{step}");
@@ -1663,8 +1707,9 @@ fn submit_template(fixture: &Fixture, step: &Value, outcome: &str, artifact: &[u
         .iter()
         .any(|offered| offered == outcome);
     let result = if folded {
-        fixture.execute_choice(
+        fixture.execute_choice_with_defaults(
             template,
+            &step["routeDefaults"],
             &[
                 ("<OUTCOME>", outcome),
                 ("<REASON>", "A real fixture decision"),
@@ -1679,7 +1724,12 @@ fn submit_template(fixture: &Fixture, step: &Value, outcome: &str, artifact: &[u
             .iter()
             .find(|choice| choice["label"] == outcome)
             .unwrap();
-        fixture.execute_choice(choice, &[("<REASON>", "provider_unavailable")], artifact)
+        fixture.execute_choice_with_defaults(
+            choice,
+            &step["routeDefaults"],
+            &[("<REASON>", "provider_unavailable")],
+            artifact,
+        )
     };
     assert_eq!(result["effect"], "recorded", "{result}");
     assert_eq!(result["outcome"], outcome, "{result}");
