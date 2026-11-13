@@ -189,6 +189,15 @@ pub(super) fn complete_assignment(
     }
     complete.push_str("\nComplete current assignment, evidence and task conditions (verified for this recipient):\n");
     complete.push_str(&serde_json::to_string(recipient).map_err(|e| e.to_string())?);
+    if recipient
+        .get("currentAction")
+        .and_then(|action| action.get("beforeEditing"))
+        .and_then(crate::work::action_forms::permit_request_id)
+        .is_some()
+    {
+        complete.push_str("\nBefore-editing permit boundary: ");
+        complete.push_str(crate::work::action_forms::PUBLIC_PERMIT_MEANING);
+    }
     Ok(complete)
 }
 

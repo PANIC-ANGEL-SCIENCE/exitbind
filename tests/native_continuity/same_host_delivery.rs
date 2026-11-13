@@ -94,7 +94,12 @@ fn selector_free_same_host_delivery_matches_owner_goal_and_returns_after_permit(
     );
     let form = &packet["currentAction"]["beforeEditing"];
     assert_eq!(form["required"], true);
-    assert_eq!(*form, owner["actionForms"]["beforeEditing"]);
+    assert!(String::from_utf8_lossy(&output.stdout)
+        .contains("advisory for ordinary host workspace writes"));
+    let mut public_form = form.clone();
+    public_form["enforcement"] = json!("advisory");
+    public_form["meaning"] = json!("advisory for ordinary host workspace writes; required:true applies to managed file effects and a selected controlled-effects launch, which require allowed:true. Only a successful controlled launch and protection preflight enforce that file effect. Repeat the exact request ID only to recover its response; this form grants no host permission");
+    assert_eq!(public_form, owner["actionForms"]["beforeEditing"]);
     let mut permit = form["command"]["argv"]
         .as_array()
         .unwrap()

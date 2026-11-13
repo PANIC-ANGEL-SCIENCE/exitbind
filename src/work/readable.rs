@@ -413,7 +413,7 @@ pub(crate) fn public_actor_context(detail: &Value, reuse_recipient: bool) -> Opt
     let mut packet = section["assignment"].clone();
     let original_context = packet.get("context")?.clone();
     let selected = detail["sections"]["evidence"]["items"].as_array()?;
-    let context = public_actor_packet_context(&original_context, selected, &detail["work"])?;
+    let mut context = public_actor_packet_context(&original_context, selected, &detail["work"])?;
     packet.as_object_mut()?.remove("context");
 
     let mut residual = section["residual"].clone();
@@ -441,7 +441,31 @@ pub(crate) fn public_actor_context(detail: &Value, reuse_recipient: bool) -> Opt
             input.remove("path");
         }
     }
-    let evidence = public_actor_evidence(&detail["sections"]["evidence"])?;
+    let mut evidence = public_actor_evidence(&detail["sections"]["evidence"])?;
+    // Keep evidence bodies and current facts once. If a summary cannot be
+    // matched exactly, retain the original complete projection instead.
+    let evidence_matched = if let Some((folded_context, folded_evidence)) =
+        fold_actor_context_evidence(&context, &evidence)
+    {
+        context = folded_context;
+        evidence = folded_evidence;
+        aliases.retain(|name| name != "evidence");
+        true
+    } else {
+        false
+    };
+    if evidence_matched && context["goal"].is_string() && context["goal"] == packet["goal"] {
+        context.as_object_mut()?.remove("goal");
+        aliases.retain(|name| name != "goal");
+    }
+    if evidence_matched && context["role"].is_string() && context["role"] == packet["role"] {
+        context.as_object_mut()?.remove("role");
+        aliases.retain(|name| name != "role");
+    }
+    if evidence_matched && context["recovery"] == json!({"conflicts":[],"stale":[]}) {
+        context.as_object_mut()?.remove("recovery");
+        aliases.retain(|name| name != "recovery");
+    }
     let result = json!({"kind":"work_actor_context","complete":false,
         "requiredContentComplete":!reuse_recipient,
         "reason":if reuse_recipient { "assignment and evidence are included; compare the recipient identity or read full detail" }
@@ -455,6 +479,85 @@ pub(crate) fn public_actor_context(detail: &Value, reuse_recipient: bool) -> Opt
         return None;
     }
     Some(result)
+}
+
+/// Join only named, matching evidence summaries to their selected evidence.
+/// Unknown, ambiguous, or conflicting data remains in the original context.
+fn fold_actor_context_evidence(context: &Value, evidence: &Value) -> Option<(Value, Value)> {
+    let mut context = context.clone();
+    let mut evidence = evidence.clone();
+    let summaries = context.get("evidence")?.as_array()?.clone();
+    let selected = evidence.get_mut("items")?.as_array_mut()?;
+    for summary in summaries {
+        let object = summary.as_object()?;
+        let kind = object.get("kind")?.as_str()?;
+        let id_key = match kind {
+            "submission" => "evidenceId",
+            "check" => "checkEvidenceId",
+            _ => return None,
+        };
+        let id = object.get(id_key)?.as_str()?;
+        let matches = selected
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| item["evidenceId"] == id && item["kind"] == kind)
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        if matches.len() != 1 {
+            return None;
+        }
+        let item = selected[matches[0]].as_object_mut()?;
+        match kind {
+            "submission" => {
+                if object
+                    .keys()
+                    .any(|key| !matches!(key.as_str(), "artifact" | "evidenceId" | "kind"))
+                {
+                    return None;
+                }
+                let artifact = object.get("artifact")?.as_object()?;
+                if artifact
+                    .keys()
+                    .any(|key| !matches!(key.as_str(), "bytes" | "exact" | "kind" | "sha256"))
+                    || artifact.iter().any(|(key, value)| {
+                        item.get("artifact").and_then(|body| body.get(key)) != Some(value)
+                    })
+                {
+                    return None;
+                }
+            }
+            "check" => {
+                const FACTS: &[&str] = &[
+                    "acquisition",
+                    "checker",
+                    "checkerSha256",
+                    "freshness",
+                    "logStatus",
+                    "status",
+                    "strength",
+                    "targetEvidenceId",
+                ];
+                if object.keys().any(|key| {
+                    !matches!(key.as_str(), "checkEvidenceId" | "kind" | "result")
+                        && !FACTS.contains(&key.as_str())
+                }) || item.get("result") != object.get("result")
+                {
+                    return None;
+                }
+                for field in FACTS {
+                    if let Some(value) = object.get(*field) {
+                        if item.get(*field).is_some_and(|existing| existing != value) {
+                            return None;
+                        }
+                        item.insert((*field).to_owned(), value.clone());
+                    }
+                }
+            }
+            _ => return None,
+        }
+    }
+    context.as_object_mut()?.remove("evidence");
+    Some((context, evidence))
 }
 
 fn incomplete_instruction_material(value: &Value) -> bool {
@@ -828,6 +931,11 @@ pub(crate) fn action_view(loaded: &Loaded, work: &str) -> Result<Value, String> 
         .ok_or("current action binding unavailable")?;
     let mut forms = super::action_forms::full(loaded, work, &next, binding);
     crate::emitted::complete_known(&mut forms, &loaded.path);
+    // Explain the verified form before a bounded diagnostic may omit its
+    // whole command; native forms and saved proofs remain unchanged.
+    let mut public_forms = json!({"actionForms":forms});
+    super::action_forms::public_permit_guidance(&mut public_forms);
+    forms = public_forms["actionForms"].take();
     let mut routes = next["current"]["details"].clone();
     crate::emitted::complete_known(&mut routes, &loaded.path);
     let recipient = recipient_context::read(loaded, &next);

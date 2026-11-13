@@ -12,6 +12,8 @@ pub(crate) mod fill;
 mod quarantine;
 mod repair;
 
+pub(crate) const PUBLIC_PERMIT_MEANING: &str = "advisory for ordinary host workspace writes; required:true applies to managed file effects and a selected controlled-effects launch, which require allowed:true. Only a successful controlled launch and protection preflight enforce that file effect. Repeat the exact request ID only to recover its response; this form grants no host permission";
+
 /// Internal evidence of the exact offer selected by the canonical owner.
 /// This is not serialized and grants no authority independently of the Work.
 #[derive(Debug, Clone)]
@@ -64,7 +66,7 @@ pub(crate) fn public_permit_guidance(value: &mut Value) {
             continue;
         }
         form["enforcement"] = json!("advisory");
-        form["meaning"] = json!("advisory for ordinary host workspace writes; required:true applies to managed file effects and a selected controlled-effects launch, which require allowed:true. Only a successful controlled launch and protection preflight enforce that file effect. Repeat the exact request ID only to recover its response; this form grants no host permission");
+        form["meaning"] = json!(PUBLIC_PERMIT_MEANING);
     }
 }
 
@@ -111,6 +113,10 @@ pub(crate) fn public_return_templates(value: &mut Value, config: &std::path::Pat
     };
     let embedded_current = value["currentDelivery"]["complete"] == true
         && value["currentDelivery"]["binding"] == binding;
+    let reviewer = value
+        .pointer("/current/recipient/role")
+        .or_else(|| value.pointer("/next/current/recipient/role"))
+        == Some(&json!("reviewer"));
     for pointer in [
         "/actionForms",
         "/effectiveAction",
@@ -130,7 +136,56 @@ pub(crate) fn public_return_templates(value: &mut Value, config: &std::path::Pat
         }
         if let Some(choices) = form.get_mut("choices").and_then(Value::as_array_mut) {
             fold_return_choices(choices, &executable, config);
+            if reviewer {
+                public_unavailable_reason(choices);
+            }
         }
+    }
+}
+
+/// The reducer's unavailable reasons apply only to that outcome, including
+/// when a future public template presents it alongside other outcomes.
+fn public_unavailable_reason(choices: &mut [Value]) {
+    for choice in choices {
+        let unavailable = choice["label"] == "unavailable"
+            || (choice["kind"] == "outcome_template"
+                && choice["outcomes"]
+                    .as_array()
+                    .is_some_and(|values| values.iter().any(|value| value == "unavailable")));
+        if !unavailable
+            || !choice["placeholders"]
+                .as_array()
+                .is_some_and(|values| values.iter().any(|value| value == "REASON"))
+        {
+            continue;
+        }
+        let Some(object) = choice.as_object_mut() else {
+            continue;
+        };
+        let constraints = object
+            .entry("inputConstraints")
+            .or_insert_with(|| json!({}));
+        let Some(constraints) = constraints.as_object_mut() else {
+            continue;
+        };
+        let Some(reason) = constraints
+            .entry("REASON")
+            .or_insert_with(|| json!({}))
+            .as_object_mut()
+        else {
+            continue;
+        };
+        let Some(outcomes) = reason
+            .entry("whenOutcome")
+            .or_insert_with(|| json!({}))
+            .as_object_mut()
+        else {
+            continue;
+        };
+        outcomes.entry("unavailable").or_insert_with(|| {
+            json!({"allowedValues":crate::run::state::FALLBACK_REASONS,
+                "meaning":"These values apply only to outcome unavailable; other outcomes use their own reason rules."})
+        });
     }
 }
 
@@ -946,6 +1001,45 @@ fn forms(
 #[cfg(test)]
 mod public_template_tests {
     use super::*;
+
+    #[test]
+    fn reviewer_unavailable_reasons_are_conditional_on_that_outcome() {
+        let mut choices = vec![
+            json!({"label":"unavailable","placeholders":["REASON"]}),
+            json!({"label":"return","kind":"outcome_template",
+                "outcomes":["approved","rework","unavailable"],"placeholders":["OUTCOME","REASON"]}),
+            json!({"label":"approved","placeholders":["REASON"]}),
+        ];
+        public_unavailable_reason(&mut choices);
+        for choice in &choices[..2] {
+            assert_eq!(
+                choice["inputConstraints"]["REASON"]["whenOutcome"]["unavailable"]["allowedValues"],
+                json!(crate::run::state::FALLBACK_REASONS)
+            );
+            assert!(
+                choice["inputConstraints"]["REASON"]["whenOutcome"]["unavailable"]["meaning"]
+                    .as_str()
+                    .unwrap()
+                    .contains("only")
+            );
+            assert!(choice["inputConstraints"]["REASON"]
+                .get("allowedValues")
+                .is_none());
+        }
+        assert!(choices[2].get("inputConstraints").is_none());
+        let mut existing = vec![json!({"label":"unavailable","placeholders":["REASON"],
+            "inputConstraints":{"REASON":{"unknown":"preserve"}}})];
+        public_unavailable_reason(&mut existing);
+        assert_eq!(
+            existing[0]["inputConstraints"]["REASON"]["unknown"],
+            "preserve"
+        );
+        assert_eq!(
+            existing[0]["inputConstraints"]["REASON"]["whenOutcome"]["unavailable"]
+                ["allowedValues"],
+            json!(crate::run::state::FALLBACK_REASONS)
+        );
+    }
 
     fn return_choice(outcome: &str) -> Value {
         json!({"label":outcome,

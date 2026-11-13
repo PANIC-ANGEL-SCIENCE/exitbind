@@ -660,10 +660,24 @@ fn long_config_routes_require_exact_arguments_and_terminal_output_stays_bounded(
         compact["current"]["completion"]["receipt"]["available"],
         true
     );
-    assert_eq!(
-        compact["current"]["completion"]["receipt"]["export"]["command"]["sameConfigRequired"],
-        true
-    );
+    let live = &compact["current"]["completion"]["receipt"]["export"]["command"];
+    assert_eq!(live["sameConfigRequired"], false);
+    assert_eq!(live["sameExecutableRequired"], false);
+    assert_eq!(live["argv"], json!(argv));
+    let current = live["argv"].as_array().unwrap();
+    let words = current
+        .iter()
+        .map(|word| word.as_str().unwrap())
+        .collect::<Vec<_>>();
+    let repeated = support::git_topology::command(words[0])
+        .args(&words[1..])
+        .output()
+        .unwrap();
+    assert!(repeated.status.success(), "{repeated:?}");
+    assert!(repeated.stdout.len() <= 8 * 1024);
+    let verified: Value = serde_json::from_slice(&repeated.stdout).unwrap();
+    assert_eq!(verified["receipt"]["state"], "existing_verified");
+    assert_eq!(verified["effect"], "no-change");
     fs::remove_dir_all(parent).unwrap();
 }
 

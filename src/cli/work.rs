@@ -144,7 +144,371 @@ fn project_public_step(loaded: &config::Loaded, value: &mut Value) -> bool {
     full["readOnly"] = json!(true);
     full["binding"] = value["current"]["binding"].clone();
     value["full"] = full;
+    let current = value["current"].clone();
+    if value["full"]["command"].is_array()
+        && value["full"]["binding"] == current["binding"]
+        && value["transportCompletion"]["complete"] != false
+    {
+        let matched_evidence = value["currentDelivery"]["context"]
+            .get("evidence")
+            .is_none();
+        if let Some(help) = value
+            .pointer_mut("/currentDelivery/residual/humanHelp")
+            .filter(|_| matched_evidence)
+        {
+            omit_self_navigation(help, &current, loaded, &work);
+        }
+        deduplicate_actor_step(value, &current);
+        let delegation = &value["effectiveAction"]["delegation"];
+        if delegation.as_object().is_some_and(|object| {
+        object.keys().all(|key| matches!(key.as_str(), "agent" | "assignment" | "meaning" | "nativeName" | "nextAction" | "role" | "text"))
+    }) && ["agent", "assignment", "nativeName", "role"].iter().all(|field| {
+        delegation[*field].is_string() && delegation[*field] == current["recipient"][*field]
+    }) && delegation["nextAction"] == "delegate"
+        && delegation["text"].is_string()
+        && delegation["meaning"] == "who performs this assignment, not a refusal: that agent uses its beforeEditing and choices forms; a Lead delegates the assignment to that native agent"
+        {
+            let summary = json!({"nextAction":delegation["nextAction"],"text":delegation["text"]});
+            value["effectiveAction"]["delegation"] = summary;
+        }
+    }
+    if let (Ok(executable), Some(config)) = (crate::emitted::executable(), loaded.path.to_str()) {
+        omit_redundant_current_routes(value, &executable, config);
+    }
     true
+}
+
+/// Keep one visible copy of equal current facts. Unequal or unfamiliar
+/// material stays in the original actor delivery and remains readable.
+fn deduplicate_actor_step(value: &mut Value, current: &Value) {
+    let work = value["work"].clone();
+    let progress = value["presentation"]["goalProgress"].clone();
+    let Some(delivery) = value.get_mut("currentDelivery") else {
+        return;
+    };
+    if delivery["kind"] != "work_actor_context"
+        || delivery["work"] != work
+        || delivery["binding"] != current["binding"]
+        || delivery["recipient"] != current["recipient"]
+        || delivery["context"].get("evidence").is_some()
+    {
+        return;
+    }
+    let instructions = delivery["instructions"].clone();
+    let check_evidence = delivery["evidence"]["checkEvidence"].clone();
+    let recipient = &current["recipient"];
+    if let Some(packet) = delivery
+        .get_mut("assignment")
+        .and_then(Value::as_object_mut)
+    {
+        for (field, other) in [
+            ("agent", &recipient["agent"]),
+            ("role", &recipient["role"]),
+            ("nativeTaskName", &recipient["nativeName"]),
+            ("displayName", &instructions["displayName"]),
+            ("attempt", &current["phase"]["attempt"]),
+            ("stage", &current["phase"]["stage"]),
+        ] {
+            if !other.is_null() && packet.get(field) == Some(other) {
+                packet.remove(field);
+            }
+        }
+        for (field, boundary) in [
+            ("frozenCrossContext", "crossContext"),
+            ("frozenMemoryRead", "memoryRead"),
+        ] {
+            let equal = packet
+                .get(field)
+                .zip(
+                    packet
+                        .get("declaredBoundary")
+                        .and_then(|value| value.get(boundary)),
+                )
+                .is_some_and(|(left, right)| left == right);
+            if equal {
+                packet.remove(field);
+            }
+        }
+        let profile_sha = &instructions["profile"]["sha256"];
+        if profile_sha.is_string()
+            && packet.get("profileSha256") == Some(profile_sha)
+            && packet
+                .get("profile")
+                .is_some_and(|profile| profile == &json!({"sha256":profile_sha}))
+        {
+            packet.remove("profile");
+            packet.remove("profileSha256");
+        }
+        if !check_evidence.is_null() && packet.get("checkEvidence") == Some(&check_evidence) {
+            packet.remove("checkEvidence");
+        }
+    }
+    let mut changed_aliases = Vec::new();
+    let mut current_next = Value::Null;
+    let mut workflow = Value::Null;
+    let mut config_sha = Value::Null;
+    if let Some(context) = delivery.get_mut("context").and_then(Value::as_object_mut) {
+        current_next = context.get("next").cloned().unwrap_or(Value::Null);
+        workflow = context
+            .get("run")
+            .map_or(Value::Null, |run| run["workflow"].clone());
+        config_sha = context
+            .get("scope")
+            .map_or(Value::Null, |scope| scope["configSha256"].clone());
+        let next_is_current = context
+            .get("next")
+            .and_then(Value::as_object)
+            .is_some_and(|next| {
+                next.keys().all(|key| {
+                    matches!(
+                        key.as_str(),
+                        "action"
+                            | "agent"
+                            | "assignment"
+                            | "freshness"
+                            | "owner"
+                            | "role"
+                            | "source"
+                    )
+                }) && next.get("action") == current.get("action")
+                    && next.get("agent") == recipient.get("agent")
+                    && next.get("assignment") == recipient.get("assignment")
+                    && next.get("role") == recipient.get("role")
+                    && next.get("owner") == recipient.get("role")
+                    && next.get("freshness") == Some(&json!("current"))
+                    && next.get("source") == Some(&json!("run_state"))
+            });
+        if next_is_current {
+            context.remove("next");
+            changed_aliases.push("next");
+        }
+        let subject = &current["result"]["subject"];
+        let scope = context.get("scope").cloned().unwrap_or(Value::Null);
+        let run = context.get("run").cloned().unwrap_or(Value::Null);
+        if let Some(value) = context.get_mut("subject").and_then(Value::as_object_mut) {
+            const KNOWN: &[&str] = &[
+                "version",
+                "attempt",
+                "sha256",
+                "workerArtifactSha256",
+                "previousSubjectSha256",
+                "transitionSha256",
+                "runId",
+                "configSha256",
+                "goalSha256",
+                "planSha256",
+            ];
+            if value.keys().all(|key| KNOWN.contains(&key.as_str()))
+                && subject["sha256"].is_string()
+                && ["sha256", "attempt", "workerArtifactSha256"]
+                    .iter()
+                    .all(|field| value.get(*field) == subject.get(*field))
+            {
+                for field in ["sha256", "attempt", "workerArtifactSha256"] {
+                    value.remove(field);
+                }
+                for (field, other) in [
+                    ("configSha256", &scope["configSha256"]),
+                    ("planSha256", &scope["planSha256"]),
+                    ("goalSha256", &current["goal"]["workGoalSha256"]),
+                    ("runId", &run["id"]),
+                ] {
+                    if other.is_string() && value.get(field) == Some(other) {
+                        value.remove(field);
+                    }
+                }
+                changed_aliases.push("subject");
+            }
+        }
+    }
+    if let Some(aliases) = delivery
+        .get_mut("equalContextAliases")
+        .and_then(Value::as_array_mut)
+    {
+        aliases.retain(|alias| {
+            !alias
+                .as_str()
+                .is_some_and(|name| changed_aliases.contains(&name))
+        });
+    }
+    if let Some(residual) = delivery.get_mut("residual").and_then(Value::as_object_mut) {
+        if residual.get("work") == Some(&work) {
+            residual.remove("work");
+        }
+        if residual.get("next") == current.get("action") {
+            residual.remove("next");
+        }
+        if workflow.is_string() && residual.get("workflow") == Some(&workflow) {
+            residual.remove("workflow");
+        }
+        if residual.get("historical") == current.pointer("/result/historical") {
+            residual.remove("historical");
+        }
+        if residual.get("remaining")
+            == residual
+                .get("humanHelp")
+                .and_then(|help| help.get("whatRemains"))
+        {
+            residual.remove("remaining");
+        }
+        if let Some(invalidation) = residual
+            .get_mut("invalidation")
+            .and_then(Value::as_object_mut)
+            .filter(|invalidation| {
+                config_sha.is_string() && invalidation.get("configSha256") == Some(&config_sha)
+            })
+        {
+            invalidation.remove("configSha256");
+        }
+        if let Some(next) = residual
+            .get_mut("context")
+            .and_then(|context| context.get_mut("next"))
+            .and_then(Value::as_object_mut)
+            .filter(|next| {
+                current_next.as_object().is_some_and(|original| {
+                    next.keys()
+                        .all(|key| key == "outcomes" || original.get(key) == next.get(key))
+                        && next.get("outcomes").is_some_and(Value::is_array)
+                })
+            })
+        {
+            next.retain(|key, _| key == "outcomes");
+        }
+    }
+    let tasks = &delivery["tasks"];
+    let system_text = tasks["systemText"].as_str();
+    let shown_text = progress["systemText"].as_str();
+    let next_action = current["action"].as_str();
+    if tasks.as_object().is_some_and(|object| {
+        object.keys().all(|key| {
+            matches!(
+                key.as_str(),
+                "decomposition" | "goal" | "overall" | "resultReadiness" | "systemText" | "tasks"
+            )
+        })
+    }) && tasks["goal"].is_null()
+        && tasks["overall"] == "not_requested"
+        && tasks["tasks"] == json!([])
+        && progress["taskOmissions"] == 0
+        && ["decomposition", "overall", "resultReadiness", "tasks"]
+            .iter()
+            .all(|field| tasks[*field] == progress[*field])
+        && system_text.zip(next_action).is_some_and(|(text, action)| {
+            shown_text == Some(format!("{text} | Next: {action}").as_str())
+        })
+    {
+        delivery.as_object_mut().unwrap().remove("tasks");
+    }
+}
+
+/// Ordinary steps keep the complete current detail route. Remove the known
+/// duplicate section/grouped reads and incomplete expert prefix only after
+/// their Work, binding, executable, configuration and shape all match.
+fn omit_redundant_current_routes(value: &mut Value, executable: &str, config: &str) {
+    let Some(work) = value["work"].as_str() else {
+        return;
+    };
+    let Some(binding) = value["current"]["binding"].as_str() else {
+        return;
+    };
+    if value["effectiveAction"]["exists"] != true
+        || value["effectiveAction"]["binding"] != binding
+        || value["effectiveAction"]["requiresDetail"] == true
+        || value["transportCompletion"]["complete"] == false
+        || value["full"]["readOnly"] != true
+        || value["full"]["binding"] != binding
+        || value["full"]["command"]
+            != json!([executable, "work", "detail", work, "--json", "--config", config])
+    {
+        return;
+    }
+    let work = work.to_owned();
+    let binding = binding.to_owned();
+    let route_is_current = |route: &Value, name: &str| {
+        let Some(object) = route.as_object() else {
+            return false;
+        };
+        if object.keys().any(|key| {
+            !matches!(
+                key.as_str(),
+                "command"
+                    | "readOnly"
+                    | "reference"
+                    | "kind"
+                    | "version"
+                    | "sameConfigRequired"
+                    | "sameExecutableRequired"
+            )
+        }) || ["sameConfigRequired", "sameExecutableRequired"]
+            .iter()
+            .any(|key| {
+                object
+                    .get(*key)
+                    .is_some_and(|flag| flag.as_bool() != Some(false))
+            })
+            || route["readOnly"] != true
+        {
+            return false;
+        }
+        let reference = if name == "grouped" {
+            if route["kind"] != "work_detail" || route["version"] != 1 {
+                return false;
+            }
+            format!("ref:work-detail:v1:{binding}")
+        } else if ["assignment", "evidence", "recipient", "tasks"].contains(&name) {
+            if object.contains_key("kind") || object.contains_key("version") {
+                return false;
+            }
+            format!("ref:work-section:v2:{binding}:{name}:0")
+        } else {
+            return false;
+        };
+        route["reference"] == reference
+            && route["command"]
+                == json!([
+                    executable, "work", "expand", work, reference, "--json", "--config", config
+                ])
+    };
+    let all_sections_current = value["current"]["details"]
+        .as_object()
+        .is_some_and(|details| {
+            !details.is_empty()
+                && details
+                    .iter()
+                    .all(|(name, route)| route_is_current(route, name))
+        });
+    if all_sections_current {
+        value["current"].as_object_mut().unwrap().remove("details");
+    }
+    if route_is_current(&value["effectiveAction"]["detail"], "grouped") {
+        value["effectiveAction"]
+            .as_object_mut()
+            .unwrap()
+            .remove("detail");
+    }
+    let action = &value["effectiveAction"];
+    let has_current_form = action["beforeEditing"]["command"]["argv"].is_array()
+        || action["command"]["argv"].is_array()
+        || action["choices"].as_array().is_some_and(|choices| {
+            choices
+                .iter()
+                .any(|choice| choice["command"]["argv"].is_array())
+        });
+    let fill = &action["fillRoute"];
+    if has_current_form
+        && fill["executable"] == false
+        && fill["meaning"] == "template prefix: choose a current form and supply its documented inputs; use its complete command for ordinary execution"
+        && fill.as_object().is_some_and(|object| {
+            object.keys().all(|key| matches!(key.as_str(), "executable" | "meaning" | "sameConfigRequired" | "sameExecutableRequired" | "templatePrefix"))
+                && ["sameConfigRequired", "sameExecutableRequired"].iter().all(|key| fill[*key] == false)
+        })
+        && fill["templatePrefix"] == json!([executable, "work", "fill", work, "--current-binding", binding, "--config", config])
+    {
+        value["effectiveAction"]
+            .as_object_mut()
+            .unwrap()
+            .remove("fillRoute");
+    }
 }
 
 /// Keep one copy of an identical current check command while preserving the
@@ -641,6 +1005,133 @@ mod navigation_delta_tests {
 #[cfg(test)]
 mod public_step_metadata_tests {
     use super::*;
+
+    #[test]
+    fn actor_step_omits_only_equal_current_facts() {
+        let current = json!({"binding":"b","action":"spawn",
+            "recipient":{"actor":"worker","agent":"worker","assignment":"a","nativeName":"worker","role":"worker"},
+            "phase":{"attempt":1,"stage":2},"result":{"historical":false,
+                "subject":{"sha256":"subject","attempt":1,"workerArtifactSha256":"artifact"}}});
+        let mut value = json!({"work":"w","currentDelivery":{"kind":"work_actor_context",
+            "work":"w","binding":"b","recipient":current["recipient"],
+            "instructions":{"displayName":"Worker","profile":{"sha256":"profile","content":"instructions"}},
+            "assignment":{"agent":"worker","role":"worker","nativeTaskName":"worker",
+                "displayName":"Worker","attempt":1,"stage":2,"goal":"keep goal",
+                "declaredBoundary":{"crossContext":"none","memoryRead":[]},
+                "frozenCrossContext":"none","frozenMemoryRead":[],
+                "profile":{"sha256":"profile"},"profileSha256":"profile"},
+            "context":{"next":{"action":"spawn","agent":"worker","assignment":"a",
+                "freshness":"current","owner":"worker","role":"worker","source":"run_state"},
+                "subject":{"sha256":"subject","attempt":1,"workerArtifactSha256":"artifact",
+                    "transitionSha256":"keep transition"}},
+            "residual":{"work":"w","next":"spawn","historical":false,
+                "remaining":[{"obligation":"implementation"}],
+                "humanHelp":{"whatRemains":[{"obligation":"implementation"}]}}}});
+        let original = value.clone();
+        deduplicate_actor_step(&mut value, &current);
+        assert_eq!(value["currentDelivery"]["assignment"]["goal"], "keep goal");
+        assert_eq!(
+            value["currentDelivery"]["instructions"]["profile"]["content"],
+            "instructions"
+        );
+        assert!(value["currentDelivery"]["assignment"]
+            .get("profileSha256")
+            .is_none());
+        assert!(value["currentDelivery"]["context"].get("next").is_none());
+        assert_eq!(
+            value["currentDelivery"]["context"]["subject"]["transitionSha256"],
+            "keep transition"
+        );
+        assert!(value["currentDelivery"]["context"]["subject"]
+            .get("sha256")
+            .is_none());
+        assert!(value["currentDelivery"]["residual"]
+            .get("remaining")
+            .is_none());
+        assert_eq!(
+            value["currentDelivery"]["residual"]["humanHelp"]["whatRemains"],
+            original["currentDelivery"]["residual"]["remaining"]
+        );
+
+        let mut different = original.clone();
+        different["currentDelivery"]["context"]["subject"]["sha256"] = json!("other");
+        different["currentDelivery"]["assignment"]["frozenMemoryRead"] = json!(["different"]);
+        deduplicate_actor_step(&mut different, &current);
+        assert_eq!(
+            different["currentDelivery"]["context"]["subject"]["sha256"],
+            "other"
+        );
+        assert_eq!(
+            different["currentDelivery"]["assignment"]["frozenMemoryRead"],
+            json!(["different"])
+        );
+        let mut unknown = original.clone();
+        unknown["currentDelivery"]["context"]["subject"]["future"] = json!("keep");
+        let subject = unknown["currentDelivery"]["context"]["subject"].clone();
+        deduplicate_actor_step(&mut unknown, &current);
+        assert_eq!(unknown["currentDelivery"]["context"]["subject"], subject);
+        let mut foreign = original.clone();
+        foreign["currentDelivery"]["binding"] = json!("old");
+        let before = foreign.clone();
+        deduplicate_actor_step(&mut foreign, &current);
+        assert_eq!(foreign, before);
+        let mut unmatched = original.clone();
+        unmatched["currentDelivery"]["context"]["evidence"] = json!([{"futureFact":"retain"}]);
+        let before = unmatched.clone();
+        deduplicate_actor_step(&mut unmatched, &current);
+        assert_eq!(unmatched, before);
+    }
+
+    #[test]
+    fn only_matching_inactive_reads_and_expert_prefix_are_omitted() {
+        let section = "ref:work-section:v2:b:assignment:0";
+        let grouped = "ref:work-detail:v1:b";
+        let mut value = json!({"work":"w", "current":{"binding":"b","details":{
+            "assignment":{"reference":section,"readOnly":true,
+                "command":["/bin/exitbind","work","expand","w",section,"--json","--config","/tmp/config"]}}},
+            "full":{"binding":"b","readOnly":true,
+                "command":["/bin/exitbind","work","detail","w","--json","--config","/tmp/config"]},
+            "effectiveAction":{"exists":true,"binding":"b","requiresDetail":false,
+                "beforeEditing":{"command":{"argv":["permit"]}},
+                "detail":{"kind":"work_detail","version":1,"reference":grouped,"readOnly":true,
+                    "command":["/bin/exitbind","work","expand","w",grouped,"--json","--config","/tmp/config"]},
+                "fillRoute":{"executable":false,"sameConfigRequired":false,"sameExecutableRequired":false,
+                    "meaning":"template prefix: choose a current form and supply its documented inputs; use its complete command for ordinary execution",
+                    "templatePrefix":["/bin/exitbind","work","fill","w","--current-binding","b","--config","/tmp/config"]}},
+            "nextAction":{"type":"inspect","command":["exact-saved-event"]}});
+        let original = value.clone();
+        omit_redundant_current_routes(&mut value, "/bin/exitbind", "/tmp/config");
+        assert!(value["current"].get("details").is_none());
+        assert!(value["effectiveAction"].get("detail").is_none());
+        assert!(value["effectiveAction"].get("fillRoute").is_none());
+        assert_eq!(value["full"], original["full"]);
+        assert_eq!(value["nextAction"], original["nextAction"]);
+        assert_eq!(
+            value["effectiveAction"]["beforeEditing"],
+            original["effectiveAction"]["beforeEditing"]
+        );
+
+        let mut unknown = original.clone();
+        unknown["current"]["details"]["assignment"]["unknown"] = json!("retain");
+        let expected = unknown["current"]["details"].clone();
+        omit_redundant_current_routes(&mut unknown, "/bin/exitbind", "/tmp/config");
+        assert_eq!(unknown["current"]["details"], expected);
+        let mut wrong_binding = original.clone();
+        wrong_binding["full"]["binding"] = json!("other");
+        let before = wrong_binding.clone();
+        omit_redundant_current_routes(&mut wrong_binding, "/bin/exitbind", "/tmp/config");
+        assert_eq!(wrong_binding, before);
+        let mut wrong_config = original.clone();
+        wrong_config["current"]["details"]["assignment"]["command"][7] = json!("/other");
+        let expected = wrong_config["current"]["details"].clone();
+        omit_redundant_current_routes(&mut wrong_config, "/bin/exitbind", "/tmp/config");
+        assert_eq!(wrong_config["current"]["details"], expected);
+        let mut incomplete = original.clone();
+        incomplete["transportCompletion"] = json!({"complete":false});
+        let before = incomplete.clone();
+        omit_redundant_current_routes(&mut incomplete, "/bin/exitbind", "/tmp/config");
+        assert_eq!(incomplete, before);
+    }
 
     #[test]
     fn route_defaults_require_complete_matching_live_argv() {

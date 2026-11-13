@@ -1637,8 +1637,8 @@ fn failed_preservation_check_uses_the_same_bound_rework_form() {
 }
 
 fn step_return_template(step: &Value) -> &Value {
-    let forms = &step["currentDelivery"]["actionForms"];
-    assert_eq!(step["currentDelivery"]["complete"], true, "{step}");
+    let forms = &step["effectiveAction"];
+    assert_eq!(forms["binding"], step["current"]["binding"], "{step}");
     let choices = forms["choices"].as_array().expect("current choices");
     let templates = choices
         .iter()
@@ -1652,14 +1652,6 @@ fn step_return_template(step: &Value) -> &Value {
     assert_eq!(template["fill"]["options"], json!({"REASON":"--reason"}));
     assert_eq!(template["fill"]["artifactOption"], "--artifact-file");
     assert_eq!(template["stdin"]["required"], true);
-    assert_eq!(
-        step["actionForms"]["choices"],
-        step["effectiveAction"]["choices"]
-    );
-    assert_eq!(
-        forms["choices"],
-        step["currentDelivery"]["effectiveAction"]["choices"]
-    );
     template
 }
 
@@ -1681,7 +1673,7 @@ fn submit_template(fixture: &Fixture, step: &Value, outcome: &str, artifact: &[u
         )
     } else {
         assert_eq!(outcome, "unavailable");
-        let choice = step["currentDelivery"]["actionForms"]["choices"]
+        let choice = step["effectiveAction"]["choices"]
             .as_array()
             .unwrap()
             .iter()
@@ -1809,7 +1801,7 @@ fn public_return_choices_execute_every_offered_role_outcome_with_complete_transp
 
             // The retained expert fill route selects the real outcome label;
             // it still refuses to drop the required complete artifact input.
-            let prefix = step["currentDelivery"]["actionForms"]["fillRoute"]["templatePrefix"]
+            let prefix = detail["actionForms"]["fillRoute"]["templatePrefix"]
                 .as_array()
                 .unwrap();
             let mut fill = prefix
@@ -1850,12 +1842,19 @@ fn public_return_choices_execute_every_offered_role_outcome_with_complete_transp
             json!(["approved", "rework", "blocked"])
         );
         if outcome == "unavailable" {
-            let choice = checked["currentDelivery"]["actionForms"]["choices"]
+            let choice = checked["effectiveAction"]["choices"]
                 .as_array()
                 .unwrap()
                 .iter()
                 .find(|choice| choice["label"] == "unavailable")
                 .unwrap();
+            assert_eq!(
+                choice["inputConstraints"]["REASON"]["whenOutcome"]["unavailable"]["allowedValues"],
+                json!(["provider_quota", "rate_limit", "provider_unavailable"])
+            );
+            assert!(choice["inputConstraints"]["REASON"]
+                .get("allowedValues")
+                .is_none());
             let mut invalid = choice["command"]["argv"]
                 .as_array()
                 .unwrap()
@@ -1876,7 +1875,7 @@ fn public_return_choices_execute_every_offered_role_outcome_with_complete_transp
             );
             assert_eq!(
                 fixture.json(&["work", "detail", &work, "--json"], b"")["binding"],
-                checked["currentDelivery"]["binding"]
+                checked["current"]["binding"]
             );
         }
         submit_template(&fixture, &checked, outcome, b"complete reviewer result\n");

@@ -1026,3 +1026,48 @@ fn actor_context_preserves_instruction_content_and_refuses_unknown_transport() {
             "work":"w","exact":true,"id":"ref:missing"}}]);
     assert!(public_actor_context(&detail, false).is_none());
 }
+
+#[test]
+fn actor_evidence_fold_keeps_bodies_and_refuses_unknown_or_conflicting_facts() {
+    let context = json!({"evidence":[
+        {"kind":"submission","evidenceId":"submission",
+            "artifact":{"bytes":4,"exact":true,"kind":"evidence","sha256":"digest"}},
+        {"kind":"check","checkEvidenceId":"check","result":{"kind":"exit","code":0},
+            "status":"passed","freshness":"current","checker":"sh check.sh",
+            "targetEvidenceId":"submission"}
+    ],"other":"keep"});
+    let evidence = json!({"complete":true,"items":[
+        {"kind":"submission","evidenceId":"submission","artifact":{
+            "bytes":4,"exact":true,"kind":"evidence","sha256":"digest",
+            "complete":true,"content":"body"}},
+        {"kind":"check","evidenceId":"check","result":{"kind":"exit","code":0},
+            "stdout":{"content":"log","complete":true}}
+    ]});
+    let (folded_context, folded_evidence) =
+        fold_actor_context_evidence(&context, &evidence).unwrap();
+    assert!(folded_context.get("evidence").is_none());
+    assert_eq!(folded_context["other"], "keep");
+    assert_eq!(folded_evidence["items"][0]["artifact"]["content"], "body");
+    assert_eq!(folded_evidence["items"][1]["stdout"]["content"], "log");
+    assert_eq!(folded_evidence["items"][1]["status"], "passed");
+    assert_eq!(
+        folded_evidence["items"][1]["targetEvidenceId"],
+        "submission"
+    );
+
+    let mut unknown = context.clone();
+    unknown["evidence"][0]["futureFact"] = json!("keep");
+    assert!(fold_actor_context_evidence(&unknown, &evidence).is_none());
+    let mut different = context.clone();
+    different["evidence"][0]["artifact"]["sha256"] = json!("other");
+    assert!(fold_actor_context_evidence(&different, &evidence).is_none());
+    let mut conflicting = evidence.clone();
+    conflicting["items"][1]["status"] = json!("failed");
+    assert!(fold_actor_context_evidence(&context, &conflicting).is_none());
+    let mut duplicate = evidence.clone();
+    duplicate["items"]
+        .as_array_mut()
+        .unwrap()
+        .push(evidence["items"][0].clone());
+    assert!(fold_actor_context_evidence(&context, &duplicate).is_none());
+}

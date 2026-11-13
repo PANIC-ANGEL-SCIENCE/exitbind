@@ -245,6 +245,9 @@ fn push_form(lines: &mut Vec<String>, context: &Context, fill: &Value, label: &s
                 "{label}: command unavailable; inspect complete current detail"
             ));
         }
+        if let Some(meaning) = form["meaning"].as_str() {
+            lines.push(format!("{label}: {meaning}"));
+        }
         return;
     }
     lines.push(format!("{label}: {}", argv(context, command)));
@@ -387,6 +390,20 @@ mod tests {
             .contains("Choice evidence: command unavailable; inspect complete current detail\n"));
         assert!(text.contains("Commands unavailable: complete commands omitted"));
         assert!(!text.contains("Choice evidence: /bin/exitbind"));
+    }
+
+    #[test]
+    fn omitted_permit_command_keeps_its_advisory_meaning() {
+        let view = json!({"work":"smw_1","decision":{"readiness":"IN_PROGRESS"},
+            "effectiveAction":{"state":"action","kind":"spawn","commandsComplete":false,
+                "beforeEditing":{"required":true,"meaning":"advisory for ordinary host workspace writes"}}});
+        let context = Context {
+            executable: "/bin/exitbind".into(),
+            config: "/p/exitbind.json".into(),
+        };
+        let text = render_with(&view, &context);
+        assert!(text.contains("Before editing: advisory for ordinary host workspace writes"));
+        assert!(!text.contains("Before editing: /bin/exitbind"));
     }
 
     /// W1 review F4: a command the JSON form bounded (executable and config
