@@ -151,6 +151,81 @@ fn opaque_oracle_binds_public_operands_to_the_fixture_and_their_roles() {
 }
 
 #[test]
+fn opaque_oracle_binds_full_detail_to_the_current_work() {
+    let fixture = Fixture::new_single();
+    let other = Fixture::new_single();
+    let executable = fs::canonicalize(env!("CARGO_BIN_EXE_exitbind")).unwrap();
+    let config = fs::canonicalize(fixture.root.join("exitbind.json")).unwrap();
+    let other_config = fs::canonicalize(other.root.join("exitbind.json")).unwrap();
+    let work = "smw_example";
+    let binding = "current-binding";
+    let valid = serde_json::json!({
+        "work": work,
+        "current": {"binding": binding},
+        "full": {
+            "readOnly": true,
+            "binding": binding,
+            "sameExecutableRequired": false,
+            "sameConfigRequired": false,
+            "command": [executable, "work", "detail", work, "--json", "--config", config]
+        }
+    });
+    assert_opaque_envelope(&valid, &fixture.root);
+    let mut defaults = valid.clone();
+    let full = defaults["full"].as_object_mut().unwrap();
+    full.remove("sameExecutableRequired");
+    full.remove("sameConfigRequired");
+    defaults["routeDefaults"] = serde_json::json!({
+        "sameExecutableRequired": false,
+        "sameConfigRequired": false
+    });
+    assert_opaque_envelope(&defaults, &fixture.root);
+
+    let rejects = |label: &str, value: &Value| {
+        assert!(
+            std::panic::catch_unwind(|| assert_opaque_envelope(value, &fixture.root)).is_err(),
+            "forged {label} was accepted"
+        );
+    };
+    let mut wrong_executable = valid.clone();
+    wrong_executable["full"]["command"][0] = serde_json::json!("/bin/sh");
+    rejects("executable", &wrong_executable);
+    let mut wrong_config = valid.clone();
+    wrong_config["full"]["command"][6] = serde_json::json!(other_config);
+    rejects("configuration", &wrong_config);
+    let mut wrong_work = valid.clone();
+    wrong_work["full"]["command"][3] = serde_json::json!("smw_other");
+    rejects("Work", &wrong_work);
+    let mut wrong_binding = valid.clone();
+    wrong_binding["full"]["binding"] = serde_json::json!("other-binding");
+    rejects("binding", &wrong_binding);
+    let mut writable = valid.clone();
+    writable["full"]["readOnly"] = serde_json::json!(false);
+    rejects("read-only marker", &writable);
+    let mut wrong_verb = valid.clone();
+    wrong_verb["full"]["command"][2] = serde_json::json!("return");
+    rejects("command", &wrong_verb);
+    let mut wrong_flag = defaults.clone();
+    wrong_flag["full"]["sameConfigRequired"] = serde_json::json!(true);
+    rejects("explicit flag overriding defaults", &wrong_flag);
+    let mut neighbor = valid.clone();
+    neighbor["full"]["unknown"] = serde_json::json!(config);
+    rejects("unknown neighbor", &neighbor);
+    let nested = serde_json::json!({
+        "currentDelivery": {"complete": false, "reason": "fixture",
+            "full": {"command": valid["full"]["command"].clone()}}
+    });
+    rejects("nested full route", &nested);
+    let private = fixture.root.join(".exitbind");
+    fs::create_dir_all(&private).unwrap();
+    let alias = fixture.root.join("full-private-alias");
+    std::os::unix::fs::symlink(&private, &alias).unwrap();
+    let mut private_neighbor = valid;
+    private_neighbor["full"]["unknown"] = serde_json::json!(alias.join("missing"));
+    rejects("private neighbor alias", &private_neighbor);
+}
+
+#[test]
 fn opaque_oracle_validates_typed_delivery_without_trusting_its_neighbors() {
     let fixture = Fixture::new_single();
     let started = fixture.value(
@@ -329,6 +404,35 @@ fn opaque_oracle_accepts_real_bounded_producer_routes() {
         Some(b"scope"),
     );
     assert_opaque_envelope(&scoped, &root);
+    let full_argv = scoped["full"]["command"]
+        .as_array()
+        .expect("the current full detail route must be complete")
+        .iter()
+        .map(|word| word.as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        full_argv,
+        [
+            executable,
+            "work",
+            "detail",
+            work,
+            "--json",
+            "--config",
+            config.to_str().unwrap(),
+        ]
+    );
+    let detailed = support::git_topology::command(full_argv[0])
+        .current_dir(&root)
+        .args(&full_argv[1..])
+        .output()
+        .unwrap();
+    assert!(detailed.status.success(), "{detailed:?}");
+    let detailed: Value = serde_json::from_slice(&detailed.stdout).unwrap();
+    assert_eq!(detailed["kind"], "work_detail");
+    assert_eq!(detailed["complete"], true);
+    assert_eq!(detailed["work"], scoped["work"]);
+    assert_eq!(detailed["binding"], scoped["current"]["binding"]);
     let continuation = &scoped["continuation"];
     for field in ["sameConfigRequired", "sameExecutableRequired"] {
         assert_eq!(

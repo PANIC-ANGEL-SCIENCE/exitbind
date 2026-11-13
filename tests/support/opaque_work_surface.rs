@@ -122,25 +122,29 @@ enum Step<'a> {
 
 fn command_array(path: &[Step<'_>]) -> bool {
     use Step::{Index as I, Key as K};
+    if matches!(path, [K("full"), K("command")]) {
+        return true;
+    }
     if let [K("currentDelivery"), rest @ ..] = path {
-        return command_array(rest)
-            || matches!(
-                rest,
-                [
-                    K("sections"),
-                    K("assignment"),
-                    K("optionalChallenge"),
-                    K("command")
-                ] | [
-                    K("sections"),
-                    K("assignment"),
-                    K("residual"),
-                    K("humanHelp"),
-                    K("nextAction"),
-                    K("command"),
-                    K("argv")
-                ]
-            );
+        return !matches!(rest, [K("full"), K("command")])
+            && (command_array(rest)
+                || matches!(
+                    rest,
+                    [
+                        K("sections"),
+                        K("assignment"),
+                        K("optionalChallenge"),
+                        K("command")
+                    ] | [
+                        K("sections"),
+                        K("assignment"),
+                        K("residual"),
+                        K("humanHelp"),
+                        K("nextAction"),
+                        K("command"),
+                        K("argv")
+                    ]
+                ));
     }
     matches!(
         path,
@@ -266,6 +270,7 @@ fn display(path: &[Step<'_>]) -> String {
 
 pub(super) fn assert_opaque_envelope(value: &Value, fixture_root: &Path) {
     let identity = FixtureIdentity::new(fixture_root);
+    check_full_detail(value, &identity);
     let mutation = value["compact"] == true && value["effect"].is_string();
     let ledger = if mutation {
         value["reference"]["ledger"].as_str()
@@ -283,6 +288,44 @@ pub(super) fn assert_opaque_envelope(value: &Value, fixture_root: &Path) {
     let mut checked = value.clone();
     check_current_delivery(&mut checked, value, fixture_root, &identity);
     visit(&checked, &mut Vec::new(), ledger, &identity, false);
+}
+
+// The root full descriptor is a current, read-only detail route. It is not
+// an exception for similarly named fields inside opaque metadata.
+fn check_full_detail(value: &Value, identity: &FixtureIdentity) {
+    let Some(full) = value.get("full") else {
+        return;
+    };
+    let Some(command) = full.get("command") else {
+        return;
+    };
+    let argv = command.as_array().expect("full detail command is an array");
+    let work = value["work"].as_str().expect("full detail Work");
+    let binding = value["current"]["binding"]
+        .as_str()
+        .expect("full detail current binding");
+    assert_eq!(full["readOnly"], true, "full detail must be read-only");
+    assert_eq!(full["binding"], binding, "full detail binding differs");
+    assert_eq!(argv.len(), 7, "full detail argv length differs");
+    assert!(argv[0]
+        .as_str()
+        .is_some_and(|text| identity.executable.exact(text)));
+    for (actual, expected) in argv[1..6]
+        .iter()
+        .zip(["work", "detail", work, "--json", "--config"])
+    {
+        assert_eq!(actual.as_str(), Some(expected), "full detail argv differs");
+    }
+    assert!(argv[6]
+        .as_str()
+        .is_some_and(|text| identity.config.exact(text)));
+    for flag in ["sameExecutableRequired", "sameConfigRequired"] {
+        assert_eq!(
+            full.get(flag).or_else(|| value["routeDefaults"].get(flag)),
+            Some(&Value::Bool(false)),
+            "full detail route must carry its own invocation operands"
+        );
+    }
 }
 
 // The default step can include a complete typed delivery. Compare its current
