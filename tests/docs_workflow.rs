@@ -89,8 +89,20 @@ fn contribution_audiences_and_coffee_contract_stay_separate() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let read = |file: &str| fs::read_to_string(root.join(file)).unwrap();
     let coffee = read("skills/coffee/SKILL.md");
-    assert!(!root.join("AGENTS.md").exists());
+    let source_rules = read("AGENTS.md");
     let contributing = read("CONTRIBUTING.md");
+
+    for contract in [
+        "Before reading a Rust source file under `src/`, read its first eight lines.",
+        "every Rust file under `src/`, including\ntest-gated files",
+        "real, named action and record the files actually opened",
+        "Do not split a file merely for size.",
+    ] {
+        assert!(
+            source_rules.contains(contract),
+            "source-reading rules lost contract: {contract}"
+        );
+    }
 
     for private_stack_term in [
         "Repomix",
@@ -124,8 +136,22 @@ fn contribution_audiences_and_coffee_contract_stay_separate() {
     }
 
     assert!(contributing.contains("canonical guide for human contributors and coding agents"));
+    assert!(contributing.contains("root `AGENTS.md` records the source-reading rule"));
     assert!(contributing.contains("not\nan automatic host fallback"));
     assert!(contributing.contains("Product use does not require contribution"));
+    assert!(contributing.contains("cloning this source, Rust, or this developer guide"));
+    for skill in [
+        "skills/exitbind/SKILL.md",
+        "skills/exitbind-bootstrap/SKILL.md",
+    ] {
+        let consumer = read(skill);
+        assert!(
+            consumer.contains(
+                "belong in its optional CONTRIBUTING.md; do not import them into a consumer's"
+            ) && consumer.contains("or require a source checkout to use an installed binary"),
+            "{skill} must keep source-contributor guidance optional for consumers"
+        );
+    }
     assert!(contributing.contains("Read `README.md` before changing the project."));
     assert!(contributing.contains("Persistent memory is opt-in, role-scoped"));
     assert!(contributing.contains("recorded artifact bytes equal disk bytes"));

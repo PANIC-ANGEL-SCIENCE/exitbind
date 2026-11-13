@@ -2,8 +2,8 @@
 
 This is the canonical guide for human contributors and coding agents modifying
 the Exitbind source. Give a contributing agent this file explicitly before it
-edits the repository. Removing root `AGENTS.md` means hosts no longer discover
-these developer instructions through that filename; `CONTRIBUTING.md` is not
+edits the repository. The root `AGENTS.md` records the source-reading rule for
+this checkout; `CONTRIBUTING.md` is not
 an automatic host fallback.
 
 Read a Rust source file's first eight lines before its body. Its opening header
