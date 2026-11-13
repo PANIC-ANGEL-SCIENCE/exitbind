@@ -330,8 +330,16 @@ fn opaque_oracle_accepts_real_bounded_producer_routes() {
     );
     assert_opaque_envelope(&scoped, &root);
     let continuation = &scoped["continuation"];
-    assert_eq!(continuation["sameConfigRequired"], false, "{scoped}");
-    assert_eq!(continuation["sameExecutableRequired"], false, "{scoped}");
+    for field in ["sameConfigRequired", "sameExecutableRequired"] {
+        assert_eq!(
+            continuation
+                .get(field)
+                .or_else(|| scoped["routeDefaults"].get(field))
+                .and_then(Value::as_bool),
+            Some(false),
+            "{scoped}"
+        );
+    }
     let argv = continuation["command"]
         .as_array()
         .expect("the current continuation must be complete")

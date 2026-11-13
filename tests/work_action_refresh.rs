@@ -43,6 +43,19 @@ fn invoke(root: &Path, args: &[&str]) -> Value {
     ))
 }
 
+fn assert_complete_route_flags(route: &Value, response: &Value) {
+    for field in ["sameConfigRequired", "sameExecutableRequired"] {
+        assert_eq!(
+            route
+                .get(field)
+                .or_else(|| response["routeDefaults"].get(field))
+                .and_then(Value::as_bool),
+            Some(false),
+            "{field}: {response}"
+        );
+    }
+}
+
 fn form(root: &Path, work: &str, value: &Value, label: &str) -> Vec<String> {
     let forms = value
         .get("actionForms")
@@ -67,8 +80,7 @@ fn form(root: &Path, work: &str, value: &Value, label: &str) -> Vec<String> {
             *argument = Value::String(label.into());
         }
     }
-    assert_eq!(command["sameConfigRequired"], false);
-    assert_eq!(command["sameExecutableRequired"], false);
+    assert_complete_route_flags(&command, value);
     let argv = command["argv"]
         .as_array()
         .unwrap()
@@ -137,6 +149,11 @@ fn post_permit_forms_are_current_and_old_return_binding_refuses() {
         &form(&root, work, &started, "scoped"),
         Some("Bound result-file scope"),
     ));
+    assert_eq!(scoped["routeDefaults"]["sameConfigRequired"], false);
+    assert_eq!(scoped["routeDefaults"]["sameExecutableRequired"], false);
+    assert!(scoped["effectiveAction"]["beforeEditing"]["command"]
+        .get("sameConfigRequired")
+        .is_none());
     let worker = scoped["currentDelivery"].clone();
     assert_eq!(worker["kind"], "work_actor_context");
     assert_eq!(worker["requiredContentComplete"], true);
@@ -148,8 +165,7 @@ fn post_permit_forms_are_current_and_old_return_binding_refuses() {
             *argument = Value::String("Write result file".into());
         }
     }
-    assert_eq!(permit_command["sameConfigRequired"], false);
-    assert_eq!(permit_command["sameExecutableRequired"], false);
+    assert_complete_route_flags(&permit_command, &scoped);
     let permit_argv = permit_command["argv"]
         .as_array()
         .unwrap()
@@ -214,8 +230,7 @@ fn post_permit_forms_are_current_and_old_return_binding_refuses() {
     );
     let next_return = form(&root, work, &next_step, "completed");
     let next = &permit["nextAction"];
-    assert_eq!(next["sameConfigRequired"], false);
-    assert_eq!(next["sameExecutableRequired"], false);
+    assert_complete_route_flags(next, &permit);
     let next_argv = next["command"]
         .as_array()
         .unwrap()
@@ -240,9 +255,19 @@ fn post_permit_forms_are_current_and_old_return_binding_refuses() {
     assert_eq!(returned["effect"], "recorded");
     assert!(returned.get("currentDelivery").is_none());
     assert_eq!(returned["effectiveAction"]["kind"], "check");
+    assert!(returned["effectiveAction"]
+        .get("mechanicalAction")
+        .is_none());
+    assert_eq!(
+        returned["effectiveAction"]["executionOptions"]["timeoutMs"]["minimum"],
+        1
+    );
+    assert!(returned["effectiveAction"]["meaning"]
+        .as_str()
+        .unwrap()
+        .contains("current frozen"));
     let check = &returned["effectiveAction"]["command"];
-    assert_eq!(check["sameConfigRequired"], false);
-    assert_eq!(check["sameExecutableRequired"], false);
+    assert_complete_route_flags(check, &returned);
     let argv = check["argv"]
         .as_array()
         .unwrap()

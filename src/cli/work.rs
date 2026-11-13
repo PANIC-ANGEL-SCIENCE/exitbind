@@ -43,9 +43,9 @@ fn omit_live_navigation(value: &mut Value) {
 
 /// Keep one current executable form and one full-detail route on ordinary
 /// steps. Explicit full/detail readers and native packets use their own path.
-fn project_public_step(loaded: &config::Loaded, value: &mut Value) {
+fn project_public_step(loaded: &config::Loaded, value: &mut Value) -> bool {
     let Some(work) = value["work"].as_str().map(str::to_owned) else {
-        return;
+        return false;
     };
     if value.get("effect").is_none()
         && value["beginPreparation"].is_object()
@@ -66,7 +66,7 @@ fn project_public_step(loaded: &config::Loaded, value: &mut Value) {
             .and_then(Value::as_array)
             .is_some_and(|warnings| !warnings.is_empty())
     {
-        return;
+        return false;
     }
     if value["currentDelivery"]["kind"] == "work_detail" {
         let reuse_recipient = value["currentDelivery"]["recipient"]["role"] == "lead"
@@ -144,6 +144,190 @@ fn project_public_step(loaded: &config::Loaded, value: &mut Value) {
     full["readOnly"] = json!(true);
     full["binding"] = value["current"]["binding"].clone();
     value["full"] = full;
+    true
+}
+
+/// Keep one copy of an identical current check command while preserving the
+/// execution options and meaning that belonged to its mechanical form.
+fn consolidate_mechanical_action(value: &mut Value) {
+    let Some(action) = value
+        .get_mut("effectiveAction")
+        .and_then(Value::as_object_mut)
+    else {
+        return;
+    };
+    let Some(mechanical) = action.get("mechanicalAction").and_then(Value::as_object) else {
+        return;
+    };
+    if mechanical.get("command").is_none()
+        || mechanical.get("command") != action.get("command")
+        || mechanical
+            .keys()
+            .any(|key| !matches!(key.as_str(), "command" | "executionOptions" | "meaning"))
+        || ["executionOptions", "meaning"]
+            .iter()
+            .any(|key| action.contains_key(*key))
+    {
+        return;
+    }
+    let mechanical = action
+        .remove("mechanicalAction")
+        .expect("checked mechanical form");
+    for key in ["executionOptions", "meaning"] {
+        if let Some(item) = mechanical.get(key) {
+            action.insert(key.to_owned(), item.clone());
+        }
+    }
+}
+
+/// A missing per-route flag inherits these defaults only on current CLI
+/// routes. Never infer them for an unresolved route or a template prefix.
+fn consolidate_route_defaults(value: &mut Value, executable: &str, config: &str) {
+    if value.get("routeDefaults").is_some() {
+        return;
+    }
+    const ROUTES: &[&str] = &[
+        "/current/details/grouped",
+        "/current/details/assignment",
+        "/current/details/evidence",
+        "/current/details/recipient",
+        "/current/details/tasks",
+        "/effectiveAction/beforeEditing/command",
+        "/effectiveAction/command",
+        "/effectiveAction/mechanicalAction/command",
+        "/effectiveAction/detail",
+        "/continuation",
+        "/audit",
+        "/full",
+        "/nextAction",
+        "/nextAction/command",
+        "/continuation/command",
+        "/audit/command",
+    ];
+    if ROUTES.iter().any(|pointer| {
+        value
+            .pointer(pointer)
+            .is_some_and(|route| unflagged_route_is_incomplete(route, executable, config))
+    }) || value
+        .pointer("/effectiveAction/choices")
+        .and_then(Value::as_array)
+        .is_some_and(|choices| {
+            choices.iter().any(|choice| {
+                choice
+                    .get("command")
+                    .is_some_and(|route| unflagged_route_is_incomplete(route, executable, config))
+            })
+        })
+    {
+        return;
+    }
+    let mut removed = 0;
+    for pointer in ROUTES {
+        if let Some(route) = value.pointer_mut(pointer) {
+            removed += if consolidate_route_flags(route, executable, config) {
+                1
+            } else {
+                0
+            };
+        }
+    }
+    if let Some(choices) = value
+        .pointer_mut("/effectiveAction/choices")
+        .and_then(Value::as_array_mut)
+    {
+        for choice in choices {
+            if let Some(route) = choice.get_mut("command") {
+                removed += if consolidate_route_flags(route, executable, config) {
+                    1
+                } else {
+                    0
+                };
+            }
+        }
+    }
+    if removed > 0 {
+        value["routeDefaults"] = json!({"sameConfigRequired":false,"sameExecutableRequired":false,
+            "meaning":"Defaults for current action and navigation routes; explicit flags override them."});
+    }
+}
+
+fn unflagged_route_is_incomplete(route: &Value, executable: &str, config: &str) -> bool {
+    let Some(object) = route.as_object() else {
+        return false;
+    };
+    if ["sameConfigRequired", "sameExecutableRequired"]
+        .iter()
+        .any(|key| object.get(*key).is_some_and(|value| !value.is_boolean()))
+    {
+        return true;
+    }
+    if object
+        .get("sameConfigRequired")
+        .and_then(Value::as_bool)
+        .is_some()
+        && object
+            .get("sameExecutableRequired")
+            .and_then(Value::as_bool)
+            .is_some()
+    {
+        return false;
+    }
+    ["argv", "command"]
+        .iter()
+        .filter_map(|key| object.get(*key).and_then(Value::as_array))
+        .any(|argv| !argv_has_cli_context(argv, executable, config))
+}
+
+fn consolidate_route_flags(route: &mut Value, executable: &str, config: &str) -> bool {
+    let Some(object) = route.as_object_mut() else {
+        return false;
+    };
+    if object.get("sameConfigRequired") != Some(&json!(false))
+        || object.get("sameExecutableRequired") != Some(&json!(false))
+        || object
+            .get("available")
+            .is_some_and(|available| available.as_bool() != Some(true))
+    {
+        return false;
+    }
+    let argv = match (object.get("argv"), object.get("command")) {
+        (Some(Value::Array(argv)), None | Some(Value::Null))
+        | (None | Some(Value::Null), Some(Value::Array(argv))) => argv,
+        _ => return false,
+    };
+    if !argv_has_cli_context(argv, executable, config) {
+        return false;
+    }
+    object.remove("sameConfigRequired");
+    object.remove("sameExecutableRequired");
+    true
+}
+
+fn argv_has_cli_context(argv: &[Value], executable: &str, config: &str) -> bool {
+    let mut configurations = argv.windows(2).filter(|words| words[0] == "--config");
+    argv.first().and_then(Value::as_str) == Some(executable)
+        && matches!(
+            argv.get(1).and_then(Value::as_str),
+            Some("work" | "run" | "goal")
+        )
+        && argv.iter().all(Value::is_string)
+        && argv
+            .iter()
+            .filter(|value| value.as_str() == Some("--config"))
+            .count()
+            == 1
+        && configurations.next().and_then(|words| words[1].as_str()) == Some(config)
+        && configurations.next().is_none()
+}
+
+fn consolidate_public_step_metadata(loaded: &config::Loaded, value: &mut Value) {
+    if value["effectiveAction"]["exists"] != true || value["actionForms"].is_object() {
+        return;
+    }
+    consolidate_mechanical_action(value);
+    if let (Ok(executable), Some(config)) = (crate::emitted::executable(), loaded.path.to_str()) {
+        consolidate_route_defaults(value, &executable, config);
+    }
 }
 
 fn compact_form_is_redundant(compact: &Value, action: &Value) -> bool {
@@ -454,6 +638,90 @@ mod navigation_delta_tests {
     }
 }
 
+#[cfg(test)]
+mod public_step_metadata_tests {
+    use super::*;
+
+    #[test]
+    fn route_defaults_require_complete_matching_live_argv() {
+        let complete = json!({"argv":["/bin/exitbind","work","return","w","--reason","<REASON>","--config","/tmp/config"],
+            "sameConfigRequired":false,"sameExecutableRequired":false});
+        let prefix = json!({"argv":["work","return","w","--config"],
+            "sameConfigRequired":true,"sameExecutableRequired":true});
+        let wrong_config = json!({"argv":["/bin/exitbind","work","return","w","--config","/tmp/other"],
+            "sameConfigRequired":false,"sameExecutableRequired":false});
+        let dangling = json!({"argv":["/bin/exitbind","work","return","w","--config","/tmp/config","--config"],
+            "sameConfigRequired":false,"sameExecutableRequired":false});
+        let template = json!({"templatePrefix":["/bin/exitbind","work","fill","w","--config","/tmp/config"],
+            "sameConfigRequired":false,"sameExecutableRequired":false,"executable":false});
+        let evidence = json!({"argv":["/bin/exitbind","work","return","w","--config","/tmp/config"],
+            "sameConfigRequired":false,"sameExecutableRequired":false});
+        let mut value = json!({"effectiveAction":{"choices":[{"command":complete},
+            {"command":prefix},{"command":wrong_config},{"command":dangling}],"fillRoute":template},"evidence":evidence});
+        let before = value.clone();
+        consolidate_route_defaults(&mut value, "/bin/exitbind", "/tmp/config");
+        assert_eq!(value["routeDefaults"]["sameConfigRequired"], false);
+        assert_eq!(value["routeDefaults"]["sameExecutableRequired"], false);
+        let command = &value["effectiveAction"]["choices"][0]["command"];
+        assert_eq!(
+            command["argv"],
+            before["effectiveAction"]["choices"][0]["command"]["argv"]
+        );
+        assert!(command.get("sameConfigRequired").is_none());
+        assert!(command.get("sameExecutableRequired").is_none());
+        assert_eq!(
+            value["effectiveAction"]["choices"][1],
+            before["effectiveAction"]["choices"][1]
+        );
+        assert_eq!(
+            value["effectiveAction"]["choices"][2],
+            before["effectiveAction"]["choices"][2]
+        );
+        assert_eq!(
+            value["effectiveAction"]["choices"][3],
+            before["effectiveAction"]["choices"][3]
+        );
+        assert_eq!(
+            value["effectiveAction"]["fillRoute"],
+            before["effectiveAction"]["fillRoute"]
+        );
+        assert_eq!(value["evidence"], before["evidence"]);
+
+        let mut unknown = before;
+        unknown["nextAction"] = json!({"command":["work","next","w","--config"]});
+        let unchanged = unknown.clone();
+        consolidate_route_defaults(&mut unknown, "/bin/exitbind", "/tmp/config");
+        assert_eq!(unknown, unchanged);
+
+        let mut unknown = unchanged;
+        unknown["nextAction"] = json!({"command":["/bin/exitbind","work","next","w","--config","/tmp/config"],
+            "sameConfigRequired":"false","sameExecutableRequired":false});
+        let unchanged = unknown.clone();
+        consolidate_route_defaults(&mut unknown, "/bin/exitbind", "/tmp/config");
+        assert_eq!(unknown, unchanged);
+    }
+
+    #[test]
+    fn identical_mechanical_command_is_shown_once_without_losing_options() {
+        let command = json!({"argv":["/bin/exitbind","work","check","w","--config","/tmp/config"],
+            "sameConfigRequired":false,"sameExecutableRequired":false});
+        let options = json!({"timeoutMs":{"minimum":1,"maximum":86400000}});
+        let mut value = json!({"effectiveAction":{"command":command,
+            "mechanicalAction":{"command":command,"executionOptions":options,"meaning":"current check"}}});
+        consolidate_mechanical_action(&mut value);
+        assert_eq!(value["effectiveAction"]["command"], command);
+        assert_eq!(value["effectiveAction"]["executionOptions"], options);
+        assert_eq!(value["effectiveAction"]["meaning"], "current check");
+        assert!(value["effectiveAction"].get("mechanicalAction").is_none());
+
+        let mut different = json!({"effectiveAction":{"command":command,
+            "mechanicalAction":{"command":{"argv":["other"]},"executionOptions":options}}});
+        let before = different.clone();
+        consolidate_mechanical_action(&mut different);
+        assert_eq!(different, before);
+    }
+}
+
 fn print_work_json(value: &serde_json::Value) -> Result<(), String> {
     let mut value = crate::work::effective_action::attach(value);
     crate::work::readable::public_delivery(&mut value);
@@ -525,10 +793,14 @@ fn print_compact_read(loaded: &config::Loaded, value: &serde_json::Value) -> Res
         value["transportCompletion"] = json!({"complete":false,
             "reason":"a complete route is unavailable"});
     }
+    let mut projected_step = false;
     if value["navigationStep"] == true {
         value.as_object_mut().unwrap().remove("navigationStep");
         crate::work::action_forms::public_return_templates(&mut value, &loaded.path);
-        project_public_step(loaded, &mut value);
+        projected_step = project_public_step(loaded, &mut value);
+        if projected_step {
+            consolidate_mechanical_action(&mut value);
+        }
         // The direct full route supersedes the earlier compact section and
         // recovery routes for this verified current navigation step.
         if value["currentDelivery"]["kind"] == "work_context_reference"
@@ -643,6 +915,27 @@ fn print_compact_read(loaded: &config::Loaded, value: &serde_json::Value) -> Res
             value = crate::work::compact::semantic_partial(&value, route)?;
         }
     }
+    // The compact fallback needs individual flags to omit whole routes.
+    // Consolidate them only after that decision and only if the final
+    // response still fits its existing diagnostic bound.
+    if projected_step
+        && value["currentDelivery"]["kind"] == "work_context_reference"
+        && value["transportCompletion"]["complete"] != false
+        && value["full"]["command"].is_array()
+    {
+        let mut consolidated = value.clone();
+        consolidate_public_step_metadata(loaded, &mut consolidated);
+        if fits(&consolidated)?
+            && serde_json::to_vec(&consolidated)
+                .map_err(|error| error.to_string())?
+                .len()
+                < serde_json::to_vec(&value)
+                    .map_err(|error| error.to_string())?
+                    .len()
+        {
+            value = consolidated;
+        }
+    }
     print_json(&value)
 }
 
@@ -729,9 +1022,10 @@ fn bounded_step_json(
         completed["transportCompletion"] = json!({"complete":false,
             "reason":"a complete route is unavailable"});
     }
+    let mut projected_step = false;
     if !forms_only && completed["kind"] != "work_detail" {
         crate::work::action_forms::public_return_templates(&mut completed, &loaded.path);
-        project_public_step(loaded, &mut completed);
+        projected_step = project_public_step(loaded, &mut completed);
     }
     if serde_json::to_vec(&completed)
         .map_err(|error| error.to_string())?
@@ -785,6 +1079,24 @@ fn bounded_step_json(
                 "nextAction":route});
         }
         value = completed;
+    }
+    if projected_step
+        && value["transportCompletion"]["complete"] != false
+        && value["full"]["command"].is_array()
+    {
+        let mut consolidated = value.clone();
+        consolidate_public_step_metadata(loaded, &mut consolidated);
+        let consolidated_bytes = serde_json::to_vec(&consolidated)
+            .map_err(|error| error.to_string())?
+            .len();
+        if consolidated_bytes < crate::work::readable::MAX_GROUPED_BYTES
+            && consolidated_bytes
+                < serde_json::to_vec(&value)
+                    .map_err(|error| error.to_string())?
+                    .len()
+        {
+            value = consolidated;
+        }
     }
     Ok(value)
 }

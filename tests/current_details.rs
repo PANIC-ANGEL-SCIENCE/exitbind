@@ -96,8 +96,11 @@ impl Fixture {
             .unwrap()
             .into()
     }
+    fn full_next(&self, work: &str) -> Value {
+        self.json(&["work", "next", work, "--json", "--full"])
+    }
     fn return_result(&self, work: &str, outcome: &str, body: &[u8]) {
-        let next = self.json(&["work", "next", work]);
+        let next = self.full_next(work);
         let output = self.call(
             &[
                 "work",
@@ -119,7 +122,7 @@ impl Fixture {
     fn detail_metrics(&self, next: &Value, section: &str) -> (Value, usize, usize, usize) {
         let mut transport_bytes = 0;
         let mut peak_bytes = 0;
-        let mut route = next["current"]["details"][section].clone();
+        let mut route = next["next"]["current"]["details"][section].clone();
         let mut bytes = Vec::new();
         let mut calls = 0;
         let mut sha = None;
@@ -128,7 +131,7 @@ impl Fixture {
             let parts = reference.split(':').collect::<Vec<_>>();
             assert_eq!(parts.len(), 6);
             assert_eq!(parts[..3], ["ref", "work-section", "v2"]);
-            assert_eq!(parts[3], next["current"]["binding"]);
+            assert_eq!(parts[3], next["next"]["current"]["binding"]);
             assert_eq!(parts[4], section);
             let page_number = parts[5].parse::<usize>().unwrap();
             assert_eq!(page_number, calls);
@@ -172,7 +175,7 @@ impl Fixture {
             assert_eq!(page["section"], section);
             assert_eq!(page["offset"], page_number * 4096);
             assert_eq!(page["offset"], bytes.len());
-            assert_eq!(page["binding"], next["current"]["binding"]);
+            assert_eq!(page["binding"], next["next"]["current"]["binding"]);
             if let Some(ref sha) = sha {
                 assert_eq!(&page["sectionSha256"], sha);
             } else {
@@ -255,7 +258,7 @@ fn initial_delivery_direct_detail_and_grouped_expansion_share_lossless_aliases()
     assert!(
         serde_json::to_vec(projected).unwrap().len() < serde_json::to_vec(&restored).unwrap().len()
     );
-    let next = fixture.json(&["work", "next", work]);
+    let next = fixture.full_next(work);
     let (legacy, _) = fixture.detail(&next, "assignment");
     assert_eq!(
         restored["residual"]["context"],
@@ -267,17 +270,17 @@ fn initial_delivery_direct_detail_and_grouped_expansion_share_lossless_aliases()
 fn current_detail_tracks_check_review_repair_and_terminal_without_read_effects() {
     let fixture = Fixture::new();
     let work = fixture.begin();
-    let initial = fixture.json(&["work", "next", &work]);
-    assert_eq!(initial["current"]["result"]["exists"], false);
+    let initial = fixture.full_next(&work);
+    assert_eq!(initial["next"]["current"]["result"]["exists"], false);
     fixture.return_result(&work, "scoped", b"complete scope\n");
-    let worker = fixture.json(&["work", "next", &work]);
-    assert_eq!(worker["current"]["recipient"]["role"], "worker");
+    let worker = fixture.full_next(&work);
+    assert_eq!(worker["next"]["current"]["recipient"]["role"], "worker");
     let before = fixture.ledgers();
     let (assignment, _) = fixture.detail(&worker, "assignment");
     assert_eq!(assignment["assignment"]["role"], "worker");
     assert_eq!(
         assignment["assignment"]["context"]["subject"]["sha256"],
-        worker["current"]["result"]["subject"]["sha256"]
+        worker["next"]["current"]["result"]["subject"]["sha256"]
     );
     let (evidence, _) = fixture.detail(&worker, "evidence");
     assert!(evidence["items"]
@@ -287,15 +290,15 @@ fn current_detail_tracks_check_review_repair_and_terminal_without_read_effects()
         .any(|item| item["artifact"]["contentHex"] == "636f6d706c6574652073636f70650a"));
     assert_eq!(before, fixture.ledgers());
     fixture.return_result(&work, "completed", b"exact worker artifact\n");
-    let check = fixture.json(&["work", "next", &work]);
-    assert_eq!(check["current"]["action"], "check");
-    assert_eq!(check["current"]["result"]["exists"], true);
+    let check = fixture.full_next(&work);
+    assert_eq!(check["next"]["current"]["action"], "check");
+    assert_eq!(check["next"]["current"]["result"]["exists"], true);
     let stale = fixture.call(
         &[
             "work",
             "expand",
             &work,
-            worker["current"]["details"]["assignment"]["reference"]
+            worker["next"]["current"]["details"]["assignment"]["reference"]
                 .as_str()
                 .unwrap(),
         ],
@@ -303,8 +306,8 @@ fn current_detail_tracks_check_review_repair_and_terminal_without_read_effects()
     );
     assert!(!stale.status.success());
     fixture.json(&["work", "check", &work]);
-    let reviewer = fixture.json(&["work", "next", &work]);
-    assert_eq!(reviewer["current"]["recipient"]["role"], "reviewer");
+    let reviewer = fixture.full_next(&work);
+    assert_eq!(reviewer["next"]["current"]["recipient"]["role"], "reviewer");
     let (evidence, _) = fixture.detail(&reviewer, "evidence");
     let items = evidence["items"].as_array().unwrap();
     assert!(items.iter().any(
@@ -314,15 +317,18 @@ fn current_detail_tracks_check_review_repair_and_terminal_without_read_effects()
         .iter()
         .any(|item| item["stdout"]["complete"] == true && item["result"]["code"] == 0));
     fixture.return_result(&work, "approved", b"independent review\n");
-    let lead = fixture.json(&["work", "next", &work]);
-    assert_eq!(lead["current"]["recipient"]["role"], "lead");
+    let lead = fixture.full_next(&work);
+    assert_eq!(lead["next"]["current"]["recipient"]["role"], "lead");
     fixture.return_result(&work, "rework", b"repair required\n");
-    let repair = fixture.json(&["work", "next", &work]);
-    assert_eq!(repair["current"]["recipient"]["role"], "worker");
-    assert_eq!(repair["current"]["repair"]["outcome"], "rework");
-    assert_eq!(repair["current"]["phase"]["attempt"], 2);
-    assert_eq!(repair["current"]["result"]["exists"], false);
-    assert_eq!(repair["current"]["result"]["retainedPreviousResult"], true);
+    let repair = fixture.full_next(&work);
+    assert_eq!(repair["next"]["current"]["recipient"]["role"], "worker");
+    assert_eq!(repair["next"]["current"]["repair"]["outcome"], "rework");
+    assert_eq!(repair["next"]["current"]["phase"]["attempt"], 2);
+    assert_eq!(repair["next"]["current"]["result"]["exists"], false);
+    assert_eq!(
+        repair["next"]["current"]["result"]["retainedPreviousResult"],
+        true
+    );
     let (repair_evidence, _) = fixture.detail(&repair, "evidence");
     assert!(repair_evidence["items"]
         .as_array()
@@ -336,12 +342,12 @@ fn current_detail_tracks_check_review_repair_and_terminal_without_read_effects()
     fixture.json(&["work", "check", &work]);
     fixture.return_result(&work, "approved", b"fresh review\n");
     fixture.return_result(&work, "accepted", b"lead accepts\n");
-    let terminal = fixture.json(&["work", "next", &work]);
-    assert_eq!(terminal["current"]["action"], "done");
-    assert_eq!(terminal["current"]["phase"]["status"], "accepted");
-    assert_eq!(terminal["current"]["result"]["historical"], true);
-    assert_eq!(terminal["current"]["phase"]["stage"], 4);
-    assert_eq!(terminal["current"]["phase"]["attempt"], 2);
+    let terminal = fixture.full_next(&work);
+    assert_eq!(terminal["next"]["current"]["action"], "done");
+    assert_eq!(terminal["next"]["current"]["phase"]["status"], "accepted");
+    assert_eq!(terminal["next"]["current"]["result"]["historical"], true);
+    assert_eq!(terminal["next"]["current"]["phase"]["stage"], 4);
+    assert_eq!(terminal["next"]["current"]["phase"]["attempt"], 2);
     let (history, _) = fixture.detail(&terminal, "evidence");
     assert_eq!(history["historical"], true);
     assert!(history["items"]
@@ -372,10 +378,11 @@ fn large_sections_and_all_tasks_are_reachable_with_scoped_refusals() {
             &format!("task {n}"),
         ]);
     }
-    let before = fixture.json(&["work", "next", &work]);
+    let before = fixture.full_next(&work);
     fixture.return_result(&work, "scoped", &vec![b'x'; 40000]);
-    let next = fixture.json(&["work", "next", &work]);
-    assert!(serde_json::to_vec(&next).unwrap().len() < 8192);
+    let compact = fixture.json(&["work", "next", &work, "--json"]);
+    assert!(serde_json::to_vec(&compact).unwrap().len() < 8192);
+    let next = fixture.full_next(&work);
     let (tasks, _) = fixture.detail(&next, "tasks");
     assert_eq!(tasks["tasks"].as_array().unwrap().len(), 45);
     assert_eq!(tasks["decomposition"]["omitted"], 0);
@@ -391,7 +398,7 @@ fn large_sections_and_all_tasks_are_reachable_with_scoped_refusals() {
             "work",
             "expand",
             &work,
-            before["current"]["details"]["assignment"]["reference"]
+            before["next"]["current"]["details"]["assignment"]["reference"]
                 .as_str()
                 .unwrap(),
         ],
@@ -399,7 +406,7 @@ fn large_sections_and_all_tasks_are_reachable_with_scoped_refusals() {
     );
     assert!(!stale.status.success());
     let other = fixture.begin();
-    let reference = next["current"]["details"]["tasks"]["reference"]
+    let reference = next["next"]["current"]["details"]["tasks"]["reference"]
         .as_str()
         .unwrap();
     let wrong_work = fixture.call(&["work", "expand", &other, reference], None);
@@ -425,15 +432,15 @@ fn grouped_detail_is_readable_and_keeps_the_current_fence() {
     let fixture = Fixture::new();
     let work = fixture.begin();
     fixture.return_result(&work, "scoped", "scope\n".as_bytes());
-    let worker = fixture.json(&["work", "next", &work]);
+    let worker = fixture.full_next(&work);
     fixture.return_result(&work, "completed", "résumé exact\n".as_bytes());
-    let current = fixture.json(&["work", "next", &work]);
+    let current = fixture.full_next(&work);
     let output = fixture.call(&["work", "detail", &work], None);
     assert!(output.status.success(), "{output:?}");
     let detail: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(detail["kind"], "work_detail");
     assert_eq!(detail["version"], 1);
-    assert_eq!(detail["binding"], current["current"]["binding"]);
+    assert_eq!(detail["binding"], current["next"]["current"]["binding"]);
     assert!(detail["sections"]["assignment"].is_object());
     assert!(detail["sections"]["tasks"].is_object());
     let evidence = &detail["sections"]["evidence"];
@@ -452,7 +459,7 @@ fn grouped_detail_is_readable_and_keeps_the_current_fence() {
             "work",
             "expand",
             &work,
-            current["current"]["details"]["grouped"]["reference"]
+            current["next"]["current"]["details"]["grouped"]["reference"]
                 .as_str()
                 .unwrap(),
         ],
@@ -465,7 +472,7 @@ fn grouped_detail_is_readable_and_keeps_the_current_fence() {
             "work",
             "expand",
             &other,
-            current["current"]["details"]["grouped"]["reference"]
+            current["next"]["current"]["details"]["grouped"]["reference"]
                 .as_str()
                 .unwrap(),
         ],
@@ -482,7 +489,7 @@ fn grouped_detail_is_readable_and_keeps_the_current_fence() {
             "work",
             "expand",
             &foreign_work,
-            current["current"]["details"]["grouped"]["reference"]
+            current["next"]["current"]["details"]["grouped"]["reference"]
                 .as_str()
                 .unwrap(),
         ],
@@ -494,7 +501,7 @@ fn grouped_detail_is_readable_and_keeps_the_current_fence() {
         None,
     );
     assert!(!malformed.status.success());
-    assert!(worker["current"]["binding"].is_string());
+    assert!(worker["next"]["current"]["binding"].is_string());
 }
 
 #[test]
@@ -515,7 +522,7 @@ fn grouped_detail_retains_equivalent_large_content_and_rejects_revision_drift() 
     }
     let scope = "é".repeat(20000);
     fixture.return_result(&work, "scoped", scope.as_bytes());
-    let next = fixture.json(&["work", "next", &work]);
+    let next = fixture.full_next(&work);
     let before = fixture.ledgers();
     let output = fixture.call(&["work", "detail", &work], None);
     assert!(output.status.success(), "{output:?}");
@@ -613,7 +620,7 @@ fn grouped_detail_retains_equivalent_large_content_and_rejects_revision_drift() 
             "work",
             "expand",
             &work,
-            next["current"]["details"]["grouped"]["reference"]
+            next["next"]["current"]["details"]["grouped"]["reference"]
                 .as_str()
                 .unwrap(),
         ],
