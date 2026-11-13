@@ -261,13 +261,101 @@ fn complete_capture_and_current_sections_avoid_oversized_aggregate_display() {
     let received: Value =
         serde_json::from_slice(&fs::read(capture.join("detail.json")).unwrap()).unwrap();
     assert_eq!(received["recipientContext"], detail["recipientContext"]);
+    let profile = &received["recipientContext"]["profile"];
+    assert_eq!(profile["complete"], true);
+    assert_eq!(
+        profile["sha256"],
+        format!("{:x}", Sha256::digest(profile["content"].as_str().unwrap()))
+    );
+    assert_eq!(
+        received["recipientContext"]["rules"][0]["sha256"],
+        format!("{:x}", Sha256::digest(rule.as_bytes()))
+    );
     let displayed = serde_json::to_vec(
         &json!({"binding":received["binding"],"recipient":received["recipient"]}),
     )
     .unwrap();
     assert!(displayed.len() < 1024);
     let status = f.ok(&["work", "next", work, "--json"]);
-    let route = &status["current"]["details"]["tasks"];
+    assert_eq!(status["work"], work);
+    assert_eq!(status["current"]["binding"], detail["binding"]);
+    assert_eq!(status["current"]["recipient"], detail["recipient"]);
+    assert_eq!(status["currentDelivery"]["complete"], false);
+
+    // The default step names its own complete-detail route. Run that route
+    // unchanged before using the separately requested section API below.
+    let full = &status["full"];
+    assert_eq!(full["readOnly"], true);
+    assert_eq!(full["binding"], detail["binding"]);
+    for flag in ["sameExecutableRequired", "sameConfigRequired"] {
+        let value = full
+            .get(flag)
+            .or_else(|| status["routeDefaults"].get(flag))
+            .and_then(Value::as_bool)
+            .unwrap_or_else(|| panic!("missing or invalid {flag}: {status}"));
+        assert!(!value, "complete detail argv requires no transport fill");
+    }
+    let full_argv = full["command"]
+        .as_array()
+        .expect("emitted complete detail argv")
+        .iter()
+        .map(|value| value.as_str().expect("detail argv is text"))
+        .collect::<Vec<_>>();
+    assert_eq!(full_argv.len(), 7);
+    assert!(std::path::Path::new(full_argv[0]).is_absolute());
+    assert_eq!(
+        fs::canonicalize(full_argv[0]).unwrap(),
+        fs::canonicalize(env!("CARGO_BIN_EXE_exitbind")).unwrap()
+    );
+    assert_eq!(&full_argv[1..5], &["work", "detail", work, "--json"]);
+    assert_eq!(full_argv[5], "--config");
+    assert_eq!(
+        fs::canonicalize(f.root.join(full_argv[6])).unwrap(),
+        fs::canonicalize(f.root.join("exitbind.json")).unwrap()
+    );
+    let full_output = support::git_topology::command(full_argv[0])
+        .current_dir(&f.root)
+        .args(&full_argv[1..])
+        .output()
+        .unwrap();
+    assert!(full_output.status.success(), "{full_output:?}");
+    let recovered: Value = serde_json::from_slice(&full_output.stdout).unwrap();
+    assert_eq!(recovered["kind"], "work_detail");
+    assert_eq!(recovered["valid"], true);
+    assert_eq!(recovered["complete"], true);
+    assert_eq!(recovered["work"], work);
+    assert_eq!(recovered["binding"], detail["binding"]);
+    assert_eq!(recovered["recipient"], detail["recipient"]);
+    assert_eq!(recovered["recipientContext"], received["recipientContext"]);
+    assert_eq!(recovered["contextIdentity"], received["contextIdentity"]);
+    assert_eq!(recovered["sections"], received["sections"]);
+
+    // Section paging is an explicit next --full read, not the default step's
+    // emitted full-detail route. Keep its current, complete argv unchanged.
+    let section_source = f.ok(&["work", "next", work, "--json", "--full"]);
+    assert_eq!(section_source["work"], work);
+    assert_eq!(
+        section_source["next"]["current"]["binding"],
+        detail["binding"]
+    );
+    assert_eq!(
+        section_source["next"]["current"]["recipient"],
+        detail["recipient"]
+    );
+    let route = &section_source["next"]["current"]["details"]["tasks"];
+    assert_eq!(route["readOnly"], true);
+    assert_eq!(route["sameConfigRequired"], false);
+    assert_eq!(route["sameExecutableRequired"], false);
+    let reference = route["reference"]
+        .as_str()
+        .expect("current tasks reference");
+    assert_eq!(
+        reference,
+        format!(
+            "ref:work-section:v2:{}:tasks:0",
+            detail["binding"].as_str().unwrap()
+        )
+    );
     let descriptor = json!({
         "argv": route["command"],
         "sameConfigRequired": route["sameConfigRequired"],
@@ -279,6 +367,16 @@ fn complete_capture_and_current_sections_avoid_oversized_aggregate_display() {
         &f.root.join("exitbind.json"),
         &f.root,
     );
+    assert_eq!(
+        argv,
+        route["command"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_str().unwrap().to_owned())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(&argv[1..6], &["work", "expand", work, reference, "--json"]);
     let section = support::git_topology::command(&argv[0])
         .current_dir(&f.root)
         .args(&argv[1..])
@@ -289,7 +387,21 @@ fn complete_capture_and_current_sections_avoid_oversized_aggregate_display() {
     let section: Value = serde_json::from_slice(&section.stdout).unwrap();
     assert_eq!(section["pageComplete"], true);
     assert_eq!(section["complete"], true);
+    assert_eq!(section["work"], work);
     assert_eq!(section["binding"], detail["binding"]);
+    assert_eq!(section["reference"], reference);
+    assert_eq!(section["section"], "tasks");
+    assert_eq!(section["offset"], 0);
+    assert!(section["next"].is_null());
+    let bytes = support::page_bytes(&section);
+    assert_eq!(section["bytes"], bytes.len());
+    assert_eq!(section["totalBytes"], bytes.len());
+    assert_eq!(
+        section["sectionSha256"],
+        format!("{:x}", Sha256::digest(&bytes))
+    );
+    let tasks: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(tasks, detail["sections"]["tasks"]);
     fs::remove_dir_all(capture).unwrap();
 }
 
