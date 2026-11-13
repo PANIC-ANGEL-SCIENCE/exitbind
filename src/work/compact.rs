@@ -93,7 +93,11 @@ pub(crate) fn complete_transport_full_command(value: &mut Value, config: &std::p
     }
 }
 
-pub(crate) fn semantic_partial(value: &Value, route: Value) -> Result<Value, String> {
+pub(crate) fn semantic_partial(
+    value: &Value,
+    route: Value,
+    continuation: Option<Value>,
+) -> Result<Value, String> {
     let fits = |value: &Value| {
         serde_json::to_vec(value)
             .map(|bytes| bytes.len() < crate::work::compact::MAX_RESPONSE_BYTES)
@@ -123,6 +127,9 @@ pub(crate) fn semantic_partial(value: &Value, route: Value) -> Result<Value, Str
     if let Some(help) = semantic.get("humanHelp") {
         partial["humanHelp"] = help.clone();
     }
+    if let Some(continuation) = continuation {
+        partial["continuation"] = continuation;
+    }
     for key in ["effectiveAction", "discovery", "history"] {
         if !fits(&partial)? && partial.as_object_mut().unwrap().remove(key).is_some() {
             partial["omitted"].as_array_mut().unwrap().push(json!(key));
@@ -141,17 +148,31 @@ pub(crate) fn semantic_partial(value: &Value, route: Value) -> Result<Value, Str
             }
         }
     }
+    if !fits(&partial)? && partial.get("continuation").is_some() {
+        let mut without_recovery_command = partial.clone();
+        crate::emitted::omit_commands(&mut without_recovery_command["recovery"]);
+        if fits(&without_recovery_command)? {
+            partial = without_recovery_command;
+        }
+    }
     if !fits(&partial)? && partial.get("pauseRecord").is_some() {
         let mut without_recovery_command = partial.clone();
         crate::emitted::omit_commands(&mut without_recovery_command["recovery"]);
         if fits(&without_recovery_command)? {
             partial = without_recovery_command;
         } else {
-            partial.as_object_mut().unwrap().remove("pauseRecord");
-            partial["omitted"]
-                .as_array_mut()
-                .unwrap()
-                .push(json!("pauseRecord"));
+            if let Some(continuation) = without_recovery_command.get_mut("continuation") {
+                crate::emitted::omit_commands(continuation);
+            }
+            if fits(&without_recovery_command)? {
+                partial = without_recovery_command;
+            } else {
+                partial.as_object_mut().unwrap().remove("pauseRecord");
+                partial["omitted"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!("pauseRecord"));
+            }
         }
     }
     for key in ["presentation", "current", "next", "selection", "humanHelp"] {
@@ -161,6 +182,21 @@ pub(crate) fn semantic_partial(value: &Value, route: Value) -> Result<Value, Str
     }
     if !fits(&partial)? {
         crate::emitted::omit_commands(&mut partial["recovery"]);
+    }
+    if !fits(&partial)? && partial.get("continuation").is_some() {
+        crate::emitted::omit_commands(&mut partial["continuation"]);
+    }
+    if !fits(&partial)?
+        && partial
+            .as_object_mut()
+            .unwrap()
+            .remove("continuation")
+            .is_some()
+    {
+        partial["omitted"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!("continuation"));
     }
     if !fits(&partial)? {
         return Err("bounded compact recovery exceeds the output budget".into());
@@ -219,6 +255,28 @@ fn rebudget_route(route: &mut Value, argv_key: &str, config_path: &Path) {
 /// `{"command", "sameConfigRequired", "sameExecutableRequired"}`.
 pub(crate) fn continuation_route(config_path: &Path, route: Route) -> Value {
     route.config(config_path).within(1024).command_json()
+}
+
+/// Use the existing read-only continuation owner when the inline view is too
+/// large for a compact Work response; never truncate its contents or argv.
+pub(crate) fn continuation_reference(continuation: &Value, work: &str, config: &Path) -> Value {
+    let route = continuation_route(config, Route::new(["work", "continuation", work]));
+    json!({"work":continuation["work"],"goalRevision":continuation["goalRevision"],
+        "binding":continuation["binding"],"readOnly":continuation["readOnly"],"requiresExpansion":true,
+        "command":route["command"],"sameConfigRequired":route["sameConfigRequired"],
+        "sameExecutableRequired":route["sameExecutableRequired"]})
+}
+
+pub(crate) fn compact_continuation(
+    continuation: &Value,
+    work: &str,
+    config: &Path,
+) -> Result<Value, String> {
+    if serialized_len(continuation)? <= 2_500 {
+        Ok(continuation.clone())
+    } else {
+        Ok(continuation_reference(continuation, work, config))
+    }
 }
 
 pub(crate) fn continuation_mutation(
@@ -283,31 +341,14 @@ pub(crate) fn project(
         copy_if_present(response, &mut result, key);
     }
     if let Some(continuation) = response.get("continuation") {
-        let bytes = serialized_len(continuation)?;
-        if bytes <= 2_500 {
-            result.insert("continuation".into(), continuation.clone());
-        } else {
-            let route = continuation_route(
+        result.insert(
+            "continuation".into(),
+            compact_continuation(
+                continuation,
+                response["work"].as_str().unwrap_or(""),
                 config_path,
-                Route::new([
-                    "work",
-                    "continuation",
-                    response["work"].as_str().unwrap_or(""),
-                ]),
-            );
-            result.insert(
-                "continuation".into(),
-                json!({
-                    "work": continuation["work"],
-                    "goalRevision": continuation["goalRevision"],
-                    "binding": continuation["binding"],
-                    "requiresExpansion": true,
-                    "command": route["command"],
-                    "sameConfigRequired": route["sameConfigRequired"],
-                    "sameExecutableRequired": route["sameExecutableRequired"],
-                }),
-            );
-        }
+            )?,
+        );
     }
     if let Some(next) = response.get("next") {
         result.insert("next".into(), compact_next(next));
@@ -354,22 +395,11 @@ pub(crate) fn project(
     }
     if serialized_len(&result)? + 1 > MAX_RESPONSE_BYTES {
         if let Some(continuation) = response.get("continuation") {
-            let route = continuation_route(
+            result["continuation"] = continuation_reference(
+                continuation,
+                response["work"].as_str().unwrap_or(""),
                 config_path,
-                Route::new([
-                    "work",
-                    "continuation",
-                    response["work"].as_str().unwrap_or(""),
-                ]),
             );
-            result["continuation"] = json!({
-                "work": continuation["work"],
-                "goalRevision": continuation["goalRevision"],
-                "requiresExpansion": true,
-                "command": route["command"],
-                "sameConfigRequired": route["sameConfigRequired"],
-                "sameExecutableRequired": route["sameExecutableRequired"],
-            });
             result["truncated"] = json!(true);
         }
     }

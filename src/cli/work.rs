@@ -923,11 +923,14 @@ fn navigation_step(loaded: &config::Loaded, work: &str, original: &Value) -> Opt
         "recorder",
         "ledgerProducer",
         "recorderLimitation",
-        "continuation",
     ] {
         if let Some(value) = original.get(field) {
             step[field] = value.clone();
         }
+    }
+    if let Some(continuation) = original.get("continuation") {
+        step["continuation"] =
+            crate::work::compact::compact_continuation(continuation, work, &loaded.path).ok()?;
     }
     if let Some(presentation) = original.get("presentation") {
         step["presentation"] = crate::work::compact::compact_presentation(presentation);
@@ -1506,6 +1509,34 @@ fn print_compact_read(loaded: &config::Loaded, value: &serde_json::Value) -> Res
             .map(|bytes| bytes.len() < crate::work::compact::MAX_RESPONSE_BYTES)
             .map_err(|error| error.to_string())
     };
+    // Reuse the continuation owner's read-only route before dropping whole
+    // commands. The full Work detail route is not a continuation read.
+    if !fits(&value)? {
+        if let (Some(work), Some(continuation)) = (
+            value["work"].as_str(),
+            value.get("continuation").filter(|item| item.is_object()),
+        ) {
+            if continuation["work"] == work {
+                let mut reference =
+                    crate::work::compact::continuation_reference(continuation, work, &loaded.path);
+                let complete = crate::emitted::complete_known(&mut reference, &loaded.path);
+                if serde_json::to_vec(&reference)
+                    .map_err(|error| error.to_string())?
+                    .len()
+                    < serde_json::to_vec(continuation)
+                        .map_err(|error| error.to_string())?
+                        .len()
+                {
+                    value["continuation"] = reference;
+                    if !complete {
+                        value["transportCompletion"] = json!({"complete":false,
+                            "reason":"a complete continuation route is unavailable"});
+                    }
+                }
+            }
+        }
+    }
+    let continuation = value.get("continuation").cloned();
     // Section-specific routes duplicate the grouped read. Give the grouped
     // current detail and the existing history route priority at the bound.
     if !fits(&value)? {
@@ -1542,6 +1573,7 @@ fn print_compact_read(loaded: &config::Loaded, value: &serde_json::Value) -> Res
     if !fits(&value)? {
         let preferred = [
             "/next/prepareChild",
+            "/continuation",
             "/current/details/grouped",
             "/next/current/details/grouped",
             "/presentation/goalProgress/adoptRoute",
@@ -1596,8 +1628,17 @@ fn print_compact_read(loaded: &config::Loaded, value: &serde_json::Value) -> Res
                     .pointer("/next/prepareChild/command")
                     .is_some_and(Value::is_array)
         });
-        if !fits(&value)? || child_omitted {
-            value = crate::work::compact::semantic_partial(&value, route)?;
+        let continuation_omitted = continuation.as_ref().is_some_and(|original| {
+            if original["command"].is_array() {
+                !value
+                    .pointer("/continuation/command")
+                    .is_some_and(Value::is_array)
+            } else {
+                value.get("continuation") != Some(original)
+            }
+        });
+        if !fits(&value)? || child_omitted || continuation_omitted {
+            value = crate::work::compact::semantic_partial(&value, route, continuation)?;
             if let Some(child) = child_prepare.as_ref() {
                 retain_partial_child_prepare(&mut value, child, &loaded.path)?;
             }

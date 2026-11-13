@@ -1,5 +1,42 @@
 use super::*;
 
+fn assert_command_transport(argv: &[Value], config: &std::path::Path) {
+    assert!(argv.len() >= 3);
+    let executable = argv[0].as_str().unwrap();
+    assert!(std::path::Path::new(executable).is_absolute());
+    assert_eq!(
+        fs::canonicalize(executable).unwrap(),
+        fs::canonicalize(env!("CARGO_BIN_EXE_exitbind")).unwrap()
+    );
+    assert_eq!(argv[argv.len() - 2], "--config");
+    assert_eq!(
+        fs::canonicalize(argv.last().unwrap().as_str().unwrap()).unwrap(),
+        fs::canonicalize(config).unwrap()
+    );
+}
+
+fn continuation_argv<'a>(entry: &'a Value, config: &std::path::Path, work: &str) -> &'a [Value] {
+    let route = &entry["continuation"];
+    assert_eq!(route["requiresExpansion"], true);
+    assert_eq!(route["readOnly"], true);
+    for flag in ["sameConfigRequired", "sameExecutableRequired"] {
+        assert_eq!(
+            route
+                .get(flag)
+                .or_else(|| entry["routeDefaults"].get(flag))
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+    }
+    let argv = route["command"].as_array().unwrap();
+    assert_command_transport(argv, config);
+    assert_eq!(argv.len(), 6);
+    assert_eq!(argv[1], "work");
+    assert_eq!(argv[2], "continuation");
+    assert_eq!(argv[3], work);
+    argv
+}
+
 #[test]
 fn host_handoff_fences_stale_writers_and_preserves_uncertain_operations() {
     let f = Fixture::new("w2ch-binding");
@@ -104,13 +141,24 @@ fn host_handoff_fences_stale_writers_and_preserves_uncertain_operations() {
     assert_eq!(view["children"][0]["nativeChild"], "claude-child-1");
     assert_eq!(view["binding"]["revision"], 3);
     assert_eq!(view["wholeGoalReady"], false);
+    let before = f.history();
     let entry = f.call(&["work", "next", &f.work]);
     assert!(entry.status.success(), "{entry:?}");
     assert!(entry.stdout.len() <= 8 * 1024);
     let entry: Value = serde_json::from_slice(&entry.stdout).unwrap();
-    let before = f.history();
+    let full = f.call(&["work", "next", &f.work, "--full"]);
+    assert!(full.status.success(), "{full:?}");
+    let full: Value = serde_json::from_slice(&full.stdout).unwrap();
+    assert_eq!(
+        entry["current"]["binding"],
+        full["next"]["current"]["binding"]
+    );
+    assert_eq!(
+        entry["current"]["recipient"],
+        full["next"]["current"]["recipient"]
+    );
     let continuation = if entry["continuation"]["requiresExpansion"] == true {
-        let argv = entry["continuation"]["command"].as_array().unwrap();
+        let argv = continuation_argv(&entry, &f.root.join("exitbind.json"), &f.work);
         let expanded = super::support::git_topology::command(argv[0].as_str().unwrap())
             .args(argv[1..].iter().map(|part| part.as_str().unwrap()))
             .output()
@@ -120,7 +168,14 @@ fn host_handoff_fences_stale_writers_and_preserves_uncertain_operations() {
     } else {
         entry["continuation"].clone()
     };
+    assert_eq!(
+        continuation["goalRevision"],
+        entry["continuation"]["goalRevision"]
+    );
     assert_eq!(continuation["corrections"][0]["id"], "no-publication");
+    assert_eq!(continuation["operations"][0]["status"], "uncertain");
+    assert_eq!(continuation["children"][0]["nativeChild"], "claude-child-1");
+    assert_eq!(continuation["binding"]["revision"], 3);
     assert_eq!(f.history(), before);
 }
 
@@ -328,18 +383,20 @@ fn accumulated_children_keep_a_bounded_read_only_route() {
     let recovered: Value = serde_json::from_slice(&recovered.stdout).unwrap();
     assert_eq!(recovered["goalRevision"], 11);
     fs::copy(f.root.join("exitbind.json"), f.root.join("alternate.json")).unwrap();
+    let before = f.history();
     let entry = super::support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .current_dir(&f.root)
         .args(["work", "next", &f.work, "--config", "alternate.json"])
         .output()
         .unwrap();
     assert!(entry.status.success(), "{entry:?}");
+    assert!(entry.stdout.len() <= 8 * 1024);
     let entry: Value = serde_json::from_slice(&entry.stdout).unwrap();
     let route = &entry["continuation"];
-    assert_eq!(route["requiresExpansion"], true);
-    assert_eq!(route["sameConfigRequired"], false);
-    assert_eq!(route["sameExecutableRequired"], false);
-    let argv = route["command"].as_array().unwrap();
+    assert_eq!(route["work"], f.work);
+    assert_eq!(route["goalRevision"], 11);
+    assert_eq!(route["binding"]["revision"], 1);
+    let argv = continuation_argv(&entry, &f.root.join("alternate.json"), &f.work);
     let expanded = super::support::git_topology::command(argv[0].as_str().unwrap())
         .args(argv[1..].iter().map(|part| part.as_str().unwrap()))
         .current_dir(&f.root)
@@ -347,6 +404,24 @@ fn accumulated_children_keep_a_bounded_read_only_route() {
         .unwrap();
     assert!(expanded.status.success(), "{expanded:?}");
     let expanded: Value = serde_json::from_slice(&expanded.stdout).unwrap();
+    assert_eq!(expanded["goalRevision"], 11);
+    assert_eq!(expanded["binding"]["revision"], 1);
+    let corrections = expanded["sections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|section| section["name"] == "corrections")
+        .unwrap();
+    let argv = corrections["command"].as_array().unwrap();
+    assert_command_transport(argv, &f.root.join("alternate.json"));
+    let corrections = super::support::git_topology::command(argv[0].as_str().unwrap())
+        .args(argv[1..].iter().map(|part| part.as_str().unwrap()))
+        .current_dir(&f.root)
+        .output()
+        .unwrap();
+    assert!(corrections.status.success(), "{corrections:?}");
+    let corrections: Value = serde_json::from_slice(&corrections.stdout).unwrap();
+    assert_eq!(corrections["value"][0]["id"], "one");
     let children = expanded["sections"]
         .as_array()
         .unwrap()
@@ -354,6 +429,7 @@ fn accumulated_children_keep_a_bounded_read_only_route() {
         .find(|section| section["name"] == "children")
         .unwrap();
     let argv = children["command"].as_array().unwrap();
+    assert_command_transport(argv, &f.root.join("alternate.json"));
     let section = super::support::git_topology::command(argv[0].as_str().unwrap())
         .args(argv[1..].iter().map(|part| part.as_str().unwrap()))
         .current_dir(&f.root)
@@ -362,6 +438,7 @@ fn accumulated_children_keep_a_bounded_read_only_route() {
     assert!(section.status.success(), "{section:?}");
     let section: Value = serde_json::from_slice(&section.stdout).unwrap();
     let argv = section["items"][7]["command"].as_array().unwrap();
+    assert_command_transport(argv, &f.root.join("alternate.json"));
     let item = super::support::git_topology::command(argv[0].as_str().unwrap())
         .args(argv[1..].iter().map(|part| part.as_str().unwrap()))
         .current_dir(&f.root)
@@ -370,6 +447,8 @@ fn accumulated_children_keep_a_bounded_read_only_route() {
     assert!(item.status.success(), "{item:?}");
     let item: Value = serde_json::from_slice(&item.stdout).unwrap();
     assert_eq!(item["item"]["resultText"], text);
+    assert_eq!(item["item"]["resultSha256"], sha(&text));
+    assert_eq!(f.history(), before);
     let view = f.view();
     assert_eq!(view["requiresExpansion"], true);
     assert_eq!(view["sections"].as_array().unwrap().len(), 8);
@@ -393,4 +472,5 @@ fn accumulated_children_keep_a_bounded_read_only_route() {
     let item: Value = serde_json::from_slice(&item.stdout).unwrap();
     assert_eq!(item["item"]["resultText"], text);
     assert_eq!(item["item"]["resultSha256"], sha(&text));
+    assert_eq!(f.history(), before);
 }

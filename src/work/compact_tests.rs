@@ -17,7 +17,7 @@ fn transport_partial_keeps_preservation_summary_and_explicit_omission() {
                 "requirements":[{"command":"x".repeat(9_000)}]}}});
     let recovery = json!({"command":["exitbind","work","detail","smw_work","--json","--config","config"],
         "sameExecutableRequired":false,"sameConfigRequired":false,"readOnly":true});
-    let partial = super::semantic_partial(&response, recovery.clone()).unwrap();
+    let partial = super::semantic_partial(&response, recovery.clone(), None).unwrap();
     assert!(serde_json::to_vec(&partial).unwrap().len() < MAX_RESPONSE_BYTES);
     assert_eq!(partial["current"]["binding"], "binding");
     assert_eq!(partial["next"]["requiresExpansion"], true);
@@ -45,7 +45,7 @@ fn transport_partial_keeps_preservation_summary_and_explicit_omission() {
                 "requirements":[{"command":"true"}]}}});
     let large_recovery = json!({"command":["exitbind","work","detail","smw_work","--json","--config","x".repeat(7_750)],
         "sameExecutableRequired":false,"sameConfigRequired":false,"readOnly":true});
-    let partial = super::semantic_partial(&constrained, large_recovery.clone()).unwrap();
+    let partial = super::semantic_partial(&constrained, large_recovery.clone(), None).unwrap();
     assert!(serde_json::to_vec(&partial).unwrap().len() < MAX_RESPONSE_BYTES);
     assert!(partial.get("humanHelp").is_none());
     assert!(partial["omitted"]
@@ -72,7 +72,7 @@ fn transport_semantic_partial_preserves_current_adoption_and_pause_when_recovery
     });
     let recovery = json!({"command":["exitbind","work","resume","--full","x".repeat(9_000)],
         "sameExecutableRequired":false,"sameConfigRequired":false,"readOnly":true});
-    let partial = super::semantic_partial(&response, recovery).unwrap();
+    let partial = super::semantic_partial(&response, recovery, None).unwrap();
     assert!(serde_json::to_vec(&partial).unwrap().len() < MAX_RESPONSE_BYTES);
     assert_eq!(partial["complete"], false);
     assert_eq!(partial["pauseRecord"], response["pauseRecord"]);
@@ -99,7 +99,7 @@ fn transport_semantic_partial_reports_oversized_pause_and_keeps_complete_recover
         "pauseRecord":{"actor":"lead","text":"p".repeat(9_000)}});
     let recovery = json!({"command":["exitbind","work","resume","--full","--json","--config","config"],
         "sameExecutableRequired":false,"sameConfigRequired":false,"readOnly":true});
-    let partial = super::semantic_partial(&response, recovery.clone()).unwrap();
+    let partial = super::semantic_partial(&response, recovery.clone(), None).unwrap();
     assert!(serde_json::to_vec(&partial).unwrap().len() < MAX_RESPONSE_BYTES);
     assert_eq!(partial["complete"], false);
     assert_eq!(partial["current"]["actionForm"]["state"], "check");
@@ -110,6 +110,79 @@ fn transport_semantic_partial_reports_oversized_pause_and_keeps_complete_recover
         .contains(&json!("pauseRecord")));
     assert!(partial.get("pauseRecord").is_none());
     assert_eq!(partial["recovery"], recovery);
+}
+
+#[test]
+fn continuation_uses_existing_bounded_projection_and_survives_semantic_fallback() {
+    let config = Path::new("/tmp/alternate.json");
+    let current = json!({"work":"smw_work","goalRevision":7,"binding":{"revision":3},
+        "readOnly":true,"corrections":[{"id":"no-publication"}],
+        "operations":[{"status":"uncertain"}]});
+    assert_eq!(
+        super::compact_continuation(&current, "smw_work", config).unwrap(),
+        current
+    );
+    let response = json!({"status":"current","work":"smw_work",
+        "current":{"binding":"current-binding"},"pauseRecord":{"actor":"lead"}});
+    let recovery = json!({"command":["exitbind","work","detail","smw_work","--config","/tmp/alternate.json"],
+        "sameExecutableRequired":false,"sameConfigRequired":false,"readOnly":true});
+    let partial =
+        super::semantic_partial(&response, recovery.clone(), Some(current.clone())).unwrap();
+    assert!(serde_json::to_vec(&partial).unwrap().len() < MAX_RESPONSE_BYTES);
+    assert_eq!(partial["continuation"], current);
+    assert_eq!(partial["current"]["binding"], "current-binding");
+    assert_eq!(partial["pauseRecord"], response["pauseRecord"]);
+    assert_eq!(partial["recovery"], recovery);
+
+    let mut oversized = current.clone();
+    oversized["children"] = json!([{"resultText":"x".repeat(9_000)}]);
+    let mut reference = super::compact_continuation(&oversized, "smw_work", config).unwrap();
+    assert_eq!(reference["requiresExpansion"], true);
+    assert_eq!(reference["readOnly"], true);
+    assert_eq!(reference["work"], "smw_work");
+    assert_eq!(reference["goalRevision"], 7);
+    assert_eq!(reference["binding"]["revision"], 3);
+    assert!(crate::emitted::complete_known(&mut reference, config));
+    assert_eq!(reference["sameConfigRequired"], false);
+    assert_eq!(reference["sameExecutableRequired"], false);
+    let argv = reference["command"].as_array().unwrap();
+    assert!(Path::new(argv[0].as_str().unwrap()).is_absolute());
+    assert_eq!(
+        argv.iter()
+            .skip(1)
+            .map(|word| word.as_str().unwrap())
+            .collect::<Vec<_>>(),
+        [
+            "work",
+            "continuation",
+            "smw_work",
+            "--config",
+            "/tmp/alternate.json"
+        ]
+    );
+    let partial = super::semantic_partial(&response, recovery, Some(reference.clone())).unwrap();
+    assert_eq!(partial["continuation"], reference);
+
+    oversized["readOnly"] = json!(false);
+    let untrusted = super::compact_continuation(&oversized, "smw_work", config).unwrap();
+    assert_eq!(untrusted["readOnly"], false);
+}
+
+#[test]
+fn oversized_continuation_command_is_wholly_omitted_and_marked_unavailable() {
+    let response = json!({"status":"current","work":"smw_work",
+        "pauseRecord":{"actor":"lead","saveStep":{"command":["resume"]}}});
+    let recovery = json!({"command":["exitbind","work","detail","smw_work"],
+        "sameExecutableRequired":false,"sameConfigRequired":false,"readOnly":true});
+    let continuation = json!({"work":"smw_work","goalRevision":7,"readOnly":true,
+        "requiresExpansion":true,"command":["x".repeat(9_000),"work","continuation","smw_work"],
+        "sameExecutableRequired":false,"sameConfigRequired":false});
+    let partial = super::semantic_partial(&response, recovery, Some(continuation)).unwrap();
+    assert!(serde_json::to_vec(&partial).unwrap().len() < MAX_RESPONSE_BYTES);
+    assert_eq!(partial["continuation"]["requiresExpansion"], true);
+    assert_eq!(partial["continuation"]["available"], false);
+    assert!(partial["continuation"].get("command").is_none());
+    assert_eq!(partial["pauseRecord"], response["pauseRecord"]);
 }
 
 #[test]
