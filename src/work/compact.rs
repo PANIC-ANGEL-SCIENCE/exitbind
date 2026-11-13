@@ -44,6 +44,120 @@ pub(crate) fn minimal_current(current: &Value) -> Value {
     value
 }
 
+/// Reuse the established semantic summaries when public route completion
+/// leaves too little room for the ordinary compact envelope.
+pub(crate) fn transport_semantics(value: &Value) -> Value {
+    let mut result = Map::new();
+    if let Some(current) = value.get("current").filter(|current| current.is_object()) {
+        result.insert("current".into(), minimal_current(current));
+    }
+    if let Some(next) = value.get("next").filter(|next| next.is_object()) {
+        result.insert("next".into(), minimal_next(next));
+    }
+    if let Some(presentation) = value
+        .get("presentation")
+        .filter(|presentation| presentation.is_object())
+    {
+        result.insert("presentation".into(), minimal_presentation(presentation));
+    }
+    Value::Object(result)
+}
+
+pub(crate) fn complete_transport_full_command(value: &mut Value, config: &std::path::Path) -> bool {
+    let needs_executable = value["fullCommandSameExecutableRequired"] == true;
+    let needs_config = value["fullCommandSameConfigRequired"] == true;
+    if !needs_executable && !needs_config {
+        return true;
+    }
+    let mut route = json!({"command":value["fullCommand"],
+        "sameExecutableRequired":needs_executable,"sameConfigRequired":needs_config});
+    let complete = crate::emitted::complete_known(&mut route, config);
+    let Some(object) = value.as_object_mut() else {
+        return false;
+    };
+    object.remove("fullCommandSameExecutableRequired");
+    object.remove("fullCommandSameConfigRequired");
+    if complete && route["command"].is_array() {
+        object.insert("fullCommand".into(), route["command"].clone());
+        true
+    } else {
+        object.remove("fullCommand");
+        false
+    }
+}
+
+pub(crate) fn semantic_partial(value: &Value, route: Value) -> Result<Value, String> {
+    let fits = |value: &Value| {
+        serde_json::to_vec(value)
+            .map(|bytes| bytes.len() < crate::work::compact::MAX_RESPONSE_BYTES)
+            .map_err(|error| error.to_string())
+    };
+    let semantic = transport_semantics(value);
+    let mut partial = json!({"compact":true,"complete":false,"status":value["status"],
+        "work":value["work"],"reason":"compact facts or commands were summarized or omitted at the response bound",
+        "recovery":route,"omitted":["other compact detail"]});
+    if !fits(&partial)? {
+        crate::emitted::omit_commands(&mut partial["recovery"]);
+    }
+    for key in [
+        "current",
+        "next",
+        "pauseRecord",
+        "selection",
+        "history",
+        "presentation",
+        "effectiveAction",
+        "discovery",
+    ] {
+        if let Some(candidate) = semantic.get(key).or_else(|| value.get(key)) {
+            partial[key] = candidate.clone();
+        }
+    }
+    for key in ["effectiveAction", "discovery", "history"] {
+        if !fits(&partial)? && partial.as_object_mut().unwrap().remove(key).is_some() {
+            partial["omitted"].as_array_mut().unwrap().push(json!(key));
+        }
+    }
+    if !fits(&partial)? {
+        if let Some(current) = partial.get_mut("current").and_then(Value::as_object_mut) {
+            if current.remove("details").is_some() {
+                if let Some(form) = current.get_mut("actionForm").and_then(Value::as_object_mut) {
+                    form.remove("detail");
+                }
+                partial["omitted"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!("current.details"));
+            }
+        }
+    }
+    if !fits(&partial)? && partial.get("pauseRecord").is_some() {
+        let mut without_recovery_command = partial.clone();
+        crate::emitted::omit_commands(&mut without_recovery_command["recovery"]);
+        if fits(&without_recovery_command)? {
+            partial = without_recovery_command;
+        } else {
+            partial.as_object_mut().unwrap().remove("pauseRecord");
+            partial["omitted"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!("pauseRecord"));
+        }
+    }
+    for key in ["presentation", "current", "next", "selection"] {
+        if !fits(&partial)? && partial.as_object_mut().unwrap().remove(key).is_some() {
+            partial["omitted"].as_array_mut().unwrap().push(json!(key));
+        }
+    }
+    if !fits(&partial)? {
+        crate::emitted::omit_commands(&mut partial["recovery"]);
+    }
+    if !fits(&partial)? {
+        return Err("bounded compact recovery exceeds the output budget".into());
+    }
+    Ok(partial)
+}
+
 fn bounded_current_routes(current: &Value, config_path: &Path) -> Value {
     let mut value = minimal_current(current);
     if let Some(details) = value["details"].as_object_mut() {

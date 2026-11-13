@@ -6,6 +6,93 @@ use super::{continuation_route, project, MAX_RESPONSE_BYTES};
 use serde_json::json;
 use std::path::Path;
 
+#[test]
+fn transport_semantic_partial_preserves_current_adoption_and_pause_when_recovery_is_too_large() {
+    let pause = json!({"actor":"lead","saveStep":{"command":["exitbind","session","recovery","record","--step","<SAVED_STEP>"]}});
+    let adoption = json!({"command":["exitbind","goal","adopt"],
+        "sameExecutableRequired":false,"sameConfigRequired":false});
+    let response = json!({
+        "status":"resumed", "work":"smw_work",
+        "current":{"action":"lead_decision","binding":"binding","readiness":"BLOCKED",
+            "recipient":{"role":"lead"},"phase":{"status":"running"},
+            "actionForm":{"state":"unresolved_check_observation"}},
+        "next":{"action":"lead_decision","assignment":"sma_assignment",
+            "heldResults":[{"reference":"hld_one","sha256":"a".repeat(64),"bytes":5}]},
+        "selection":{"basis":"current_work_focus"},"pauseRecord":pause,
+        "presentation":{"goalProgress":{"overall":"in_progress","adoptRoute":adoption.clone()}}
+    });
+    let recovery = json!({"command":["exitbind","work","resume","--full","x".repeat(9_000)],
+        "sameExecutableRequired":false,"sameConfigRequired":false,"readOnly":true});
+    let partial = super::semantic_partial(&response, recovery).unwrap();
+    assert!(serde_json::to_vec(&partial).unwrap().len() < MAX_RESPONSE_BYTES);
+    assert_eq!(partial["complete"], false);
+    assert_eq!(partial["pauseRecord"], response["pauseRecord"]);
+    assert_eq!(partial["current"]["binding"], "binding");
+    assert_eq!(
+        partial["current"]["actionForm"]["state"],
+        "unresolved_check_observation"
+    );
+    assert_eq!(partial["next"]["heldResultsCount"], 1);
+    assert_eq!(partial["next"]["heldResults"][0]["reference"], "hld_one");
+    assert_eq!(
+        partial["presentation"]["goalProgress"]["adoptRoute"],
+        adoption
+    );
+    assert_eq!(partial["recovery"]["available"], false);
+    assert!(partial["recovery"].get("command").is_none());
+}
+
+#[test]
+fn transport_semantic_partial_reports_oversized_pause_and_keeps_complete_recovery() {
+    let response = json!({"status":"resumed","work":"smw_work",
+        "current":{"action":"check","binding":"binding","actionForm":{"state":"check"}},
+        "next":{"action":"check"},"selection":{"basis":"current_work_focus"},
+        "pauseRecord":{"actor":"lead","text":"p".repeat(9_000)}});
+    let recovery = json!({"command":["exitbind","work","resume","--full","--json","--config","config"],
+        "sameExecutableRequired":false,"sameConfigRequired":false,"readOnly":true});
+    let partial = super::semantic_partial(&response, recovery.clone()).unwrap();
+    assert!(serde_json::to_vec(&partial).unwrap().len() < MAX_RESPONSE_BYTES);
+    assert_eq!(partial["complete"], false);
+    assert_eq!(partial["current"]["actionForm"]["state"], "check");
+    assert_eq!(partial["selection"], response["selection"]);
+    assert!(partial["omitted"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("pauseRecord")));
+    assert!(partial.get("pauseRecord").is_none());
+    assert_eq!(partial["recovery"], recovery);
+}
+
+#[test]
+fn transport_compact_full_command_completes_paths_or_omits_the_whole_command() {
+    let mut value = json!({"fullCommand":["work","resume","--full","--config"],
+        "fullCommandSameExecutableRequired":true,"fullCommandSameConfigRequired":true});
+    assert!(super::complete_transport_full_command(
+        &mut value,
+        Path::new("/tmp/a b/exitbind.json")
+    ));
+    assert_eq!(
+        value["fullCommand"][0],
+        crate::emitted::executable().unwrap()
+    );
+    assert_eq!(value["fullCommand"][5], "/tmp/a b/exitbind.json");
+    assert!(value.get("fullCommandSameExecutableRequired").is_none());
+    assert!(value.get("fullCommandSameConfigRequired").is_none());
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStringExt;
+        let invalid = std::path::PathBuf::from(std::ffi::OsString::from_vec(vec![0xff]));
+        let mut unavailable = json!({"fullCommand":["work","resume","--full","--config"],
+            "fullCommandSameExecutableRequired":true,"fullCommandSameConfigRequired":true});
+        assert!(!super::complete_transport_full_command(
+            &mut unavailable,
+            &invalid
+        ));
+        assert!(unavailable.get("fullCommand").is_none());
+    }
+}
+
 /// A suffix ending in `--config`, bounded with `config` as the product does.
 fn bounded_argv(
     suffix: Vec<String>,

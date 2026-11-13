@@ -266,8 +266,17 @@ fn recovery_uses_the_exact_long_executable_path() {
         .arg(&config);
     let returned = support::run(&mut returned);
     assert!(returned.status.success(), "{returned:?}");
-    assert!(returned.stdout.len() <= 8 * 1024);
+    assert!(returned.stdout.len() <= 256 * 1024);
     let returned: Value = serde_json::from_slice(&returned.stdout).unwrap();
+    let delivery = &returned["currentDelivery"];
+    assert_eq!(delivery["complete"], true);
+    assert_eq!(delivery["recipientContext"]["complete"], true);
+    assert_eq!(delivery["work"], work);
+    assert_eq!(delivery["recipient"]["actor"], "worker");
+    assert_eq!(
+        delivery["recipient"]["assignment"],
+        delivery["actionForms"]["assignment"]
+    );
     let event_sha = returned["eventSha256"].as_str().unwrap();
     let detail_argv = reconstruct_inspect_command(
         &returned["nextAction"],
@@ -284,6 +293,35 @@ fn recovery_uses_the_exact_long_executable_path() {
     assert!(detail.status.success(), "{detail:?}");
     let detail: Value = serde_json::from_slice(&detail.stdout).unwrap();
     assert_eq!(detail["eventSha256"], returned["eventSha256"]);
+
+    // The next actor can use the complete delivery without rewriting the
+    // executable or configuration path; only the operation is actor-supplied.
+    let permit = &delivery["actionForms"]["beforeEditing"]["command"];
+    assert_eq!(permit["sameExecutableRequired"], false);
+    assert_eq!(permit["sameConfigRequired"], false);
+    let mut permit_argv = permit["argv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|argument| argument.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(Path::new(&permit_argv[0]), candidate);
+    assert_eq!(permit_argv[permit_argv.len() - 2], "--config");
+    assert_eq!(Path::new(permit_argv.last().unwrap()), config);
+    let operation_positions = permit_argv
+        .iter()
+        .enumerate()
+        .filter_map(|(index, argument)| (argument == "<OPERATION>").then_some(index))
+        .collect::<Vec<_>>();
+    assert_eq!(operation_positions.len(), 1);
+    permit_argv[operation_positions[0]] = "Inspect the bounded fixture".to_owned();
+    let mut permit_command = support::git_topology::command(&permit_argv[0]);
+    permit_command.current_dir(&root).args(&permit_argv[1..]);
+    let permit_result = support::run(&mut permit_command);
+    assert!(permit_result.status.success(), "{permit_result:?}");
+    let permit_result: Value = serde_json::from_slice(&permit_result.stdout).unwrap();
+    assert_eq!(permit_result["allowed"], true);
+
     let _ = fs::remove_dir_all(root);
     let _ = fs::remove_dir_all(binary_root);
 }

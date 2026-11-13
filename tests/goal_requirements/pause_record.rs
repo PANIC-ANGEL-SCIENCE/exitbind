@@ -147,8 +147,19 @@ fn a_new_session_reads_the_pause_record_and_the_running_check_after_adoption() {
         routes["saveDecision"]["fill"],
         json!({"LEAD_DECISION": "--decision"})
     );
-    let resume = p.value(&["work", "resume"], None);
+    let resume_output = p.call(&["work", "resume"], None);
+    assert!(resume_output.stdout.len() <= 8 * 1024);
+    let resume = ok_json(&resume_output);
     assert_eq!(resume["pauseRecord"], routes, "{resume}");
+    assert_eq!(resume["work"], work, "{resume}");
+    assert_eq!(
+        resume["selection"]["basis"], "current_work_focus",
+        "{resume}"
+    );
+    assert_eq!(
+        resume["current"]["actionForm"]["state"], "check",
+        "{resume}"
+    );
     let text = p.call(&["goal", "status"], None);
     let text = String::from_utf8_lossy(&text.stdout).into_owned();
     for line in routes["text"].as_array().unwrap() {
@@ -188,7 +199,16 @@ fn a_new_session_reads_the_pause_record_and_the_running_check_after_adoption() {
     let hook = session_start(&p);
     let shown = p.value(&["session", "recovery", "show", "--json"], None);
     let next = p.value(&["work", "next", &work, "--json"], None);
-    let context = format!("HOOK:\n{hook}\nSHOW:\n{shown:#}\nNEXT:\n{next:#}");
+    let resumed_output = p.call(&["work", "resume"], None);
+    assert!(resumed_output.stdout.len() <= 8 * 1024);
+    let resumed = ok_json(&resumed_output);
+    let context = format!("HOOK:\n{hook}\nSHOW:\n{shown:#}\nNEXT:\n{next:#}\nRESUME:\n{resumed:#}");
+    assert_eq!(resumed["pauseRecord"], routes, "{context}");
+    assert_eq!(resumed["work"], work, "{context}");
+    assert_eq!(
+        resumed["current"]["actionForm"]["state"], "unresolved_check_observation",
+        "{context}"
+    );
 
     // The in-flight Work, its next action and open assignment.
     let current = &shown["currentWorks"]["works"][0];

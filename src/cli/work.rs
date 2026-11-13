@@ -64,12 +64,15 @@ fn print_compact_read(loaded: &config::Loaded, value: &serde_json::Value) -> Res
         "/nextAction",
         "/pauseRecord",
         "/history",
+        "/presentation",
     ];
     for pointer in locations {
         if let Some(routes) = value.pointer_mut(pointer) {
             routes_complete &= crate::emitted::complete_known(routes, &loaded.path);
         }
     }
+    routes_complete &=
+        crate::work::compact::complete_transport_full_command(&mut value, &loaded.path);
     if !routes_complete {
         value["transportCompletion"] = json!({"complete":false,
             "reason":"a complete route is unavailable"});
@@ -95,9 +98,28 @@ fn print_compact_read(loaded: &config::Loaded, value: &serde_json::Value) -> Res
             "reason":"some section commands were omitted at the compact response bound; use grouped current detail"});
     }
     if !fits(&value)? {
+        let mut removed = 0;
+        for pointer in ["/current/details", "/next/current/details"] {
+            if let Some(details) = value.pointer_mut(pointer).and_then(Value::as_object_mut) {
+                if details
+                    .get("grouped")
+                    .is_some_and(|route| route["command"].is_array())
+                {
+                    let before = details.len();
+                    details.retain(|name, _| name == "grouped");
+                    removed += before - details.len();
+                }
+            }
+        }
+        if removed > 0 {
+            value["transportCompletion"]["omittedSectionRoutes"] = json!(removed);
+        }
+    }
+    if !fits(&value)? {
         let preferred = [
             "/current/details/grouped",
             "/next/current/details/grouped",
+            "/presentation/goalProgress/adoptRoute",
             "/history",
             "/effectiveAction/detail",
         ]
@@ -127,7 +149,9 @@ fn print_compact_read(loaded: &config::Loaded, value: &serde_json::Value) -> Res
                 *value.pointer_mut(pointer).expect("existing route") = previous;
             }
         }
-        let mut route = if let Some(work) = value["work"].as_str() {
+        let mut route = if value["status"] == "resumed" {
+            crate::emitted::Route::new(["work", "resume", "--full", "--json"])
+        } else if let Some(work) = value["work"].as_str() {
             crate::emitted::Route::new(["work", "detail", work, "--json"])
         } else {
             crate::emitted::Route::new(["work", "resume", "--full", "--json"])
@@ -141,9 +165,7 @@ fn print_compact_read(loaded: &config::Loaded, value: &serde_json::Value) -> Res
             value["transportCompletion"]["recovery"] = route.clone();
         }
         if !fits(&value)? {
-            value = json!({"compact":true,"complete":false,"status":value["status"],
-                "work":value["work"],"reason":"compact output could not retain complete routes",
-                "recovery":route});
+            value = crate::work::compact::semantic_partial(&value, route)?;
         }
     }
     print_json(&value)
