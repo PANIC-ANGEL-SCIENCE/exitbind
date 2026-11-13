@@ -133,7 +133,11 @@ impl Project {
     }
 
     fn command(&self) -> Command {
-        let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
+        self.command_for(env!("CARGO_BIN_EXE_exitbind"))
+    }
+
+    fn command_for(&self, executable: &str) -> Command {
+        let mut command = support::git_topology::command(executable);
         command
             .current_dir(&self.root)
             .env("EXITBIND_NO_UPDATE_CHECK", "1")
@@ -159,7 +163,195 @@ impl Project {
     }
 
     fn value(&self, args: &[&str]) -> Value {
-        successful(self.call(args))
+        let mut value = successful(self.call(args));
+        if args.len() == 6
+            && args[0] == "work"
+            && args[1] == "detail"
+            && args[3..] == ["--view", "action", "--json"]
+        {
+            self.capture_omitted_choices(args[2], &mut value);
+        }
+        value
+    }
+
+    fn exact_fixture_argv(&self, argv: &Value) -> Vec<String> {
+        let argv = argv
+            .as_array()
+            .expect("complete fixture argv")
+            .iter()
+            .map(|part| part.as_str().expect("fixture argv is text").to_owned())
+            .collect::<Vec<_>>();
+        assert!(argv.len() >= 3, "incomplete fixture argv");
+        assert_eq!(
+            fs::canonicalize(&argv[0]).unwrap(),
+            fs::canonicalize(env!("CARGO_BIN_EXE_exitbind")).unwrap(),
+            "route must name the fixture executable"
+        );
+        assert_eq!(
+            argv.iter()
+                .filter(|part| part.as_str() == "--config")
+                .count(),
+            1
+        );
+        assert_eq!(argv[argv.len() - 2], "--config");
+        let config = Path::new(argv.last().unwrap());
+        let config = if config.is_absolute() {
+            config.to_path_buf()
+        } else {
+            self.root.join(config)
+        };
+        assert_eq!(
+            fs::canonicalize(config).unwrap(),
+            fs::canonicalize(self.root.join("exitbind.json")).unwrap(),
+            "route must name the fixture config"
+        );
+        argv
+    }
+
+    fn assert_current_choice(&self, choice: &Value, work: &str, binding: &str, assignment: &str) {
+        let label = choice["label"].as_str().expect("selected outcome label");
+        assert_eq!(choice["fill"]["choice"], label);
+        assert_eq!(choice["placeholders"], json!(["REASON"]));
+        assert_eq!(choice["command"]["sameExecutableRequired"], false);
+        assert_eq!(choice["command"]["sameConfigRequired"], false);
+        let argv = self.exact_fixture_argv(&choice["command"]["argv"]);
+        assert_eq!(argv.len(), 13);
+        assert_eq!(argv[1], "work");
+        assert_eq!(argv[2], "return");
+        assert_eq!(argv[3], work);
+        assert_eq!(argv[4], assignment);
+        assert_eq!(argv[5], "--current-binding");
+        assert_eq!(argv[6], binding);
+        assert_eq!(argv[7], "--outcome");
+        assert_eq!(argv[8], label);
+        assert_eq!(argv[9], "--reason");
+        assert_eq!(argv[10], "<REASON>");
+    }
+
+    fn capture_omitted_choices(&self, work: &str, diagnostic: &mut Value) {
+        assert_eq!(diagnostic["kind"], "work_action");
+        assert_eq!(diagnostic["work"], work);
+        let action = &diagnostic["effectiveAction"];
+        let Some(choices) = action["choices"].as_array() else {
+            return;
+        };
+        for choice in choices {
+            assert!(choice.get("_fixtureBoundChoice").is_none());
+        }
+        if choices.is_empty() {
+            return;
+        }
+        let binding = diagnostic["binding"].as_str().expect("current binding");
+        assert!(!binding.is_empty());
+        assert_eq!(action["work"], work);
+        assert_eq!(action["binding"], binding);
+        assert_eq!(diagnostic["recipient"]["actor"], action["actor"]);
+        assert_eq!(diagnostic["recipient"]["role"], action["actor"]);
+        assert_eq!(diagnostic["recipient"]["assignment"], action["assignment"]);
+        assert!(matches!(
+            action["actor"].as_str(),
+            Some("lead" | "worker" | "reviewer")
+        ));
+        let assignment = action["assignment"].as_str().expect("current assignment");
+        assert!(!assignment.is_empty());
+        for choice in choices {
+            if choice["command"]["argv"].is_array() {
+                self.assert_current_choice(choice, work, binding, assignment);
+            }
+        }
+        if choices
+            .iter()
+            .all(|choice| choice["command"]["argv"].is_array())
+        {
+            return;
+        }
+        assert_eq!(action["commandsComplete"], false);
+        assert_eq!(
+            action["commandsOmitted"],
+            "complete commands omitted to fit the action view; use complete current detail"
+        );
+        for choice in choices {
+            if choice["command"]["argv"].is_array() {
+                continue;
+            }
+            assert!(choice["command"].get("argv").is_none());
+            assert_eq!(choice["command"]["available"], false);
+            assert_eq!(choice["command"]["sameExecutableRequired"], false);
+            assert_eq!(choice["command"]["sameConfigRequired"], false);
+            assert_eq!(
+                choice["command"]["unavailableReason"],
+                "complete route omitted at the response bound"
+            );
+        }
+        let route = &diagnostic["details"]["grouped"];
+        assert_eq!(route["kind"], "work_detail");
+        assert_eq!(route["readOnly"], true);
+        assert_eq!(route["sameExecutableRequired"], false);
+        assert_eq!(route["sameConfigRequired"], false);
+        let reference = format!("ref:work-detail:v1:{binding}");
+        assert_eq!(route["reference"], reference);
+        let argv = self.exact_fixture_argv(&route["command"]);
+        assert_eq!(argv.len(), 8);
+        assert_eq!(argv[1], "work");
+        assert_eq!(argv[2], "expand");
+        assert_eq!(argv[3], work);
+        assert_eq!(argv[4], reference);
+        assert_eq!(argv[5], "--json");
+        let mut command = self.command_for(&argv[0]);
+        command.args(&argv[1..]);
+        let packet = successful(support::run(&mut command));
+        assert_eq!(packet["kind"], "work_detail");
+        assert_eq!(packet["complete"], true);
+        assert_eq!(packet["valid"], true);
+        assert_eq!(packet["work"], work);
+        assert_eq!(packet["binding"], binding);
+        assert_eq!(packet["reference"], reference);
+        assert_eq!(packet["recipient"], diagnostic["recipient"]);
+        assert_eq!(packet["recipientContext"]["complete"], true);
+        assert_eq!(
+            packet["recipientContext"]["role"],
+            diagnostic["recipient"]["role"]
+        );
+        assert_eq!(
+            packet["recipientContext"]["agent"],
+            diagnostic["recipient"]["agent"]
+        );
+        let forms = &packet["actionForms"];
+        assert_eq!(forms["work"], work);
+        assert_eq!(forms["binding"], binding);
+        assert_eq!(forms["actor"], action["actor"]);
+        assert_eq!(forms["assignment"], assignment);
+        assert_eq!(forms["state"], action["formState"]);
+        let full_choices = forms["choices"].as_array().expect("current choices");
+
+        // A caller may retain a choice and stop its mandate before executing it.
+        // Capture the bound form now, without changing the diagnostic's omission.
+        let mut recovered = Vec::new();
+        for (index, choice) in choices.iter().enumerate() {
+            if choice["command"]["argv"].is_array() {
+                continue;
+            }
+            let label = choice["label"].as_str().expect("selected outcome label");
+            let matches = full_choices
+                .iter()
+                .filter(|full| full["label"] == label)
+                .collect::<Vec<_>>();
+            assert_eq!(matches.len(), 1, "current outcome must be unique");
+            let full = matches[0];
+            let mut displayed = choice.clone();
+            let mut actual = full.clone();
+            displayed.as_object_mut().unwrap().remove("command");
+            actual.as_object_mut().unwrap().remove("command");
+            assert_eq!(displayed, actual, "current outcome facts must match");
+            self.assert_current_choice(full, work, binding, assignment);
+            recovered.push((index, full.clone()));
+        }
+        let choices = diagnostic["effectiveAction"]["choices"]
+            .as_array_mut()
+            .unwrap();
+        for (index, full) in recovered {
+            choices[index]["_fixtureBoundChoice"] = full;
+        }
     }
 
     fn reject(&self, args: &[&str], reason: &str) {
@@ -227,46 +419,42 @@ impl Project {
     }
 
     fn form_output(&self, form: &Value, input: Option<&str>) -> Output {
-        let mut argv = form["command"]["argv"]
-            .as_array()
-            .expect("exact action argv")
-            .iter()
-            .map(|value| value.as_str().expect("action argv is text").to_owned())
-            .collect::<Vec<_>>();
-        let expected_executable = fs::canonicalize(env!("CARGO_BIN_EXE_exitbind")).unwrap();
-        let expected_config = fs::canonicalize(self.root.join("exitbind.json")).unwrap();
-        if form["command"]["sameExecutableRequired"] == true {
-            argv.insert(0, expected_executable.to_string_lossy().into_owned());
-        } else {
+        let selected = if let Some(recovered) = form.get("_fixtureBoundChoice") {
+            assert!(form["command"].get("argv").is_none());
+            assert_eq!(form["command"]["available"], false);
+            assert_eq!(form["command"]["sameExecutableRequired"], false);
+            assert_eq!(form["command"]["sameConfigRequired"], false);
             assert_eq!(
-                fs::canonicalize(&argv[0]).unwrap(),
-                expected_executable,
-                "action form must name the fixture product executable"
+                form["command"]["unavailableReason"],
+                "complete route omitted at the response bound"
             );
-        }
-        if form["command"]["sameConfigRequired"] == true {
-            assert_eq!(argv.last().map(String::as_str), Some("--config"));
-            argv.push(expected_config.to_string_lossy().into_owned());
+            let mut displayed = form.clone();
+            let mut actual = recovered.clone();
+            displayed.as_object_mut().unwrap().remove("command");
+            displayed
+                .as_object_mut()
+                .unwrap()
+                .remove("_fixtureBoundChoice");
+            actual.as_object_mut().unwrap().remove("command");
+            assert_eq!(displayed, actual, "selected outcome must still match");
+            recovered
         } else {
-            assert!(argv.len() >= 2);
-            assert_eq!(argv[argv.len() - 2], "--config");
-            let config_arg = std::path::Path::new(argv.last().unwrap());
-            let config_arg = if config_arg.is_absolute() {
-                config_arg.to_path_buf()
-            } else {
-                self.root.join(config_arg)
-            };
-            assert_eq!(
-                fs::canonicalize(config_arg).unwrap(),
-                expected_config,
-                "action form must retain the fixture config"
-            );
-        }
-        let mut command = self.command();
+            form
+        };
+        assert_eq!(selected["command"]["sameExecutableRequired"], false);
+        assert_eq!(selected["command"]["sameConfigRequired"], false);
+        let argv = self.exact_fixture_argv(&selected["command"]["argv"]);
+        let mut command = self.command_for(&argv[0]);
         command.args(argv.iter().skip(1).map(|value| match value.as_str() {
             "<OPERATION>" => "Return deterministic fixture evidence",
             "<REASON>" => "Deterministic protocol fixture; no native-agent claim",
-            other => other,
+            other => {
+                assert!(
+                    !(other.starts_with('<') && other.ends_with('>')),
+                    "unknown action placeholder: {other}"
+                );
+                other
+            }
         }));
         if let Some(input) = input {
             let mut child = command.stdin(Stdio::piped()).spawn().unwrap();
