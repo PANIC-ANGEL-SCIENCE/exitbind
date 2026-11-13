@@ -331,6 +331,8 @@ fn managed_permit_edit_and_lost_reply_recover_one_saved_result_without_reexecuti
     use sha2::{Digest, Sha256};
     for mode in ["matching", "unmatched", "pre-input"] {
         let f = Fixture::new(false, false);
+        let capture = support::temp("managed-permit-packet");
+        let packet_path = capture.join("packet.json");
         let relative = format!(".exitbind/runs/work-{}.jsonl", &f.work[4..]);
         let lock_id = format!("{:x}", Sha256::digest(relative.as_bytes()));
         let lock = f
@@ -342,6 +344,7 @@ fn managed_permit_edit_and_lost_reply_recover_one_saved_result_without_reexecuti
 import json, subprocess, sys
 prompt = sys.stdin.read().splitlines()
 index = next(i for i, line in enumerate(prompt) if line.startswith('CURRENT READABLE ASSIGNMENT, EVIDENCE AND TASKS'))
+open(__PACKET__, 'w').write(prompt[index + 1])
 packet = json.loads(prompt[index + 1])
 form = packet['currentAction']['beforeEditing']
 assert form['required'] is True
@@ -360,6 +363,7 @@ print(json.dumps({'type':'thread.started','thread_id':'permit-recovery'}))
 print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':json.dumps({'outcome':'completed','summary':'managed edit','reason':''})}}))
 print(json.dumps({'type':'turn.completed','status':'completed','usage':{'input_tokens':1,'cached_input_tokens':0,'output_tokens':1}}))
 "##.replace("__MARKER__", &serde_json::to_string(marker.to_str().unwrap()).unwrap())
+        .replace("__PACKET__", &serde_json::to_string(packet_path.to_str().unwrap()).unwrap())
         .replace("__LOCK__", &serde_json::to_string(lock.to_str().unwrap()).unwrap())
         .replace("__MODE__", &serde_json::to_string(mode).unwrap())
         .replace("__PID__", &std::process::id().to_string());
@@ -390,6 +394,34 @@ print(json.dumps({'type':'turn.completed','status':'completed','usage':{'input_t
             fs::read_to_string(f.root.join("src/native.txt")).unwrap(),
             "one managed edit\n"
         );
+        if mode == "matching" {
+            let journal_dir = f.root.join(".exitbind/native-actions").join(&f.work);
+            let (path, saved, journal) = fs::read_dir(journal_dir)
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter_map(|entry| {
+                    let path = entry.path();
+                    let bytes = fs::read(&path).ok()?;
+                    let value: Value = serde_json::from_slice(&bytes).ok()?;
+                    (value["status"] == "completed" && value["assignment"] == f.assignment)
+                        .then_some((path, bytes, value))
+                })
+                .next()
+                .expect("completed native journal");
+            let packet = fs::read(&packet_path).unwrap();
+            assert_eq!(
+                journal["permitDeliveryProof"]["requiredFactsSha256"],
+                format!("{:x}", Sha256::digest(packet)),
+                "the permit proof remains bound to the complete native packet"
+            );
+            let detail = f.ok(&["work", "detail", &f.work, "--json"], b"");
+            assert_eq!(detail["complete"], true);
+            assert_eq!(
+                fs::read(path).unwrap(),
+                saved,
+                "read-only presentation changed the journal"
+            );
+        }
         if mode != "matching" {
             let journal_dir = f.root.join(".exitbind/native-actions").join(&f.work);
             let (path, saved) = fs::read_dir(journal_dir)

@@ -60,6 +60,12 @@ pub(crate) fn delivery_packet(assignment: &Value) -> Value {
     prompt::delivery_packet(assignment)
 }
 
+pub(crate) fn delivery_packet_with_aliases(
+    assignment: &Value,
+) -> (Value, Vec<(&'static str, &'static str)>) {
+    prompt::delivery_packet_with_aliases(assignment)
+}
+
 const MAX_RESULT_BYTES: usize = 64 * 1024;
 const MAX_JOURNAL_BYTES: u64 = 256 * 1024;
 const MAX_PACKET_BYTES: usize = 64 * 1024;

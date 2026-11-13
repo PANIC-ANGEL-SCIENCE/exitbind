@@ -9,7 +9,9 @@ mod fill;
 mod recovery;
 
 fn print_work_json(value: &serde_json::Value) -> Result<(), String> {
-    print_json(&crate::work::effective_action::attach(value))
+    let mut value = crate::work::effective_action::attach(value);
+    crate::work::readable::public_delivery(&mut value);
+    print_json(&value)
 }
 
 fn print_work_result(value: &serde_json::Value) -> Result<(), String> {

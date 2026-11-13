@@ -13,6 +13,23 @@ struct Fixture {
     root: support::TempRoot,
     config: PathBuf,
 }
+
+fn restore_residual_recovery_aliases(assignment: &mut Value) {
+    let aliases = assignment["projection"]["residualRecoveryAliases"]
+        .as_object()
+        .cloned()
+        .unwrap_or_default();
+    for (removed, source) in aliases {
+        let context = &mut assignment["residual"]["context"];
+        let value = context[source.as_str().unwrap()].clone();
+        assert!(context["recovery"].get(&removed).is_none());
+        context["recovery"][removed] = value;
+    }
+    assignment["projection"]
+        .as_object_mut()
+        .unwrap()
+        .remove("residualRecoveryAliases");
+}
 impl Fixture {
     fn new() -> Self {
         let root = support::temp("current-details");
@@ -189,6 +206,61 @@ impl Fixture {
         files.sort();
         files
     }
+}
+
+#[test]
+fn initial_delivery_direct_detail_and_grouped_expansion_share_lossless_aliases() {
+    let fixture = Fixture::new();
+    let started = fixture.json(&[
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        "deliver complete initial details",
+        "--check-command",
+        "true",
+        "--proof-origin",
+        "synthetic",
+        "--review-policy",
+        "required",
+        "--detail",
+    ]);
+    let work = started["work"].as_str().unwrap();
+    assert_eq!(started["complete"], true);
+    assert_eq!(started["creation"]["effect"], "recorded");
+    let direct = fixture.json(&["work", "detail", work, "--json"]);
+    let expanded = fixture.json(&[
+        "work",
+        "expand",
+        work,
+        direct["reference"].as_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(direct["binding"], started["binding"]);
+    assert_eq!(direct["sections"], started["sections"]);
+    assert_eq!(direct["binding"], expanded["binding"]);
+    assert_eq!(direct["sections"], expanded["sections"]);
+    assert_eq!(direct["recipientContext"], expanded["recipientContext"]);
+    assert_eq!(direct["actionForms"], expanded["actionForms"]);
+    let projected = &direct["sections"]["assignment"];
+    let aliases = projected["projection"]["residualRecoveryAliases"]
+        .as_object()
+        .expect("initial scope presents equal residual recovery aliases");
+    assert!(aliases.contains_key("loop"));
+    assert_eq!(direct["recipientContext"]["profile"]["complete"], true);
+    assert_eq!(direct["sections"]["evidence"]["complete"], true);
+    assert_eq!(direct["actionForms"]["state"], "initial_scope");
+    let mut restored = projected.clone();
+    restore_residual_recovery_aliases(&mut restored);
+    assert!(
+        serde_json::to_vec(projected).unwrap().len() < serde_json::to_vec(&restored).unwrap().len()
+    );
+    let next = fixture.json(&["work", "next", work]);
+    let (legacy, _) = fixture.detail(&next, "assignment");
+    assert_eq!(
+        restored["residual"]["context"],
+        legacy["residual"]["context"]
+    );
 }
 
 #[test]
@@ -454,6 +526,7 @@ fn grouped_detail_retains_equivalent_large_content_and_rejects_revision_drift() 
     let (legacy_evidence, ec, eb, ep) = fixture.detail_metrics(&next, "evidence");
     let (legacy_tasks, tc, tb, tp) = fixture.detail_metrics(&next, "tasks");
     let mut assignment = detail["sections"]["assignment"].clone();
+    restore_residual_recovery_aliases(&mut assignment);
     let context = &mut assignment["assignment"]["context"];
     for (alias, original) in [
         ("goal", "goal"),

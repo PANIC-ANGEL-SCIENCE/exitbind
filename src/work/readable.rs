@@ -114,6 +114,43 @@ pub(crate) fn current(loaded: &Loaded, work: &str) -> Result<Value, String> {
     read(loaded, work, &snapshot, &next)
 }
 
+/// Present grouped detail without repeating equal recovery facts in its
+/// residual context. This is applied only at the CLI output boundary: native
+/// delivery proofs continue to fingerprint the original grouped sections.
+pub(crate) fn public_delivery(value: &mut Value) {
+    if value["kind"] != "work_detail" {
+        return;
+    }
+    let Some(section) = value.pointer("/sections/assignment") else {
+        return;
+    };
+    if !section["projection"].is_object()
+        || section["projection"]
+            .get("residualRecoveryAliases")
+            .is_some()
+    {
+        return;
+    }
+    let (residual, aliases) = super::action::delivery_packet_with_aliases(&section["residual"]);
+    if aliases.is_empty() {
+        return;
+    }
+    let mapping: Map<String, Value> = aliases
+        .into_iter()
+        .map(|(recovery, context)| (recovery.to_owned(), json!(context)))
+        .collect();
+    let mut projected = section.clone();
+    projected["residual"] = residual;
+    projected["projection"]["residualRecoveryAliases"] = Value::Object(mapping);
+    // Keep the original when the alias map would cost as much as the facts.
+    if serde_json::to_vec(&projected).map_or(true, |bytes| {
+        serde_json::to_vec(section).map_or(true, |original| bytes.len() >= original.len())
+    }) {
+        return;
+    }
+    value["sections"]["assignment"] = projected;
+}
+
 /// A current executable form plus the guidance delivered to the current
 /// recipient for its phase, without repeating the profile, rules and
 /// artifacts. Mandatory context stays available through exact section pages.

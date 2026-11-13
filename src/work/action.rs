@@ -23,6 +23,12 @@ pub(crate) fn delivery_packet(assignment: &Value) -> Value {
     native_action::delivery_packet(assignment)
 }
 
+pub(crate) fn delivery_packet_with_aliases(
+    assignment: &Value,
+) -> (Value, Vec<(&'static str, &'static str)>) {
+    native_action::delivery_packet_with_aliases(assignment)
+}
+
 pub(crate) struct ActOptions<'a> {
     pub(crate) current_binding: Option<&'a str>,
     pub(crate) outcome: Option<&'a str>,

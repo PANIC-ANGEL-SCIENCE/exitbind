@@ -53,6 +53,12 @@ forms again. Bound both each displayed item and their combined batch to the
 host's output budget. A batch of individually valid responses can still exceed
 that budget; serialize those reads or retain them before projecting a summary.
 
+In grouped detail, `sections.assignment.projection.residualRecoveryAliases`
+maps each removed equal `residual.context.recovery` field to its source field
+in `residual.context`. Only fields actually removed appear in that map;
+unequal and absent fields keep their original meaning. The scoped assignment
+section route continues to provide the original section bytes.
+
 When details are incomplete or the host cannot retain a full response, follow
 the exact public section/expansion routes. Section responses state the byte
 count, encoding, hash, offset, completeness and next page. Decode and verify all

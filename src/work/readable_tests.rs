@@ -67,6 +67,73 @@ fn fixture(label: &str, check: &str) -> (crate::test_root::TempRoot, Loaded, Str
     (root, loaded, work)
 }
 
+#[test]
+fn public_detail_removes_only_recorded_equal_residual_recovery_facts() {
+    let original = json!({"kind":"work_detail", "complete":true,
+        "sections":{"assignment":{"projection":{"equalAliases":[]},
+            "residual":{"context":{"digest":"original digest",
+                "goal":"a long goal ".repeat(30), "scope":{"owner":"lead"},
+                "subject":{"sha256":"a".repeat(64)}, "evidence":[],
+                "obligations":["check"], "loop":{"state":"ready"},
+                "next":{"action":"spawn"},
+                "recovery":{"goal":"a long goal ".repeat(30),
+                    "scope":{"owner":"lead"}, "subject":{"sha256":"different"},
+                    "current":[], "missing":["check"],
+                    "next":{"action":"different"}, "stale":["retain"]}}}},
+            "evidence":{"complete":true,"items":[{"content":"full evidence"}]}},
+        "recipientContext":{"complete":true,"profile":{"content":"full profile"}},
+        "actionForms":{"choices":["keep"]}});
+    let mut public = original.clone();
+    public_delivery(&mut public);
+    let assignment = &mut public["sections"]["assignment"];
+    let aliases = assignment["projection"]["residualRecoveryAliases"]
+        .as_object()
+        .unwrap()
+        .clone();
+    assert_eq!(aliases.get("current"), Some(&json!("evidence")));
+    assert!(!aliases.contains_key("subject"));
+    assert!(!aliases.contains_key("next"));
+    assert!(!aliases.contains_key("loop"));
+    for (removed, source) in aliases {
+        let context = &mut assignment["residual"]["context"];
+        assert!(context["recovery"].get(&removed).is_none());
+        let replacement = context[source.as_str().unwrap()].clone();
+        context["recovery"][removed] = replacement;
+    }
+    assignment["projection"]
+        .as_object_mut()
+        .unwrap()
+        .remove("residualRecoveryAliases");
+    assert_eq!(public, original);
+    let mut action = json!({"kind":"work_action"});
+    public_delivery(&mut action);
+    assert_eq!(action, json!({"kind":"work_action"}));
+}
+
+#[test]
+fn public_detail_does_not_change_native_required_facts() {
+    if !crate::compatibility::is_exitbind() {
+        return;
+    }
+    let (_root, loaded, work) = fixture("detail-public-native-proof", "true");
+    let snapshot =
+        RunSnapshot::capture(&loaded, &crate::work::resolve(&loaded, &work).unwrap()).unwrap();
+    let next = crate::work::next_from(&loaded, &work, &snapshot).unwrap();
+    let before = crate::work::details::required_assignment(&loaded, &work, &next).unwrap();
+    let detail = current(&loaded, &work).unwrap();
+    let mut public = detail.clone();
+    public_delivery(&mut public);
+    assert_ne!(
+        public, detail,
+        "fixture must exercise the public projection"
+    );
+    let after = crate::work::details::required_assignment(&loaded, &work, &next).unwrap();
+    assert_eq!(
+        before, after,
+        "public display must not alter native proof facts"
+    );
+}
+
 fn revise_goal(
     loaded: &Loaded,
     root: &std::path::Path,

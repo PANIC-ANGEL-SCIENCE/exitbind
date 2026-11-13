@@ -13,9 +13,17 @@ const RECOVERY_ALIASES: [(&str, &str); 7] = [
 ];
 
 pub(super) fn delivery_packet(assignment: &Value) -> Value {
+    delivery_packet_with_aliases(assignment).0
+}
+
+/// Return the equal fields removed from this particular context as well as
+/// the projected packet. An absent recovery field is not an alias.
+pub(super) fn delivery_packet_with_aliases(
+    assignment: &Value,
+) -> (Value, Vec<(&'static str, &'static str)>) {
     let mut display = assignment.clone();
     let Some(context) = display["context"].as_object_mut() else {
-        return display;
+        return (display, Vec::new());
     };
     let duplicates = RECOVERY_ALIASES
         .iter()
@@ -23,16 +31,16 @@ pub(super) fn delivery_packet(assignment: &Value) -> Value {
             context
                 .get("recovery")
                 .and_then(|value| value.get(*recovery))
-                == context.get(*top)
+                .is_some_and(|value| Some(value) == context.get(*top))
         })
-        .map(|(recovery, _)| *recovery)
+        .copied()
         .collect::<Vec<_>>();
     if let Some(recovery) = context.get_mut("recovery").and_then(Value::as_object_mut) {
-        for key in duplicates {
-            recovery.remove(key);
+        for (key, _) in &duplicates {
+            recovery.remove(*key);
         }
     }
-    display
+    (display, duplicates)
 }
 
 #[cfg(test)]
