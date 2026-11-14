@@ -458,6 +458,92 @@ fn begin_keeps_observation_states_without_exposing_private_check_paths() {
 }
 
 #[test]
+fn begin_omits_checker_aliases_outside_the_product_root_without_effects() {
+    use std::os::unix::fs::symlink;
+
+    let base = support::temp("begin-preparation-roots");
+    let product = base.join("product");
+    let sibling = base.join("product-sibling");
+    let outside = base.join("outside");
+    let control = base.join("control");
+    let state = base.join("storage");
+    let bindings = base.join("bindings");
+    for directory in [&product, &sibling, &outside, &control, &state] {
+        fs::create_dir(directory).unwrap();
+    }
+    let initialized = bin()
+        .args([
+            "init",
+            "--mode",
+            "local",
+            "--skip-skills",
+            "--project-id",
+            "readiness-proposal",
+        ])
+        .arg("--root")
+        .arg(&product)
+        .arg("--control-root")
+        .arg(&control)
+        .arg("--state-root")
+        .arg(&state)
+        .env("EXITBIND_BINDINGS_DIR", &bindings)
+        .output()
+        .unwrap();
+    assert!(initialized.status.success(), "{}", text(&initialized));
+    let config = control.join("exitbind.json");
+    let original_config = fs::read(&config).unwrap();
+
+    let private = state.join(".exitbind/private-check.sh");
+    fs::create_dir_all(private.parent().unwrap()).unwrap();
+    for (alias, target) in [
+        ("outside-alias.sh", outside.join("check.sh")),
+        ("sibling-alias.sh", sibling.join("check.sh")),
+        ("storage-alias.sh", state.join("check.sh")),
+        ("private-alias.sh", private),
+    ] {
+        fs::write(&target, b"printf ran > check-ran\n").unwrap();
+        symlink(&target, product.join(alias)).unwrap();
+        let output = bin()
+            .current_dir(&product)
+            .args([
+                "work",
+                "begin",
+                "change",
+                "--goal",
+                "observe without executing",
+                "--review-policy",
+                "omitted",
+                "--standalone",
+                "--check-command",
+            ])
+            .arg(format!("sh {alias}"))
+            .arg("--config")
+            .arg(&config)
+            .env("EXITBIND_BINDINGS_DIR", &bindings)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{}", text(&output));
+        let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let preparation = &value["beginPreparation"];
+        assert_eq!(preparation["checker"]["input"]["state"], "readable");
+        assert_eq!(preparation["boundaryProposal"]["authority"], "none");
+        assert_eq!(
+            preparation["boundaryProposal"]["observe"],
+            serde_json::json!([])
+        );
+        assert_eq!(preparation["boundaryProposal"]["observeOmitted"], true);
+        assert_eq!(
+            preparation["boundaryProposal"]["commands"],
+            serde_json::json!(["sh"])
+        );
+        assert!(!preparation.to_string().contains(alias));
+        assert!(!preparation.to_string().contains(target.to_str().unwrap()));
+        assert!(!product.join("check-ran").exists());
+        assert_eq!(fs::read(&config).unwrap(), original_config);
+    }
+}
+
+#[test]
 fn begin_reports_missing_and_unknown_check_inputs_without_running_or_refusing() {
     for (check, state) in [("sh missing.sh", "missing"), ("sh -c 'exit 0'", "unknown")] {
         let root = support::temp("begin-preparation-uncertain");
@@ -472,6 +558,10 @@ fn begin_reports_missing_and_unknown_check_inputs_without_running_or_refusing() 
         assert_eq!(
             value["beginPreparation"]["boundaryProposal"]["observe"],
             serde_json::json!([])
+        );
+        assert_eq!(
+            value["beginPreparation"]["boundaryProposal"]["observeOmitted"],
+            false
         );
     }
 }

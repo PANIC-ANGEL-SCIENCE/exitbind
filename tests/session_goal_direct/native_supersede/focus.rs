@@ -3,6 +3,23 @@
 use super::*;
 use std::process::Output;
 
+const NATIVE_PERMIT_MEANING: &str = "obtain allowed:true before editing; repeat this exact request ID only to recover its response; this form grants no host permission";
+const PUBLIC_PERMIT_MEANING: &str = "advisory for ordinary host workspace writes; required:true applies to managed file effects and a selected controlled-effects launch, which require allowed:true. Only a successful controlled launch and protection preflight enforce that file effect. Repeat the exact request ID only to recover its response; this form grants no host permission";
+
+fn permit_forms_match(native: &Value, public: &Value) -> bool {
+    if native["meaning"] != NATIVE_PERMIT_MEANING
+        || native.get("enforcement").is_some()
+        || public["meaning"] != PUBLIC_PERMIT_MEANING
+        || public["enforcement"] != "advisory"
+    {
+        return false;
+    }
+    let mut expected = native.clone();
+    expected["meaning"] = json!(PUBLIC_PERMIT_MEANING);
+    expected["enforcement"] = json!("advisory");
+    expected == *public
+}
+
 fn owner_value(case: &Case, args: &[&str]) -> Value {
     case.project
         .value_in_session(case.host, ADOPTER, &case.project.session_store, args)
@@ -165,14 +182,50 @@ fn assert_complete_successor_delivery(label: &str) {
         packet["agent"],
         detail["sections"]["assignment"]["assignment"]["agent"]
     );
-    assert_eq!(
-        packet["currentAction"]["beforeEditing"],
-        detail["actionForms"]["beforeEditing"]
-    );
-    let permit = packet["currentAction"]["beforeEditing"]["command"]["argv"]
-        .as_array()
-        .unwrap();
+    let native_form = &packet["currentAction"]["beforeEditing"];
+    let public_form = &detail["actionForms"]["beforeEditing"];
+    assert_eq!(native_form["meaning"], NATIVE_PERMIT_MEANING);
+    assert!(native_form.get("enforcement").is_none());
+    assert_eq!(public_form["meaning"], PUBLIC_PERMIT_MEANING);
+    assert_eq!(public_form["enforcement"], "advisory");
+    assert!(permit_forms_match(native_form, public_form));
+
+    let mut altered = public_form.clone();
+    altered["unexpected"] = json!("foreign");
+    assert!(!permit_forms_match(native_form, &altered));
+    let mut altered = public_form.clone();
+    altered["meaning"] = json!(NATIVE_PERMIT_MEANING);
+    assert!(!permit_forms_match(native_form, &altered));
+    let mut altered = public_form.clone();
+    altered["enforcement"] = json!("enforced");
+    assert!(!permit_forms_match(native_form, &altered));
+    let mut altered = public_form.clone();
+    altered["command"]["argv"][0] = json!("foreign-executable");
+    assert!(!permit_forms_match(native_form, &altered));
+    let mut altered = public_form.clone();
+    altered["inputConstraints"]["OPERATION"]["maximumBytes"] = json!(121);
+    assert!(!permit_forms_match(native_form, &altered));
+    let mut altered = public_form.clone();
+    altered["fill"]["options"]["OPERATION"] = json!("--other");
+    assert!(!permit_forms_match(native_form, &altered));
+    let mut altered_native = native_form.clone();
+    altered_native["enforcement"] = json!("advisory");
+    assert!(!permit_forms_match(&altered_native, public_form));
+
+    let permit = native_form["command"]["argv"].as_array().unwrap();
     assert_eq!(permit[0], env!("CARGO_BIN_EXE_exitbind"));
+    assert_eq!(packet["work"], detail["work"]);
+    assert_eq!(packet["assignment"], detail["recipient"]["assignment"]);
+    assert_eq!(permit[3], detail["work"]);
+    assert_eq!(permit[4], detail["recipient"]["assignment"]);
+    let request_index = permit
+        .iter()
+        .position(|word| word == "--request-id")
+        .unwrap();
+    assert_eq!(
+        permit[request_index + 1],
+        format!("permit-{}", detail["binding"].as_str().unwrap())
+    );
     let config_index = permit.iter().position(|word| word == "--config").unwrap();
     assert_eq!(
         permit[config_index + 1],
@@ -189,6 +242,60 @@ fn assert_complete_successor_delivery(label: &str) {
     assert!(
         context.contains(&format!("Profile bytes:\n{profile}")),
         "complete current profile bytes must reach the named worker"
+    );
+    for rule in detail["recipientContext"]["rules"].as_array().unwrap() {
+        let content = rule["content"].as_str().unwrap();
+        assert_eq!(rule["complete"], true);
+        assert_eq!(rule["sha256"], digest_text(content));
+        assert!(
+            context.contains(content),
+            "complete rule bytes must be presented"
+        );
+    }
+    let presented = packet["evidence"]["items"].as_array().unwrap();
+    let expected = detail["sections"]["evidence"]["items"].as_array().unwrap();
+    assert_eq!(packet["evidence"]["complete"], true);
+    assert_eq!(presented.len(), expected.len());
+    for (actual, expected) in presented.iter().zip(expected) {
+        for field in ["kind", "outcome", "reference"] {
+            assert_eq!(actual[field], expected[field]);
+        }
+        let artifact = &expected["artifact"];
+        let content = artifact["content"].as_str().unwrap();
+        assert_eq!(artifact["complete"], true);
+        assert_eq!(artifact["verified"], true);
+        assert_eq!(artifact["sha256"], digest_text(content));
+        assert_eq!(actual["artifact"], content);
+    }
+    let intents: Value = serde_json::from_slice(
+        &fs::read(case.project.root.join(".exitbind/child-intents.json")).unwrap(),
+    )
+    .unwrap();
+    let selected = intents["intents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|intent| intent["assignment"] == detail["recipient"]["assignment"])
+        .collect::<Vec<_>>();
+    assert_eq!(selected.len(), 1);
+    let delivery = &selected[0]["assignmentDelivery"];
+    assert_eq!(delivery["state"], "presented");
+    assert_eq!(delivery["binding"], detail["binding"]);
+    assert_eq!(
+        delivery["recipientSha256"],
+        detail["contextIdentity"]["recipientSha256"]
+    );
+    assert_eq!(
+        delivery["permitForm"]["sha256"],
+        digest_text(&native_form.to_string())
+    );
+    assert_eq!(
+        delivery["permitForm"]["requestId"],
+        permit[request_index + 1]
+    );
+    assert_eq!(
+        delivery["actorFactsSha256"],
+        digest_text(&packet.to_string())
     );
 }
 

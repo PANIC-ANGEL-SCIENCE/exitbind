@@ -633,16 +633,18 @@ fn public_proposal_path(loaded: &Loaded, argument: &str) -> Option<String> {
     }
     let root = loaded.product_root.canonicalize().ok()?;
     let resolved = loaded.product_root.join(&relative).canonicalize().ok()?;
-    if !resolved.starts_with(&root) {
+    if crate::project::path::inputs::within(&root, &resolved).is_none() {
         return None;
     }
     let state = loaded.state_root.canonicalize().ok()?;
-    if (state != root && resolved.starts_with(&state))
+    if (state != root && crate::project::path::inputs::within(&state, &resolved).is_some())
         || loaded
             .state_root
             .join(crate::project::layout_types::state_namespace())
             .canonicalize()
-            .is_ok_and(|private| resolved.starts_with(private))
+            .is_ok_and(|private| {
+                crate::project::path::inputs::within(&private, &resolved).is_some()
+            })
     {
         return None;
     }
