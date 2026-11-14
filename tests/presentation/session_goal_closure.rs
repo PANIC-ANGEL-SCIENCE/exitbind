@@ -395,10 +395,26 @@ fn session_goal_history_is_hash_bound_and_legacy_is_refused() {
     assert_eq!(fs::read_to_string(&history_path).unwrap(), tampered);
 
     fs::remove_file(&history_path).unwrap();
-    fs::write(project.root.join(".exitbind/session-goal.json"), original).unwrap();
+    let legacy_path = project.root.join(".exitbind/session-goal.json");
+    fs::write(&legacy_path, &original).unwrap();
     let refused = project.call(&["goal", "status"], None);
     assert!(!refused.status.success());
     assert!(String::from_utf8_lossy(&refused.stderr).contains("legacy session goal format"));
+    assert!(refused.stdout.is_empty());
+    assert_eq!(fs::read(&legacy_path).unwrap(), original.as_bytes());
+    assert!(!history_path.exists());
+
+    let machine = project.call(&["goal", "status", "--json"], None);
+    assert!(!machine.status.success());
+    let error: Value = serde_json::from_slice(&machine.stdout).unwrap();
+    assert!(error["error"].as_str().is_some_and(
+        |message| message.contains("legacy session goal format is unbound and unsupported")
+    ));
+    assert!(error.get("goalProgress").is_none());
+    assert!(error.get("currentReadiness").is_none());
+    assert!(error["presentation"]["terminal"].is_null());
+    assert_eq!(fs::read(&legacy_path).unwrap(), original.as_bytes());
+    assert!(!history_path.exists());
     fs::remove_dir_all(project.root).unwrap();
 }
 

@@ -320,7 +320,7 @@ fn recovery_bytes(root: &Path) -> Result<Option<Vec<u8>>, String> {
                 crate::project::layout_types::state_namespace()
             ));
             match std::fs::symlink_metadata(legacy) {
-                Ok(_) => Err("legacy session Goal format is unsupported for recovery".into()),
+                Ok(_) => Err("legacy session goal format is unbound and unsupported".into()),
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
                 Err(error) => Err(format!("native recovery Goal lookup failed: {error}")),
             }
