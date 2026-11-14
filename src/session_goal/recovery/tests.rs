@@ -73,3 +73,184 @@ fn validate_state_rejects_endpoint_state_root_mismatch_before_digest_only_checks
         "native Goal recovery source-member binding is invalid"
     );
 }
+
+#[test]
+fn no_retirement_keeps_the_existing_request_and_preview_digests() {
+    let request = Request {
+        source_config: "/source/exitbind.json",
+        historical_fixtures: "",
+        endpoint_configs: None,
+        retirements: None,
+        source_writers_quiesced: false,
+        request_id: "unchanged",
+        reason: "Preserve the original recovery request",
+        apply: false,
+        current_binding: None,
+    };
+    let legacy = hash::value(&json!({"sourceConfig":request.source_config,
+        "historicalFixtures":Vec::<String>::new(),"endpointConfigs":BTreeMap::<String,String>::new(),
+        "reason":request.reason}));
+    assert_eq!(request_digest(&request).unwrap(), legacy);
+    assert_eq!(retirement_preview(&hash('d'), None), hash('d'));
+}
+
+#[test]
+fn retirement_requires_explicit_quiescence_and_unique_exact_inputs() {
+    let first = format!("smw_{}", hash('a'));
+    let replacement = format!("smw_{}", hash('b'));
+    let item = json!({"work":first,"reason":"Selected alternative", "replacement":replacement});
+    let raw = json!([item.clone()]).to_string();
+    assert!(retirement::request(None, false).unwrap().is_none());
+    assert!(retirement::request(None, true).is_err());
+    assert!(retirement::request(Some(&raw), false).is_err());
+    assert_eq!(
+        retirement::request(Some(&raw), true)
+            .unwrap()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(
+        retirement::request(Some(&json!([item.clone(), item.clone()]).to_string()), true).is_err()
+    );
+    let mut unknown = item.clone();
+    unknown["unrecognized"] = json!(true);
+    assert!(retirement::request(Some(&json!([unknown]).to_string()), true).is_err());
+    let mut same = item;
+    same["replacement"] = same["work"].clone();
+    assert!(retirement::request(Some(&json!([same]).to_string()), true).is_err());
+}
+
+#[test]
+fn retirement_selection_binds_prior_recovery_and_latest_absence_wins() {
+    let source = ConfigBinding {
+        path: "/source/exitbind.json".into(),
+        config_sha256: hash('a'),
+        product_root: "/source".into(),
+        state_root: "/source/.exitbind".into(),
+        project_id: Some("source-project".into()),
+        project_identity_sha256: hash('b'),
+        local_identity_sha256: hash('c'),
+    };
+    let member = |token: char| super::super::journey::Member {
+        work: format!("smw_{}", hash(token)),
+        start_event_sha256: hash(token),
+        parent_goal_id: "goal".into(),
+        parent_observed_goal_event_sha256: hash('e'),
+        work_goal_sha256: hash('f'),
+        host: "codex".into(),
+        session_key: hash('1'),
+        owner_identity_sha256: hash('2'),
+        owner_project_id: None,
+        project_identity_sha256: source.project_identity_sha256.clone(),
+        local_identity_sha256: source.local_identity_sha256.clone(),
+        config_path: source.path.clone(),
+        config_sha256: source.config_sha256.clone(),
+        product_root: source.product_root.clone(),
+        state_root: source.state_root.clone(),
+    };
+    let blocked = member('3');
+    let replacement = member('4');
+    let source_member = |member| SourceMember {
+        member_sha256: super::super::journey::member_identity(&member),
+        member,
+        endpoint_config: source.clone(),
+    };
+    let mut prior = ActiveDecision {
+        goal_id: "goal".into(),
+        applied_from_revision: 1,
+        applied_from_event_sha256: hash('5'),
+        host: "codex".into(),
+        session_key: hash('1'),
+        owner_identity_sha256: hash('2'),
+        owner_project_id: None,
+        reason: "Existing recovery".into(),
+        source_config: source.clone(),
+        source_members: vec![
+            source_member(blocked.clone()),
+            source_member(replacement.clone()),
+        ],
+        historical_fixtures: Vec::new(),
+        decision_sha256: String::new(),
+    };
+    prior.decision_sha256 = decision_digest(&prior).unwrap();
+    let mut active = prior.clone();
+    active.applied_from_revision = 2;
+    active.applied_from_event_sha256 = hash('6');
+    active.decision_sha256 = decision_digest(&active).unwrap();
+    let selection = retirement::Selection {
+        version: 1,
+        goal_id: active.goal_id.clone(),
+        goal_sha256: hash::text("original Goal text"),
+        prior_recovery_decision_sha256: prior.decision_sha256.clone(),
+        recovery_decision_sha256: active.decision_sha256.clone(),
+        owner_identity_sha256: active.owner_identity_sha256.clone(),
+        session_key: active.session_key.clone(),
+        source_config_sha256: active.source_config.config_sha256.clone(),
+        source_writers_quiesced: true,
+        items: vec![retirement::Item {
+            member: blocked.clone(),
+            reason: "Owner chose the accepted alternative".into(),
+            blocked: crate::work::supersede::UncreditedRetirementSnapshot {
+                work: blocked.work.clone(),
+                start_event_sha256: blocked.start_event_sha256.clone(),
+                head_event_sha256: hash('7'),
+                config_sha256: blocked.config_sha256.clone(),
+                raw_ledger_sha256: hash('8'),
+                governor_sha256: hash('9'),
+                governor_spent: Some(1),
+            },
+            replacement: retirement::Replacement {
+                member: replacement,
+                accepted_endpoint_sha256: hash('a'),
+            },
+        }],
+    };
+    retirement::validate(&selection, &active).unwrap();
+    let selected_digest = retirement::integration_digest(&active, Some(&selection));
+    assert_ne!(selected_digest, active.decision_sha256);
+    let mut changed = selection.clone();
+    changed.items[0].reason = "A different owner decision".into();
+    assert_ne!(
+        selected_digest,
+        retirement::integration_digest(&active, Some(&changed))
+    );
+    changed.items[0].blocked.config_sha256 = hash('b');
+    assert!(retirement::validate(&changed, &active).is_err());
+    let state = |active| RecoveryState {
+        version: VERSION,
+        active,
+        requests: vec![AppliedRequest {
+            request_id: "fixture".into(),
+            request_sha256: hash('b'),
+            preview_sha256: hash('c'),
+        }],
+    };
+    let mut previous = json!({"goalId":"goal", "goal":"original Goal text"});
+    previous[FIELD] = serde_json::to_value(state(prior)).unwrap();
+    let mut selected = json!({"goalId":"goal", "goal":"original Goal text"});
+    selected[FIELD] = serde_json::to_value(state(active)).unwrap();
+    selected[retirement::FIELD] = serde_json::to_value(&selection).unwrap();
+    super::record::validate_record(&selected, Some(&previous), 2).unwrap();
+    let mut same_goal = json!({"goalId":"goal", "goal":"original Goal text"});
+    super::record::preserve_same_goal(&selected, &mut same_goal);
+    assert_eq!(same_goal[retirement::FIELD], selected[retirement::FIELD]);
+    let mut changed_goal = selected.clone();
+    changed_goal["goal"] = json!("A materially different Goal");
+    super::record::preserve_same_goal(&selected, &mut changed_goal);
+    assert!(changed_goal.get(retirement::FIELD).is_none());
+    let mut forged = selected.clone();
+    forged["goal"] = json!("A materially different Goal");
+    assert!(super::retirement_binding(Some(&forged)).is_err());
+    let mut dropped = selected.clone();
+    dropped.as_object_mut().unwrap().remove(retirement::FIELD);
+    super::record::validate_record(&dropped, Some(&selected), 3).unwrap();
+    assert_eq!(super::retirement_binding(Some(&dropped)).unwrap(), None);
+    let mut new_write = json!({"goalId":"goal"});
+    super::record::preserve_same_goal(&dropped, &mut new_write);
+    assert!(new_write.get(retirement::FIELD).is_none());
+    assert!(
+        super::record::validate_record(&selected, Some(&dropped), 4).is_err(),
+        "replaying an old selection cannot restore its authority"
+    );
+}

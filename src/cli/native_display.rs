@@ -24,7 +24,9 @@ pub(super) fn after_goal(
     a: &Arguments,
     result: Result<(), String>,
 ) -> Result<(), String> {
-    if result.is_ok() && a.positional.first().map(String::as_str) != Some("status") {
+    let action = a.positional.first().map(String::as_str);
+    let recovery_preview = action == Some("recover") && !a.flags.contains_key("apply");
+    if result.is_ok() && action != Some("status") && !recovery_preview {
         refresh(
             loaded,
             Some(if a.flags.contains_key("project") {

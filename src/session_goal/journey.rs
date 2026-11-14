@@ -180,8 +180,10 @@ pub(crate) struct Readiness {
     pub(crate) current: usize,
     pub(crate) integrated: usize,
     pub(crate) historical: usize,
+    pub(crate) retired_uncredited: usize,
     pub(crate) quarantined_uncredited: usize,
     pub(crate) historical_details: Vec<Value>,
+    pub(crate) retired_details: Vec<Value>,
     pub(crate) quarantined_details: Vec<Value>,
     pub(crate) pending_admissions: usize,
     pub(crate) unresolved: Vec<Value>,
@@ -194,7 +196,7 @@ impl Readiness {
     }
 
     pub(crate) fn value(&self) -> Value {
-        json!({
+        let mut value = json!({
             "protocol": self.protocol,
             "state": self.state.as_str(),
             "reason": self.reason,
@@ -203,7 +205,12 @@ impl Readiness {
             "unresolved": self.unresolved,
             "integrationWork": self.integration_work,
             "readOnly": true,
-        })
+        });
+        if self.retired_uncredited != 0 {
+            value["members"]["retiredUncredited"] = json!(self.retired_uncredited);
+            value["members"]["retainedRetiredUncredited"] = json!(self.retired_details);
+        }
+        value
     }
 }
 
@@ -690,6 +697,23 @@ pub(super) fn accepted_endpoint_for_recovery(
     Ok(accepted_endpoint(selected, member)?.map(|endpoint| endpoint.work))
 }
 
+/// The retirement owner needs the same validated original configuration and
+/// accepted endpoint identity as ordinary journey integration.
+pub(super) fn original_for_retirement(
+    selected: &Loaded,
+    member: &Member,
+) -> Result<Loaded, String> {
+    integration::project_loaded(selected, member)
+}
+
+pub(super) fn accepted_identity_for_retirement(
+    selected: &Loaded,
+    member: &Member,
+) -> Result<Option<(String, String)>, String> {
+    Ok(accepted_endpoint(selected, member)?
+        .map(|endpoint| (endpoint.work, endpoint.identity_sha256)))
+}
+
 pub(super) fn current_recovery_integration(
     loaded: &Loaded,
     record: &Value,
@@ -793,6 +817,7 @@ use integration::{
 #[path = "journey/tests.rs"]
 mod tests;
 
+pub(super) use integration::has_contract as has_integration_contract;
 pub(crate) use integration::{append_work, prepare, reject_unprepared_markers};
 pub(super) use observation::{observe_work, WorkJourney};
 #[cfg(test)]

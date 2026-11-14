@@ -277,3 +277,38 @@ pub(super) fn discover(
     found.sort_by(|left, right| left["reference"].as_str().cmp(&right["reference"].as_str()));
     Ok(found)
 }
+
+/// An uncredited retirement must not overlook a retained result from an
+/// earlier assignment. A matching filename is sufficient to refuse: the
+/// result bytes remain owned by the normal held-result recovery route.
+pub(super) fn has_for_work(loaded: &Loaded, work: &str) -> Result<bool, String> {
+    let work_part = work
+        .strip_prefix("smw_")
+        .filter(|value| value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit()))
+        .ok_or("work handle is invalid")?;
+    match fs::symlink_metadata(directory(loaded)) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error.to_string()),
+        Ok(_) => {}
+    }
+    let prefix = format!("{PREFIX}{work_part}_");
+    for entry in fs::read_dir(checked_directory(loaded)?).map_err(|error| error.to_string())? {
+        let path = entry.map_err(|error| error.to_string())?.path();
+        let info = fs::symlink_metadata(&path).map_err(|error| error.to_string())?;
+        if info.file_type().is_symlink() || !info.is_file() {
+            return Err("held directory contains a non-regular entry".into());
+        }
+        let name = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .ok_or("held artifact filename is not valid UTF-8")?;
+        if name.starts_with(&prefix) {
+            let reference = name
+                .strip_suffix(".bin")
+                .ok_or("held artifact filename is invalid")?;
+            parts(reference)?;
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}

@@ -216,7 +216,9 @@ fn display_file_follows_every_ledger_command_and_feeds_the_status_line() {
     eprintln!("statusline p95 over 100 runs: {p95} us");
     assert!(p95 < 50_000, "status line p95 {p95} us");
 
-    // SessionStart retains progress only for the same session Goal event.
+    // A source can change without a Goal event; SessionStart does not
+    // revalidate the old display's task evidence.
+    fs::write(session.root.join("changed-after-display.txt"), b"new input").unwrap();
     let env_file = session.home.join("claude-env");
     fs::write(&env_file, "").unwrap();
     {
@@ -239,10 +241,15 @@ fn display_file_follows_every_ledger_command_and_feeds_the_status_line() {
         payload.to_string().as_bytes(),
     );
     assert!(hook.status.success(), "{hook:?}");
-    assert_eq!(hook_session.status_line().0.trim_end(), line.trim_end());
+    assert_eq!(
+        hook_session.status_line().0.trim_end(),
+        "◎ Ship the R9 parser and report"
+    );
     let kept = hook_session.display();
+    assert_eq!(kept["eventSha256"], display["eventSha256"]);
+    assert_eq!(kept["currentReadiness"]["state"], "unknown");
     for field in ["requirements", "met", "total", "nextAction", "lessonCount"] {
-        assert_eq!(kept[field], display[field], "{field}");
+        assert!(kept.get(field).is_none(), "unverified {field}: {kept}");
     }
 
     // A different event cannot retain progress, even when the Goal ID agrees.
@@ -416,7 +423,80 @@ fn a_closed_goal_reads_closed_after_the_tree_moves() {
 }
 
 #[test]
-fn claude_session_start_refuses_over_limit_history_without_replacing_display() {
+fn display_keeps_closed_history_without_claiming_current_progress_over_budget() {
+    let session = Session::new("native-display-budget");
+    let exe = env!("CARGO_BIN_EXE_exitbind");
+    let output = support::git_topology::command(exe)
+        .args(["init", "--mode", "portable", "--skip-skills", "--root"])
+        .arg(&session.root)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let config = session.config();
+    session.json(&[
+        exe,
+        "goal",
+        "incorporate",
+        "--goal-id",
+        "g1",
+        "--goal",
+        "Historical display goal",
+        "--none-applicable",
+        "obligations,findings,blockers,decisions,externalActions",
+        "--json",
+        "--config",
+        &config,
+    ]);
+    session.json(&[
+        exe,
+        "goal",
+        "close",
+        "--direct",
+        "--goal-id",
+        "g1",
+        "--json",
+        "--config",
+        &config,
+    ]);
+    let closed = session.display();
+    assert_eq!(closed["state"], "closed");
+    fs::File::create(session.root.join("large-input"))
+        .unwrap()
+        .set_len(16 * 1024 * 1024 + 1)
+        .unwrap();
+    session.json(&[
+        exe,
+        "goal",
+        "usage",
+        "--goal-id",
+        "g1",
+        "--json",
+        "--config",
+        &config,
+    ]);
+
+    let display = session.display();
+    assert_eq!(display["state"], "closed");
+    assert_eq!(display["eventSha256"], closed["eventSha256"]);
+    assert_eq!(display["currentReadiness"]["state"], "unknown");
+    for field in ["requirements", "met", "total", "nextAction", "currentWork"] {
+        assert!(
+            display.get(field).is_none(),
+            "unexpected current {field}: {display}"
+        );
+    }
+    assert_eq!(
+        session.status_line().0.trim_end(),
+        "◎ Historical display goal · closed"
+    );
+    let status = session.json(&[exe, "goal", "status", "--json", "--config", &config]);
+    assert_eq!(status["closure"]["closed"], true);
+    assert_eq!(status["currentReadiness"]["state"], "unknown");
+    assert_eq!(status["goalProgress"]["overall"], "unavailable");
+}
+
+#[test]
+fn claude_session_start_marks_over_limit_history_unavailable() {
     let session = Session::new("native-display-recovery-limits");
     let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--skip-skills", "--root"])
@@ -439,7 +519,6 @@ fn claude_session_start_refuses_over_limit_history_without_replacing_display() {
         "--json",
     ]);
     let display_path = session.display_path();
-    let previous_display = fs::read(&display_path).unwrap();
     let journal = fs::read_dir(&session.store)
         .unwrap()
         .filter_map(Result::ok)
@@ -485,7 +564,11 @@ fn claude_session_start_refuses_over_limit_history_without_replacing_display() {
             "{context}"
         );
         assert!(context.contains(expected), "{context}");
-        assert_eq!(fs::read(&display_path).unwrap(), previous_display);
+        let display: Value = serde_json::from_slice(&fs::read(&display_path).unwrap()).unwrap();
+        assert_eq!(display["state"], "unavailable");
+        assert_eq!(display["currentReadiness"]["state"], "unknown");
+        assert!(display.get("requirements").is_none());
+        assert_eq!(session.status_line().0, "");
     }
     fs::write(journal, valid).unwrap();
 }

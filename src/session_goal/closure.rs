@@ -15,12 +15,20 @@ pub(crate) fn close(
     goal_id: &str,
     result_ref: &str,
 ) -> Result<Value, String> {
-    if read(root)?.as_ref().is_some_and(requirements::named) {
+    let observed = read(root)?;
+    if observed.as_ref().is_some_and(requirements::named) {
         return requirements::close(root, loaded, goal_id, result_ref);
     }
     let result_ref = text(Some(result_ref), "result-ref")?;
-    mutate(root, loaded, |previous| {
+    let selection = recovery::retirement_binding(observed.as_ref())?;
+    let operation = |previous: Option<&Value>| -> Result<Value, String> {
         let previous = previous.ok_or("no canonical session goal is open")?;
+        if recovery::retirement_binding(Some(previous))? != selection {
+            return Err(
+                "retirement selection changed before Goal closure; retry from current evidence"
+                    .into(),
+            );
+        }
         validate_governed_candidate(loaded, root, previous, goal_id, &result_ref)?;
         for category in CATEGORIES {
             for item in previous[category].as_array().into_iter().flatten() {
@@ -57,7 +65,8 @@ pub(crate) fn close(
             "owner": "lead",
         });
         Ok(sealed(record, Some(previous)))
-    })
+    };
+    recovery::with_retirement_locks(observed.as_ref(), || mutate(root, loaded, operation))
 }
 
 /// Read-only counterpart to ordinary governed close; the status projection
@@ -117,7 +126,8 @@ pub(crate) fn close_direct(
     goal_id: &str,
     result_ref: Option<&str>,
 ) -> Result<Value, String> {
-    if read(root)?.as_ref().is_some_and(requirements::named) {
+    let observed = read(root)?;
+    if observed.as_ref().is_some_and(requirements::named) {
         return Err(
             "named requirements need observed checked Work evidence; direct closure is unavailable"
                 .into(),
@@ -126,8 +136,15 @@ pub(crate) fn close_direct(
     let result_ref = result_ref
         .map(|value| text(Some(value), "result-ref"))
         .transpose()?;
-    mutate(root, loaded, |previous| {
+    let selection = recovery::retirement_binding(observed.as_ref())?;
+    let operation = |previous: Option<&Value>| -> Result<Value, String> {
         let previous = previous.ok_or("no canonical session goal is open")?;
+        if recovery::retirement_binding(Some(previous))? != selection {
+            return Err(
+                "retirement selection changed before Goal closure; retry from current evidence"
+                    .into(),
+            );
+        }
         let inputs_sha256 =
             validate_direct_candidate(loaded, root, previous, goal_id, result_ref.as_deref())?;
         for category in CATEGORIES {
@@ -171,7 +188,8 @@ pub(crate) fn close_direct(
             "inputsSha256": inputs_sha256,
         });
         Ok(sealed(record, Some(previous)))
-    })
+    };
+    recovery::with_retirement_locks(observed.as_ref(), || mutate(root, loaded, operation))
 }
 
 /// Read-only counterpart to the direct close mutation. Goal progress uses this

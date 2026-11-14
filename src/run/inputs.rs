@@ -10,11 +10,9 @@
 //! evidence reuse never claims them.
 
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs::{self, File};
-use std::io::Read;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 use std::rc::Rc;
@@ -410,32 +408,23 @@ fn hash_file_bounded(
     expected_len: u64,
     budget: &mut ResumeInputBudget,
 ) -> Result<String, String> {
-    let mut file = File::open(path).map_err(|error| error.to_string())?;
-    let mut hasher = Sha256::new();
     let mut observed = 0u64;
-    let mut chunk = [0u8; 16 * 1024];
-    loop {
-        budget.check().map_err(str::to_owned)?;
-        let count = file.read(&mut chunk).map_err(|error| error.to_string())?;
-        if count == 0 {
-            break;
+    let digest = crate::evidence::hash::file_with_observer(path, |count| {
+        match count {
+            None => budget.check().map_err(str::to_owned)?,
+            Some(count) => {
+                observed = observed.saturating_add(count as u64);
+                if observed > expected_len || observed > 16 * 1024 * 1024 {
+                    return Err("fingerprint_byte_limit_exceeded".into());
+                }
+            }
         }
-        observed = observed.saturating_add(count as u64);
-        if observed > expected_len || observed > 16 * 1024 * 1024 {
-            return Err("fingerprint_byte_limit_exceeded".into());
-        }
-        hasher.update(&chunk[..count]);
-    }
+        Ok(())
+    })?;
     if observed != expected_len {
         return Err("tested input changed while fingerprinting".into());
     }
-    let bytes = hasher.finalize();
-    let mut output = String::with_capacity(64);
-    for byte in bytes {
-        use std::fmt::Write;
-        write!(&mut output, "{byte:02x}").expect("String formatting cannot fail");
-    }
-    Ok(output)
+    Ok(digest)
 }
 
 /// The tested-input exclusion every walk uses: an excluded first component
@@ -627,6 +616,7 @@ fn walk_paths_bounded(root: &Path, budget: &mut ResumeInputBudget) -> Result<Vec
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs::File;
 
     fn loaded(root: &Path, state_root: &Path) -> crate::config::Loaded {
         assert!(
@@ -756,6 +746,32 @@ mod tests {
             crate::evidence::hash::file(&path).expect("existing hash")
         );
         fs::remove_file(path).expect("remove fixture");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn streaming_fingerprint_preserves_v1_file_and_symlink_identity() {
+        let root = crate::test_root::temp("streaming-v1-identity");
+        let contents = (0..50_001)
+            .map(|index| (index % 251) as u8)
+            .collect::<Vec<_>>();
+        fs::write(root.join("binary"), &contents).unwrap();
+        std::os::unix::fs::symlink("binary", root.join("link")).unwrap();
+        let loaded = loaded(&root, &root.join("state"));
+        let expected = crate::evidence::hash::value(&json!({
+            "coverage":"product-root-files-v1",
+            "entries":[
+                ["binary", "file", crate::evidence::hash::bytes(&contents)],
+                ["link", "symlink", crate::evidence::hash::bytes(b"binary")]
+            ]
+        }));
+        assert_eq!(fingerprint(&loaded).unwrap(), expected);
+        assert_eq!(
+            fingerprint_for_resume(&loaded, &mut ResumeInputBudget::new()).unwrap(),
+            expected
+        );
+        fs::write(root.join("binary"), b"different").unwrap();
+        assert_ne!(fingerprint(&loaded).unwrap(), expected);
     }
 
     #[test]

@@ -3,8 +3,39 @@
 //! Read-only goal and run status surfaces, including optional themed display.
 
 use super::*;
+use serde_json::Value;
 
 pub(super) fn goal_status(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
+    let mut budget = crate::run::inputs::ResumeInputBudget::new();
+    crate::run::inputs::with_resume_budget(&mut budget, |_| goal_status_bounded(l, a))
+}
+
+fn observation_limit() -> Option<&'static str> {
+    crate::run::inputs::active_resume_budget().and_then(|mut budget| budget.limited_reason())
+}
+
+fn incomplete_presentation(value: &mut Value, presentation: &mut Value, reason: &str) {
+    let readiness = json!({"state":"unknown","reason":reason});
+    let progress = json!({
+        "overall":"unavailable",
+        "goal":value.get("goal"),
+        "decomposition":{"available":false,"reason":reason},
+        "tasks":[],
+        "resultReadiness":{"state":"unavailable","reason":reason},
+        "systemText":"Goal currentness and task progress are unavailable for this observation",
+    });
+    value["currentReadiness"] = readiness.clone();
+    value["goalProgress"] = progress.clone();
+    if value.get("requirements").is_some() {
+        value["requirements"] = json!({"state":"unavailable","reason":reason});
+    }
+    presentation["currentReadiness"] = readiness;
+    presentation["explicitLeadClosure"] = json!(false);
+    presentation["goalProgress"] = progress;
+    presentation["terminal"] = Value::Null;
+}
+
+fn goal_status_bounded(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
     args::assert_options(
         "goal status",
         a,
@@ -26,7 +57,8 @@ pub(super) fn goal_status(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
     } else {
         crate::session_goal::native::scope_readonly(l)?
     };
-    let record = crate::session_goal::read(&scope.root)?;
+    let record = crate::session_goal::read_for_recovery(&scope.root)
+        .map_err(|error| format!("goal status observation unavailable: {error}"))?;
     if scope.is_session() && !scope.owner_matches {
         if a.options.contains_key("expected-sha256") {
             return Err("goal expansion is unavailable outside the owning session".into());
@@ -48,15 +80,19 @@ pub(super) fn goal_status(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
         if a.options.contains_key("expected-sha256") {
             return Err("goal status --expected-sha256 requires the complete view".into());
         }
-        return print_json(&crate::producer::observed(
-            super::goal_completion::read_response(
-                l,
-                record.as_ref(),
-                a.flags.contains_key("project"),
-            )?,
-        ));
+        let mut response = super::goal_completion::read_response(
+            l,
+            record.as_ref(),
+            a.flags.contains_key("project"),
+        )?;
+        if let Some(reason) = observation_limit() {
+            response["completionEvent"] = Value::Null;
+            response["presentation"]["terminal"] = Value::Null;
+            response["currentReadiness"] = json!({"state":"unknown","reason":reason});
+        }
+        return print_json(&crate::producer::observed(response));
     }
-    let presentation = crate::session_goal::presentation_for_selected(
+    let mut presentation = crate::session_goal::presentation_for_selected(
         l,
         record.as_ref(),
         &scope.root,
@@ -86,12 +122,19 @@ pub(super) fn goal_status(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
         .as_ref()
         .is_some_and(crate::session_goal::requirements::named);
     if named {
-        value["requirements"] = crate::session_goal::requirements::projection_selected(
+        let requirements = crate::session_goal::requirements::projection_selected(
             l,
             &scope.root,
             a.flags.contains_key("project"),
             record.as_ref().expect("named record"),
-        )?;
+        );
+        match requirements {
+            Ok(requirements) => value["requirements"] = requirements,
+            Err(_) if observation_limit().is_some() => {
+                value["requirements"] = Value::Null;
+            }
+            Err(error) => return Err(error),
+        }
     }
     let native_governed = scope.is_session()
         && record
@@ -99,6 +142,22 @@ pub(super) fn goal_status(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
             .is_some_and(|goal| goal["closure"]["kind"] != "direct");
     if let Some(routes) = crate::host::session_recovery::pause_routes(l) {
         value["pauseRecord"] = routes;
+    }
+    if let Some(expected) = a.options.get("expected-sha256") {
+        let fresh = crate::session_goal::read_for_recovery(&scope.root)
+            .map_err(|error| format!("goal status observation unavailable: {error}"))?;
+        if fresh.as_ref().and_then(|item| item["eventSha256"].as_str()) != Some(expected.as_str()) {
+            return Err("goal record changed during expansion".into());
+        }
+    }
+    if let Some(reason) = observation_limit() {
+        incomplete_presentation(&mut value, &mut presentation, reason);
+    } else if presentation["currentReadiness"]["state"] == "unknown" {
+        let reason = presentation["currentReadiness"]["reason"]
+            .as_str()
+            .unwrap_or("currentness_unavailable")
+            .to_owned();
+        incomplete_presentation(&mut value, &mut presentation, &reason);
     }
     if named || native_governed {
         value["presentation"] = json!({"terminal": presentation["terminal"]});
@@ -114,12 +173,6 @@ pub(super) fn goal_status(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
                 println!("{terminal}");
                 return Ok(());
             }
-        }
-    }
-    if let Some(expected) = a.options.get("expected-sha256") {
-        let fresh = crate::session_goal::read(&scope.root)?;
-        if fresh.as_ref().and_then(|item| item["eventSha256"].as_str()) != Some(expected.as_str()) {
-            return Err("goal record changed during expansion".into());
         }
     }
     print_json(&crate::producer::observed(value))?;

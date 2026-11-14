@@ -116,17 +116,48 @@ pub(super) fn decision_digest(decision: &ActiveDecision) -> Result<String, Strin
     Ok(hash::value(&value))
 }
 
-pub(crate) fn validate_record(record: &Value, line: usize) -> Result<(), String> {
-    validated_state(record)
-        .map(|_| ())
-        .map_err(|error| format!("invalid canonical session goal line {line}: {error}"))
+pub(crate) fn validate_record(
+    record: &Value,
+    previous: Option<&Value>,
+    line: usize,
+) -> Result<(), String> {
+    let state = validated_state(record)
+        .map_err(|error| format!("invalid canonical session goal line {line}: {error}"))?;
+    match state {
+        Some(state) => {
+            let selection = super::retirement::selected(record, &state.active)
+                .map_err(|error| format!("invalid canonical session goal line {line}: {error}"))?;
+            if let Some(selection) = selection {
+                if previous.and_then(|prior| prior.get(super::retirement::FIELD)) != record.get(super::retirement::FIELD) {
+                    let prior = previous.map(validated_state).transpose()?.flatten()
+                        .ok_or_else(|| format!("invalid canonical session goal line {line}: retirement has no prior recovery"))?;
+                    if selection.prior_recovery_decision_sha256 != prior.active.decision_sha256 {
+                        return Err(format!("invalid canonical session goal line {line}: retirement prior recovery binding changed"));
+                    }
+                }
+            }
+            Ok(())
+        }
+        None if record.get(super::retirement::FIELD).is_some() => Err(format!(
+            "invalid canonical session goal line {line}: retirement selection has no active recovery"
+        )),
+        None => Ok(()),
+    }
 }
 
 pub(crate) fn preserve_same_goal(previous: &Value, next: &mut Value) {
-    if previous["goalId"] == next["goalId"]
-        && previous.get(FIELD).is_some()
-        && next.get(FIELD).is_none()
-    {
-        next[FIELD] = previous[FIELD].clone();
+    if previous["goalId"] == next["goalId"] {
+        if previous.get(FIELD).is_some() && next.get(FIELD).is_none() {
+            next[FIELD] = previous[FIELD].clone();
+        }
+        if previous["goal"] == next["goal"] {
+            if previous.get(super::retirement::FIELD).is_some()
+                && next.get(super::retirement::FIELD).is_none()
+            {
+                next[super::retirement::FIELD] = previous[super::retirement::FIELD].clone();
+            }
+        } else if let Some(next) = next.as_object_mut() {
+            next.remove(super::retirement::FIELD);
+        }
     }
 }

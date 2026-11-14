@@ -245,8 +245,22 @@ fn link_admitted(
     if !valid_work(work) {
         return Err("work link-session requires a valid Work handle".into());
     }
-    super::super::mutate_associated(root, owner, |previous| {
+    let (start, _) = verified_start(loaded, work)?;
+    let integration = super::super::journey::has_integration_contract(&start)?;
+    let observed = if integration {
+        super::super::read(root)?
+    } else {
+        None
+    };
+    let selection = super::super::recovery::retirement_binding(observed.as_ref())?;
+    let operation = |previous: Option<&Value>| -> Result<Value, String> {
         let previous = previous.ok_or("native session Goal journal is unavailable")?;
+        if integration && super::super::recovery::retirement_binding(Some(previous))? != selection {
+            return Err(
+                "retirement selection changed before Work linkage; inspect the pending admission"
+                    .into(),
+            );
+        }
         let journey_member = super::super::journey::member_for_work(previous, work)?;
         if let Some(admission) = super::super::journey::find_admission(previous, work)? {
             validate_admission_for_loaded(loaded, &admission, session, owner)?;
@@ -362,7 +376,14 @@ fn link_admitted(
         } else {
             Err("no exact pending or bound native journey admission exists for this Work; no association was inferred".into())
         }
-    })
+    };
+    if integration {
+        super::super::recovery::with_retirement_locks(observed.as_ref(), || {
+            super::super::mutate_associated(root, owner, operation)
+        })
+    } else {
+        super::super::mutate_associated(root, owner, operation)
+    }
 }
 
 fn commit_link(previous: &Value, mut next: Value) -> Result<Value, String> {

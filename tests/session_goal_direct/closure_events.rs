@@ -373,6 +373,54 @@ fn direct_close_keeps_history_but_suppresses_current_room_after_input_drift() {
 }
 
 #[test]
+fn goal_status_budget_refuses_currentness_and_completion_but_keeps_closed_history() {
+    let project = Project::new("direct-goal-status-budget");
+    establish_direct_goal(&project);
+    project.value(&["goal", "close", "--direct", "--goal-id", "direct"]);
+    fs::File::create(project.root.join("large-input"))
+        .unwrap()
+        .set_len(16 * 1024 * 1024 + 1)
+        .unwrap();
+
+    let status = project.value(&["goal", "status", "--json"]);
+    assert_eq!(status["closure"]["closed"], true);
+    assert_eq!(status["currentReadiness"]["state"], "unknown");
+    assert_eq!(
+        status["currentReadiness"]["reason"],
+        "fingerprint_byte_limit_exceeded"
+    );
+    assert_eq!(status["goalProgress"]["overall"], "unavailable");
+    assert_eq!(status["goalProgress"]["decomposition"]["available"], false);
+    assert!(status["goalProgress"]["tasks"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(!pty_status(&project).contains(CARD));
+
+    let event = project.value(&["goal", "status", "--view", "event", "--json"]);
+    assert_eq!(event["currentReadiness"]["state"], "unknown");
+    assert_eq!(event["completionEvent"], Value::Null);
+    assert_eq!(event["presentation"]["terminal"], Value::Null);
+}
+
+#[test]
+fn goal_status_refuses_an_unavailable_bounded_journal() {
+    let project = Project::new("direct-goal-journal-limit");
+    establish_direct_goal(&project);
+    let journal = project.root.join(".exitbind/session-goal.jsonl");
+    fs::OpenOptions::new()
+        .write(true)
+        .open(journal)
+        .unwrap()
+        .set_len(64 * 1024 * 1024 + 1)
+        .unwrap();
+    let output = project.call(&["goal", "status", "--json"]);
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("goal status observation unavailable"));
+}
+
+#[test]
 fn current_direct_room_survives_corrupt_or_missing_display_memo() {
     let project = Project::new("direct-goal-memo");
     establish_direct_goal(&project);

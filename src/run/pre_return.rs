@@ -18,6 +18,27 @@ use self::response::{current_failure_response, failure_response, read_route, una
 use super::submission::matching_mutation_grants;
 use super::*;
 
+/// Read every recorded pre-return attempt for a Work while its Run lock is
+/// held. An unreadable or unfinished attempt cannot establish quiescence.
+pub(crate) fn retirement_has_unresolved(loaded: &Loaded, state: &Value) -> Result<bool, String> {
+    for attempt in predecessor::attempts(loaded, state, None)? {
+        let id = attempt["attemptId"]
+            .as_str()
+            .ok_or("pre-return attempt identity is unavailable")?;
+        let path = record_path(loaded, id, "result")?;
+        match std::fs::symlink_metadata(&path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(true),
+            Err(error) => return Err(error.to_string()),
+            Ok(_) => {}
+        }
+        let result = read_record(&path)?;
+        if !predecessor::validate_saved(loaded, &attempt, &result)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn current_binding(
     loaded: &Loaded,

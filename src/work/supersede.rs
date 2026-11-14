@@ -4,6 +4,90 @@
 
 use super::*;
 use crate::session_goal::{self, association};
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct UncreditedRetirementSnapshot {
+    pub(crate) work: String,
+    pub(crate) start_event_sha256: String,
+    pub(crate) head_event_sha256: String,
+    pub(crate) config_sha256: String,
+    pub(crate) raw_ledger_sha256: String,
+    pub(crate) governor_sha256: String,
+    pub(crate) governor_spent: Option<u64>,
+}
+
+/// Observe an explicitly selected, uncredited blocked Work while its existing
+/// Run lock is held. This is not acceptance or authority to change the Work.
+/// All source writers must also satisfy the owner's quiescence attestation:
+/// an older writer can create a retained result without taking this lock.
+pub(crate) fn uncredited_retirement_snapshot(
+    loaded: &Loaded,
+    work: &str,
+) -> Result<UncreditedRetirementSnapshot, String> {
+    let relative = resolve(loaded, work)?;
+    let (ledger, events, source) = run::ledger::load(loaded, &relative)?;
+    let state = run::state::reduce(&events)?;
+    let start = events.first().ok_or("retired Work has no start")?;
+    let head = events.last().ok_or("retired Work has no current head")?;
+    if state["status"] != "blocked" {
+        return Err("only a terminal blocked Work can be retired without credit".into());
+    }
+    if start["configSha256"] != hash::text(&loaded.source) {
+        return Err("retired Work configuration no longer matches its exact start".into());
+    }
+    if run::ledger::valid_claim(&run::ledger::claim_path(&ledger))?.is_some() {
+        return Err("a claimed successor prevents uncredited retirement".into());
+    }
+    // Unmarked legacy checks had no durable admission. If a worker ever
+    // completed, their absence or termination cannot be established here.
+    if state["checkObservationProtocol"] != run::check_observation::PROTOCOL
+        && events.iter().any(|event| {
+            event["action"] == "submit"
+                && event["role"] == "worker"
+                && event["outcome"] == "completed"
+        })
+    {
+        return Err("legacy check execution is unverifiable; retirement refused".into());
+    }
+    if run::state::check_observation::unresolved(&state)
+        || action::continuation_native_facts(loaded, work, &state)?.retirement_blocked
+    {
+        return Err("an active, unknown or retained Work operation prevents retirement".into());
+    }
+    if run::pre_return::retirement_has_unresolved(loaded, &state)? {
+        return Err("an unresolved pre-return attempt prevents retirement".into());
+    }
+    if session_goal::blocking_child(loaded, work)?.is_some() {
+        return Err("a live, prepared or retained child prevents retirement".into());
+    }
+    if held::has_for_work(loaded, work)? {
+        return Err("a retained result prevents retirement".into());
+    }
+    let governor_spent = state["governor"]["spent"].as_u64();
+    if state["governor"]["enabled"] == true && governor_spent.is_none() {
+        return Err("retired Work governor accounting is unavailable".into());
+    }
+    Ok(UncreditedRetirementSnapshot {
+        work: work.to_owned(),
+        start_event_sha256: start["eventSha256"]
+            .as_str()
+            .ok_or("retired Work start identity is unavailable")?
+            .to_owned(),
+        head_event_sha256: head["eventSha256"]
+            .as_str()
+            .ok_or("retired Work terminal identity is unavailable")?
+            .to_owned(),
+        config_sha256: start["configSha256"]
+            .as_str()
+            .ok_or("retired Work configuration identity is unavailable")?
+            .to_owned(),
+        raw_ledger_sha256: hash::bytes(source.as_bytes()),
+        governor_sha256: hash::value(&state["governor"]),
+        governor_spent,
+    })
+}
 
 pub(crate) fn supersede(loaded: &Loaded, work: &str, reason: &str) -> Result<Value, String> {
     if reason.trim().is_empty() || reason.len() > 1024 || reason.contains('\0') {

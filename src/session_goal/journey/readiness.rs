@@ -25,6 +25,12 @@ fn member_currentness(
     {
         return Ok(("historical", None));
     }
+    if recovery
+        .as_ref()
+        .is_some_and(|context| context.retired_uncredited.contains(&member.work))
+    {
+        return Ok(("retired_uncredited", None));
+    }
     // A recovery bridges only the exact Source members it selected. Every
     // other retained member keeps the pre-recovery owner-config behavior.
     let recovered_endpoint = recovery
@@ -74,7 +80,7 @@ fn member_currentness(
             config_binding_sha256: config_binding(&project)?,
             recovery_sha256: recovery
                 .as_ref()
-                .map(|value| value.active.decision_sha256.clone()),
+                .map(|value| value.integration_sha256.clone()),
             checker: super::super::requirements::CheckerInput {
                 path: String::new(),
                 sha256: String::new(),
@@ -185,8 +191,10 @@ pub(super) fn readiness_for_state_inner(
             current: 0,
             integrated: 0,
             historical: 0,
+            retired_uncredited: 0,
             quarantined_uncredited: 0,
             historical_details: Vec::new(),
+            retired_details: Vec::new(),
             quarantined_details: Vec::new(),
             pending_admissions: 0,
             unresolved: vec![
@@ -198,6 +206,7 @@ pub(super) fn readiness_for_state_inner(
     let mut current = 0;
     let mut integrated = 0;
     let mut historical = 0;
+    let mut retired_uncredited = 0;
     let mut quarantined_uncredited = 0;
     let mut quarantined_details = Vec::new();
     let mut integration_work = None;
@@ -271,6 +280,7 @@ pub(super) fn readiness_for_state_inner(
                 integration_work.get_or_insert(work);
             }
             Ok(("historical", _)) => historical += 1,
+            Ok(("retired_uncredited", _)) => retired_uncredited += 1,
             Ok(("accepted_at_binding", drift)) => unresolved.push(json!({"work":member.work,
                 "state":"accepted_at_binding",
                 "drift":drift.and_then(|drift| serde_json::from_str::<Value>(&drift).ok())})),
@@ -293,6 +303,13 @@ pub(super) fn readiness_for_state_inner(
                 .flatten()
         })
         .map_or_else(Vec::new, |context| context.historical_items);
+    let retired_details = record
+        .and_then(|record| {
+            super::super::recovery::context(loaded, record)
+                .ok()
+                .flatten()
+        })
+        .map_or_else(Vec::new, |context| context.retired_items);
     Readiness {
         protocol: state.protocol,
         state: state_name,
@@ -309,8 +326,10 @@ pub(super) fn readiness_for_state_inner(
         current,
         integrated,
         historical,
+        retired_uncredited,
         quarantined_uncredited,
         historical_details,
+        retired_details,
         quarantined_details,
         pending_admissions: state.admissions.len(),
         unresolved: unresolved
@@ -420,8 +439,10 @@ pub(in crate::session_goal) fn readiness_for_record_with_access(
             current: 0,
             integrated: 0,
             historical: 0,
+            retired_uncredited: 0,
             quarantined_uncredited: 0,
             historical_details: Vec::new(),
+            retired_details: Vec::new(),
             quarantined_details: Vec::new(),
             pending_admissions: state(&current)?.map_or(0, |state| state.admissions.len()),
             unresolved: vec![

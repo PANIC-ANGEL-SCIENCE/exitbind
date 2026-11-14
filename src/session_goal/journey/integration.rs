@@ -205,6 +205,12 @@ fn parse_contract(start: &Value) -> Result<Option<Contract>, String> {
     Ok(Some(Contract { header, members }))
 }
 
+/// Whether the immutable Work start selects the integration snapshot path.
+/// Ordinary members do not consume a retirement selection during linkage.
+pub(in crate::session_goal) fn has_contract(start: &Value) -> Result<bool, String> {
+    Ok(parse_contract(start)?.is_some())
+}
+
 fn contract_sha256(contract: &Contract) -> String {
     hash::value(&json!({"header":&contract.header,"members":&contract.members}))
 }
@@ -257,10 +263,40 @@ pub(crate) fn prepare(
     let (scope, session, owner) = current_scope(loaded)?;
     let record =
         super::super::read(&scope.root)?.ok_or("no native session Goal is incorporated")?;
+    super::super::recovery::with_retirement_locks(Some(&record), || {
+        if super::super::recovery::retirement_binding(Some(&record))?.is_some()
+            && super::super::read(&scope.root)?
+                .as_ref()
+                .and_then(|current| current["eventSha256"].as_str())
+                != record["eventSha256"].as_str()
+        {
+            return Err("native Goal changed before retirement integration preparation".into());
+        }
+        prepare_for_record(
+            loaded,
+            supplied_basis,
+            checker,
+            command,
+            session,
+            owner,
+            &record,
+        )
+    })
+}
+
+fn prepare_for_record(
+    loaded: &Loaded,
+    supplied_basis: Option<&str>,
+    checker: &str,
+    command: &str,
+    session: super::super::native::Session,
+    owner: super::super::native::Owner,
+    record: &Value,
+) -> Result<Prepared, String> {
     if record["closure"]["closed"] != false {
         return Err("native session Goal is closed; start a new side Work to reopen the journey before integration".into());
     }
-    let journey = state(&record)?.ok_or("native session Goal has no explicit journey membership protocol; explicitly incorporate it before integration")?;
+    let journey = state(record)?.ok_or("native session Goal has no explicit journey membership protocol; explicitly incorporate it before integration")?;
     if journey.integrations.len() >= MAX_INTEGRATIONS {
         return Err("native journey integration bound reached; no Work was started".into());
     }
@@ -268,13 +304,13 @@ pub(crate) fn prepare(
     let local_identity_sha256 = super::super::native::owner_for(loaded)?.identity_sha256;
     let config_binding_sha256 = config_binding(loaded)?;
     let checker = super::super::requirements::checker_input(loaded, checker, command)?;
-    let recovery = super::super::recovery::context(loaded, &record)?;
+    let recovery = super::super::recovery::context(loaded, record)?;
     let recovered_context = recovery.as_ref().filter(|context| {
         context.active.source_config.project_identity_sha256 == project_identity_sha256
     });
     let mut covered = covered_snapshot(
         loaded,
-        &record,
+        record,
         &journey.members,
         &Header {
             protocol: if recovered_context.is_some() {
@@ -291,7 +327,7 @@ pub(crate) fn prepare(
             config_binding_sha256: config_binding_sha256.clone(),
             recovery_sha256: recovered_context
                 .as_ref()
-                .map(|value| value.active.decision_sha256.clone()),
+                .map(|value| value.integration_sha256.clone()),
             checker: checker.clone(),
         },
     )?;
@@ -315,7 +351,7 @@ pub(crate) fn prepare(
             config_binding_sha256,
             recovery_sha256: recovered_context
                 .as_ref()
-                .map(|value| value.active.decision_sha256.clone()),
+                .map(|value| value.integration_sha256.clone()),
             checker,
         },
         members: covered,
@@ -383,7 +419,7 @@ fn covered_snapshot(
     let expected_recovery = recovery
         .as_ref()
         .filter(|_| is_recovered_source)
-        .map(|value| value.active.decision_sha256.as_str());
+        .map(|value| value.integration_sha256.as_str());
     if expected_recovery != header.recovery_sha256.as_deref()
         || (is_recovered_source && header.protocol != RECOVERY_INTEGRATION_PROTOCOL)
         || (!is_recovered_source && header.protocol != PROTOCOL)
@@ -397,6 +433,12 @@ fn covered_snapshot(
         .filter(|member| member.project_identity_sha256 == project_identity)
         .collect::<Vec<_>>();
     for member in &project_members {
+        if recovery
+            .as_ref()
+            .is_some_and(|context| context.retired_uncredited.contains(&member.work))
+        {
+            continue;
+        }
         let Some(original) = member_loaded(loaded, member)? else {
             return Err(unproven_members(loaded, member, &project_members));
         };
@@ -483,7 +525,7 @@ pub(super) fn current_integration_for_project(
             config_binding_sha256: config_binding(loaded)?,
             recovery_sha256: recovered_context
                 .as_ref()
-                .map(|value| value.active.decision_sha256.clone()),
+                .map(|value| value.integration_sha256.clone()),
             checker: super::super::requirements::CheckerInput {
                 path: String::new(),
                 sha256: String::new(),

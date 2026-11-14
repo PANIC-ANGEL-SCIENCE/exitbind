@@ -389,7 +389,7 @@ fn validate_record(value: &Value, previous: Option<&Value>, line: usize) -> Resu
     let semantic_timer = recovery_diagnostic::timer(recovery_diagnostic::Phase::SemanticLink);
     association::validate_record(value, line)?;
     journey::validate_record(value, line)?;
-    recovery::validate_record(value, line)?;
+    recovery::validate_record(value, previous, line)?;
     quarantine::validate_record(value, line)?;
     adoption::validate_record(value, line)?;
     owner_correction::validate_transition(value, previous, line)?;

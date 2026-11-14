@@ -5,6 +5,7 @@
 
 mod configuration;
 mod record;
+mod retirement;
 
 use self::configuration::config_binding;
 use self::record::{decision_digest, valid_text, validated_state};
@@ -88,10 +89,13 @@ struct RecoveryState {
 pub(crate) struct Context {
     pub(crate) source: Loaded,
     pub(crate) active: ActiveDecision,
+    pub(crate) integration_sha256: String,
     members: Vec<super::journey::Member>,
     pub(crate) endpoints: BTreeMap<String, Loaded>,
     pub(crate) historical: BTreeSet<String>,
     pub(crate) historical_items: Vec<Value>,
+    pub(crate) retired_uncredited: BTreeSet<String>,
+    pub(crate) retired_items: Vec<Value>,
 }
 
 pub(crate) struct RecoveryEvidence {
@@ -106,6 +110,8 @@ pub(crate) struct Request<'a> {
     pub(crate) source_config: &'a str,
     pub(crate) historical_fixtures: &'a str,
     pub(crate) endpoint_configs: Option<&'a str>,
+    pub(crate) retirements: Option<&'a str>,
+    pub(crate) source_writers_quiesced: bool,
     pub(crate) request_id: &'a str,
     pub(crate) reason: &'a str,
     pub(crate) apply: bool,
@@ -131,7 +137,7 @@ pub(crate) fn preview_form(owner_loaded: &Loaded, record: &Value) -> Option<Valu
         let scope = super::native::scope_readonly(owner_loaded)?;
         if !scope.is_session()
             || !scope.owner_matches
-            || super::read(&scope.root)?.as_ref() != Some(record)
+            || super::read_for_recovery(&scope.root)?.as_ref() != Some(record)
         {
             return Ok(None);
         }
@@ -163,6 +169,8 @@ pub(crate) fn preview_form(owner_loaded: &Loaded, record: &Value) -> Option<Valu
             source_config: source_path,
             historical_fixtures: "",
             endpoint_configs: None,
+            retirements: None,
+            source_writers_quiesced: false,
             request_id: "preview",
             reason: "preview",
             apply: false,
@@ -208,7 +216,7 @@ pub(crate) fn preview_form(owner_loaded: &Loaded, record: &Value) -> Option<Valu
             || !preview_scope.is_session()
             || !preview_scope.owner_matches
             || preview_scope.root != scope.root
-            || super::read(&fresh_scope.root)?.as_ref() != Some(record)
+            || super::read_for_recovery(&fresh_scope.root)?.as_ref() != Some(record)
         {
             return Ok(None);
         }
@@ -344,14 +352,75 @@ pub(crate) fn context(owner_loaded: &Loaded, record: &Value) -> Result<Option<Co
         super::journey::validate_recovery_endpoint(&endpoint, member)?;
         endpoints.insert(member.work.clone(), endpoint);
     }
+    let selection = retirement::selected(record, &active)?;
+    if let Some(selection) = &selection {
+        let requests = retirement::from_selection(selection);
+        retirement::with_locks(&source, &requests, || {
+            retirement::revalidate(&source, record, &active, selection)
+        })?;
+    }
+    let mut retired_uncredited = BTreeSet::new();
+    let mut retired_items = Vec::new();
+    if let Some(selection) = &selection {
+        for item in &selection.items {
+            retired_uncredited.insert(item.member.work.clone());
+            retired_items.push(json!({
+                "work":item.member.work.as_str(),
+                "state":"retired_uncredited",
+                "reason":item.reason.as_str(),
+                "startEventSha256":item.blocked.start_event_sha256.as_str(),
+                "terminalEventSha256":item.blocked.head_event_sha256.as_str(),
+                "governorSpent":item.blocked.governor_spent,
+                "replacement":item.replacement.member.work.as_str(),
+            }));
+        }
+    }
+    let integration_sha256 = retirement::integration_digest(&active, selection.as_ref());
     Ok(Some(Context {
         source,
         active,
+        integration_sha256,
         members: current_members,
         endpoints,
         historical,
         historical_items,
+        retired_uncredited,
+        retired_items,
     }))
+}
+
+/// Hold selected source Run locks before entering a Goal mutation which may
+/// consume the retirement selection. A changed selection fails in `context`.
+pub(crate) fn with_retirement_locks<T>(
+    record: Option<&Value>,
+    operation: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    let Some(record) = record else {
+        return operation();
+    };
+    let Some(state) = validated_state(record)? else {
+        return operation();
+    };
+    let Some(selection) = retirement::selected(record, &state.active)? else {
+        return operation();
+    };
+    let source = crate::config::load(Some(&state.active.source_config.path))?;
+    if config_binding(&source)? != state.active.source_config {
+        return Err("saved Source configuration changed; preview recovery again".into());
+    }
+    retirement::with_locks(&source, &retirement::from_selection(&selection), operation)
+}
+
+pub(crate) fn retirement_binding(record: Option<&Value>) -> Result<Option<String>, String> {
+    let Some(record) = record else {
+        return Ok(None);
+    };
+    let Some(state) = validated_state(record)? else {
+        return Ok(None);
+    };
+    Ok(retirement::selected(record, &state.active)?
+        .as_ref()
+        .map(retirement::digest))
 }
 
 /// Resolves only exact accepted endpoint references captured by the recovery,
@@ -458,12 +527,18 @@ impl<'de> Deserialize<'de> for UniqueEndpointOverrides {
 }
 
 fn request_digest(request: &Request<'_>) -> Result<String, String> {
-    Ok(hash::value(&json!({
+    let mut value = json!({
         "sourceConfig": request.source_config,
         "historicalFixtures": historical_ids(request.historical_fixtures)?,
         "endpointConfigs": endpoint_overrides(request.endpoint_configs)?,
         "reason": request.reason,
-    })))
+    });
+    if let Some(items) = retirement::request(request.retirements, request.source_writers_quiesced)?
+    {
+        value["retirements"] = json!(items);
+        value["sourceWritersQuiesced"] = json!(true);
+    }
+    Ok(hash::value(&value))
 }
 
 fn historical_ids(raw: &str) -> Result<Vec<String>, String> {
@@ -686,27 +761,84 @@ pub(crate) fn recover(
                 request.current_binding,
             )
         })? {
-            return Ok(
-                json!({"kind":"native_goal_recovery_replayed","readOnly":true,
-                "event":record,"currentStatus":crate::emitted::goal_status(&owner_loaded.path)}),
-            );
+            let historical_selection = record.get(retirement::FIELD).is_some();
+            let mut response = json!({"kind":"native_goal_recovery_replayed","readOnly":true,
+                "event":record,"currentStatus":crate::emitted::goal_status(&owner_loaded.path)});
+            if historical_selection {
+                response["historical"] = json!(true);
+                response["meaning"] = json!("The saved event is historical evidence; only the latest Goal record can authorize a current selection.");
+            }
+            return Ok(response);
         }
     }
     let source = crate::config::load(Some(request.source_config))
         .map_err(|error| format!("--source-config is unavailable: {error}"))?;
-    let current = super::read(root)?.ok_or("no native session Goal is incorporated")?;
-    let (active, preview_sha256) = preview_decision(
+    let retired = retirement::request(request.retirements, request.source_writers_quiesced)?;
+    if let Some(items) = retired.as_deref() {
+        return retirement::with_locks(&source, items, || {
+            recover_current(
+                root,
+                owner_loaded,
+                &request,
+                &source,
+                Some(items),
+                &request_sha256,
+            )
+        });
+    }
+    recover_current(root, owner_loaded, &request, &source, None, &request_sha256)
+}
+
+fn recover_current(
+    root: &Path,
+    owner_loaded: &Loaded,
+    request: &Request<'_>,
+    source: &Loaded,
+    retired: Option<&[retirement::RequestItem]>,
+    request_sha256: &str,
+) -> Result<Value, String> {
+    let current = if request.apply {
+        super::read(root)?
+    } else {
+        super::read_for_recovery(root)?
+    }
+    .ok_or("no native session Goal is incorporated")?;
+    let (active, legacy_preview_sha256) = preview_decision(
         owner_loaded,
-        &source,
+        source,
         &current,
-        &request,
+        request,
         super::native::Access::RequireWritable,
     )?;
+    let prior_recovery = if retired.is_some() {
+        Some(
+            validated_state(&current)?
+                .ok_or("uncredited retirement requires an existing active recovery decision")?
+                .active
+                .decision_sha256,
+        )
+    } else {
+        None
+    };
+    let selection = retired
+        .map(|items| {
+            retirement::observe(
+                source,
+                &current,
+                &active,
+                items,
+                prior_recovery
+                    .as_deref()
+                    .expect("retirement has prior recovery"),
+            )
+        })
+        .transpose()?;
+    let preview_sha256 = retirement_preview(&legacy_preview_sha256, selection.as_ref());
     let owner_config = owner_loaded
         .path
         .to_str()
         .ok_or("owner configuration path is not valid UTF-8")?;
-    let apply_command = crate::emitted::Route::new([
+    let mut apply_command = crate::emitted::Route::new([
         "goal",
         "recover",
         "--source-config",
@@ -719,20 +851,46 @@ pub(crate) fn recover(
         request.request_id,
         "--reason",
         request.reason,
-        "--current-binding",
-        preview_sha256.as_str(),
-        "--apply",
-        "--json",
-    ])
-    .config_text(owner_config)
-    .within(16 * 1024);
+    ]);
+    if let Some(raw) = request.retirements {
+        apply_command = apply_command.words(["--retirements", raw, "--source-writers-quiesced"]);
+    }
+    let apply_route = apply_command
+        .words([
+            "--current-binding",
+            preview_sha256.as_str(),
+            "--apply",
+            "--json",
+        ])
+        .config_text(owner_config);
+    let apply_command = apply_route.within(16 * 1024);
     if !request.apply {
-        return Ok(
-            json!({"kind":"native_goal_recovery_preview","readOnly":true,
+        let mut response = json!({"kind":"native_goal_recovery_preview","readOnly":true,
             "currentBinding":preview_sha256,"decision":active,"applyArgv":apply_command.argv_value(),
             "sameConfigRequired":apply_command.needs_config(),
-            "sameExecutableRequired":apply_command.needs_executable()}),
-        );
+            "sameExecutableRequired":apply_command.needs_executable()});
+        if let Some(selection) = &selection {
+            response["retirementSelection"] = json!(selection);
+            response["sourceWriterAttestation"] = json!("The owner attests that all source Work writers, including old producers, remain quiescent through each governed use. This does not fence an already-running writer or waive any observable refusal.");
+            match apply_route.full_argv() {
+                Ok(argv)
+                    if serde_json::to_vec(&argv)
+                        .map_err(|error| error.to_string())?
+                        .len()
+                        <= 16 * 1024 =>
+                {
+                    response["applyArgv"] = json!(argv);
+                    response["sameConfigRequired"] = json!(false);
+                    response["sameExecutableRequired"] = json!(false);
+                }
+                _ => {
+                    response["applyArgv"] = Value::Null;
+                    response["applyArgvState"] = json!("unavailable");
+                    response["meaning"] = json!("A complete apply command is unavailable; shorten the explicit selection or restore the executable and request a fresh preview.");
+                }
+            }
+        }
+        return Ok(response);
     }
     if request.current_binding != Some(preview_sha256.as_str()) {
         return Err("--current-binding does not match the exact current recovery preview".into());
@@ -742,7 +900,7 @@ pub(crate) fn recover(
             if let Some(saved) = find_replay(
                 history,
                 request.request_id,
-                &request_sha256,
+                request_sha256,
                 request.current_binding,
             )? {
                 return Ok(saved);
@@ -762,14 +920,38 @@ pub(crate) fn recover(
         owner_scope.require_owner()?;
         let fresh_source = crate::config::load(Some(request.source_config))
             .map_err(|error| format!("Source configuration changed or became unavailable; preview recovery again: {error}"))?;
-        let (fresh, fresh_preview) = preview_decision(
+        let (fresh, fresh_legacy_preview) = preview_decision(
             &fresh_owner,
             &fresh_source,
             previous,
-            &request,
+            request,
             super::native::Access::RequireWritable,
         )?;
-        if fresh_preview != preview_sha256 || fresh != active {
+        let fresh_prior = if retired.is_some() {
+            Some(
+                validated_state(previous)?
+                    .ok_or("uncredited retirement requires an existing active recovery decision")?
+                    .active
+                    .decision_sha256,
+            )
+        } else {
+            None
+        };
+        let fresh_selection = retired
+            .map(|items| {
+                retirement::observe(
+                    &fresh_source,
+                    previous,
+                    &fresh,
+                    items,
+                    fresh_prior
+                        .as_deref()
+                        .expect("retirement has prior recovery"),
+                )
+            })
+            .transpose()?;
+        let fresh_preview = retirement_preview(&fresh_legacy_preview, fresh_selection.as_ref());
+        if fresh_preview != preview_sha256 || fresh != active || fresh_selection != selection {
             return Err("native Goal recovery preview is stale; request a new preview".into());
         }
         if named_goal(previous) {
@@ -805,9 +987,19 @@ pub(crate) fn recover(
                 fixtures.push(fixture);
             }
         }
+        if selection.is_some() {
+            fixtures.sort_by(|left, right| left.work.cmp(&right.work));
+        }
         let mut active = active.clone();
         active.historical_fixtures = fixtures;
         active.decision_sha256 = decision_digest(&active)?;
+        if let Some(selection) = &selection {
+            retirement::validate(selection, &active)?;
+            next[retirement::FIELD] =
+                serde_json::to_value(selection).map_err(|error| error.to_string())?;
+        } else if previous.get(retirement::FIELD).is_some() {
+            return Err("an existing retirement selection must be explicitly reselected for the new recovery".into());
+        }
         let mut requests = validated_state(previous)?
             .map(|state| state.requests)
             .unwrap_or_default();
@@ -816,7 +1008,7 @@ pub(crate) fn recover(
         }
         requests.push(AppliedRequest {
             request_id: request.request_id.to_owned(),
-            request_sha256,
+            request_sha256: request_sha256.to_owned(),
             preview_sha256,
         });
         next[FIELD] = serde_json::to_value(RecoveryState {
@@ -830,6 +1022,18 @@ pub(crate) fn recover(
     Ok(
         json!({"kind":"native_goal_recovery_applied","readOnly":false,
         "event":record,"currentStatus":crate::emitted::goal_status(&owner_loaded.path)}),
+    )
+}
+
+fn retirement_preview(legacy: &str, selection: Option<&retirement::Selection>) -> String {
+    selection.map_or_else(
+        || legacy.to_owned(),
+        |selection| {
+            hash::value(
+                &json!({"domain":"exitbind.native-goal-retirement-preview.v1",
+            "recoveryPreviewSha256":legacy,"selectionSha256":retirement::digest(selection)}),
+            )
+        },
     )
 }
 

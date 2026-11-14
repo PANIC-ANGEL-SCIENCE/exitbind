@@ -167,6 +167,35 @@ normal trusted Git index and status observations, not a claim that a Git
 SHA-1 object name has SHA-256 collision resistance. The non-Git walk limits
 remain separate; Git listing, byte and request-time limits still apply.
 
+Native `goal recover` may additionally select terminal blocked Source Works
+for uncredited retirement. `--retirements` takes a JSON array whose objects
+contain exact `work`, `reason`, and accepted `replacement` Work IDs, and the
+owner must explicitly supply `--source-writers-quiesced`. This assertion means
+that all writers of the selected Source Works, including older producers,
+remain stopped through application and every later governed use. It is not an
+OS fence and does not excuse an observable active or unknown operation, pending
+admission, child, held result, changed claim, or unavailable evidence. If that
+condition cannot be maintained, obtain a fresh owner selection. Preview and
+apply use the exact emitted binding; the Source membership and the retired
+Work's unaccepted ledger and accounting remain unchanged. The replacement's
+recorded acceptance is a selection basis, not credit for the old Work, and a
+current checked and reviewed integration is still required.
+
+The selection is an optional top-level Goal record field. Older readers retain
+their known fields, but cannot validate a new subset integration; a historical
+closed display is not a current readiness decision. If an old writer removes
+the optional field, the latest absence wins: a later reader requires a fresh
+selection rather than restoring authority from an older event. With no
+selection, the earlier recovery request and integration digests are unchanged.
+The selection also binds the Goal text; an update that changes that text drops
+the selection and requires a new explicit owner decision, even if the Goal ID
+is unchanged. Same-Goal category updates preserve it.
+Read-only Goal observation uses cooperative limits and reports unavailable
+currentness when it cannot establish the evidence; these limits are not a hard
+operating-system latency guarantee. SessionStart does not revalidate previous
+task progress: it shows Goal metadata while omitting current task counts until
+an actual observation is performed.
+
 For a compact completion response, close the whole conversation Goal with
 `goal close --direct --goal-id ID --view event --json`. The response carries the
 completion event and `presentation.terminal`; direct completion has no `EXIT

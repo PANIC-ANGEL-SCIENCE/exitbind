@@ -115,6 +115,8 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                     "source-config",
                     "historical-fixtures",
                     "endpoint-configs",
+                    "retirements",
+                    "source-writers-quiesced",
                     "request-id",
                     "reason",
                     "current-binding",
@@ -146,6 +148,8 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                         .map(String::as_str)
                         .unwrap_or(""),
                     endpoint_configs: a.options.get("endpoint-configs").map(String::as_str),
+                    retirements: a.options.get("retirements").map(String::as_str),
+                    source_writers_quiesced: a.flags.contains_key("source-writers-quiesced"),
                     request_id: option(a, "request-id", "goal recover requires --request-id ID")?,
                     reason: option(a, "reason", "goal recover requires --reason TEXT")?,
                     apply: a.flags.contains_key("apply"),

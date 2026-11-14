@@ -59,7 +59,33 @@ pub(crate) fn build(
     host: &str,
     now: &str,
 ) -> Result<Value, String> {
-    let Some(record) = super::read(root)? else {
+    if crate::run::inputs::active_resume_budget().is_some() {
+        return build_bounded(loaded, root, journal, host, now);
+    }
+    let mut budget = crate::run::inputs::ResumeInputBudget::new();
+    crate::run::inputs::with_resume_budget(&mut budget, |_| {
+        build_bounded(loaded, root, journal, host, now)
+    })
+}
+
+fn build_bounded(
+    loaded: &Loaded,
+    root: &Path,
+    journal: Journal,
+    host: &str,
+    now: &str,
+) -> Result<Value, String> {
+    let record = match super::read_for_recovery(root) {
+        Ok(record) => record,
+        Err(_) => {
+            return Ok(
+                json!({"kind":KIND,"version":1,"host":host,"journal":journal.name(),
+                "state":"unavailable","currentReadiness":{"state":"unknown","reason":"goal_journal_unavailable"},
+                "writtenAt":now}),
+            );
+        }
+    };
+    let Some(record) = record else {
         return Ok(
             json!({"kind":KIND,"version":1,"host":host,"journal":journal.name(),
             "state":"none","revision":Value::Null,"writtenAt":now}),
@@ -73,9 +99,16 @@ pub(crate) fn build(
     if limited_resume() {
         return Ok(metadata_only(&record, journal, host, now));
     }
-    let presentation =
-        super::presentation_for_selected(loaded, Some(&record), root, journal == Journal::Project)?;
-    if limited_resume() {
+    let presentation = match super::presentation_for_selected(
+        loaded,
+        Some(&record),
+        root,
+        journal == Journal::Project,
+    ) {
+        Ok(presentation) => presentation,
+        Err(_) => return Ok(metadata_only(&record, journal, host, now)),
+    };
+    if limited_resume() || presentation["currentReadiness"]["state"] == "unknown" {
         return Ok(metadata_only(&record, journal, host, now));
     }
     let progress = &presentation["goalProgress"];
@@ -118,6 +151,9 @@ pub(crate) fn build(
     let goal = record["goal"].as_str().unwrap_or_default();
     let lessons = crate::memory::lessons::deliverable(loaded, Some(goal).filter(|g| !g.is_empty()))
         .and_then(Result::ok);
+    if limited_resume() {
+        return Ok(metadata_only(&record, journal, host, now));
+    }
     Ok(json!({
         "kind":KIND,"version":1,"host":host,"journal":journal.name(),
         "state":if closed {"closed"} else {"open"},
@@ -126,6 +162,7 @@ pub(crate) fn build(
         "requirements":requirements,"met":met,"total":progress["tasks"].as_array().map_or(0, Vec::len),
         "currentWork":current_work,"nextAction":next,"lessonCount":lessons,
         "revision":record["revision"],"eventSha256":record["eventSha256"],"writtenAt":now,
+        "currentReadiness":presentation["currentReadiness"],
     }))
 }
 
@@ -136,7 +173,8 @@ fn metadata_only(record: &Value, journal: Journal, host: &str, now: &str) -> Val
     json!({"kind":KIND,"version":1,"host":host,"journal":journal.name(),
         "state":if record["closure"]["closed"] == true {"closed"} else {"open"},
         "goalId":record["goalId"],"goal":bounded(record["goal"].as_str().unwrap_or_default()),
-        "revision":record["revision"],"eventSha256":record["eventSha256"],"writtenAt":now})
+        "revision":record["revision"],"eventSha256":record["eventSha256"],"writtenAt":now,
+        "currentReadiness":{"state":"unknown","reason":"observation_incomplete"}})
 }
 
 fn closing_route(record: &Value, progress: &Value) -> Value {
@@ -199,7 +237,9 @@ pub(crate) fn refresh_claude_session(
     if let Some((session, snapshot)) =
         recovery.filter(|(session, _)| session.host == "claude" && session.reports(identity))
     {
-        let _ = refresh_recovery_metadata(loaded, session, snapshot);
+        if refresh_recovery_metadata(loaded, session, snapshot).is_err() {
+            mark_recovery_unavailable(loaded, session);
+        }
         return;
     }
     let Ok(Some(session)) = super::native::host_session_readonly("claude", identity) else {
@@ -212,10 +252,42 @@ pub(crate) fn refresh_claude_session(
     if read(&path).is_some_and(|previous| previous["journal"] == "project") {
         return;
     }
-    let Ok(Some(snapshot)) = session.recovery_snapshot(super::native::Access::ReadExisting) else {
+    let snapshot = match session.recovery_snapshot(super::native::Access::ReadExisting) {
+        Ok(Some(snapshot)) => snapshot,
+        _ => {
+            mark_recovery_unavailable(loaded, &session);
+            return;
+        }
+    };
+    if refresh_recovery_metadata(loaded, &session, &snapshot).is_err() {
+        mark_recovery_unavailable(loaded, &session);
+    }
+}
+
+/// A failed recovery must not leave an owner session's old progress looking
+/// current. Never replace another owner's or explicitly selected project view.
+fn mark_recovery_unavailable(loaded: &Loaded, session: &super::native::Session) {
+    let Ok(scope) = super::native::scope_for_with_access(
+        loaded,
+        session.clone(),
+        false,
+        super::native::Access::ReadExisting,
+    ) else {
         return;
     };
-    let _ = refresh_recovery_metadata(loaded, &session, &snapshot);
+    if !scope.owner_matches {
+        return;
+    }
+    let Ok(path) = path_for_key(&session.selector_key) else {
+        return;
+    };
+    if !read(&path).is_some_and(|previous| previous["journal"] == "session") {
+        return;
+    }
+    let state = json!({"kind":KIND,"version":1,"host":session.host,"journal":"session",
+        "state":"unavailable","currentReadiness":{"state":"unknown","reason":"goal_journal_unavailable"},
+        "writtenAt":crate::memory::state::now()});
+    let _ = write(&path, &state);
 }
 
 fn refresh_recovery_metadata(
@@ -246,13 +318,13 @@ fn refresh_recovery_metadata(
     write(&path, &state)
 }
 
-/// Reuse progress only when this display names the same session journal and
-/// exact Goal event. An adopted session's display does not record the target
-/// journal key, so its older progress cannot be proven to name that journal.
+/// The Goal event preserves identity and historical closure, but does not
+/// establish that earlier task evidence is still current. SessionStart does
+/// not re-evaluate that evidence, even when the Goal event is unchanged.
 pub(super) fn recovery_metadata(
     session: &super::native::Session,
     record: Option<&Value>,
-    previous: Option<&Value>,
+    _previous: Option<&Value>,
     now: &str,
 ) -> Result<Value, String> {
     let Some(record) = record else {
@@ -280,34 +352,11 @@ pub(super) fn recovery_metadata(
         .as_str()
         .filter(|event| super::native::valid_hash(event))
         .ok_or("native Goal display event is unavailable")?;
-    let mut state = json!({"kind":KIND,"version":1,"host":session.host,"journal":"session",
+    let state = json!({"kind":KIND,"version":1,"host":session.host,"journal":"session",
         "state":if closed {"closed"} else {"open"},
         "goalId":goal_id,"goal":bounded(goal),
-        "revision":revision,"eventSha256":event,"writtenAt":now});
-    let same_event = previous.filter(|old| {
-        !session.adopted()
-            && old["journal"] == "session"
-            && old["host"] == session.host
-            && old["goalId"] == record["goalId"]
-            && old["revision"] == record["revision"]
-            && record["eventSha256"].as_str().is_some()
-            && old["eventSha256"] == record["eventSha256"]
-    });
-    if let Some(previous) = same_event {
-        for field in [
-            "closingRoute",
-            "requirements",
-            "met",
-            "total",
-            "currentWork",
-            "nextAction",
-            "lessonCount",
-        ] {
-            if let Some(value) = previous.get(field) {
-                state[field] = value.clone();
-            }
-        }
-    }
+        "revision":revision,"eventSha256":event,"writtenAt":now,
+        "currentReadiness":{"state":"unknown","reason":"currentness_not_observed"}});
     Ok(state)
 }
 
@@ -368,7 +417,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn session_start_keeps_only_progress_bound_to_its_current_journal_event() {
+    fn session_start_does_not_reuse_unverified_progress_even_for_same_event() {
         let mut session = super::super::native::Session {
             host: "claude",
             key: "a".repeat(64),
@@ -391,8 +440,9 @@ mod tests {
             "currentWork",
             "closingRoute",
         ] {
-            assert_eq!(same[field], previous[field], "{field}");
+            assert!(same.get(field).is_none(), "unverified {field}");
         }
+        assert_eq!(same["currentReadiness"]["state"], "unknown");
         record["eventSha256"] = json!("c".repeat(64));
         record["closure"]["closed"] = json!(true);
         let changed = recovery_metadata(&session, Some(&record), Some(&previous), "now").unwrap();

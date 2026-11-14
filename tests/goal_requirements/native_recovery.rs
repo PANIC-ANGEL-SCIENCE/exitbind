@@ -157,6 +157,43 @@ fn source_member(source: &Project) -> String {
     work
 }
 
+fn blocked_source_member(source: &Project, config: &Path) -> String {
+    let blocked = begin_in(
+        source,
+        config,
+        "Abandoned observer direction",
+        "sh check.sh",
+        &[],
+    );
+    let mut next = source.value_with_config(
+        &["work", "next", &blocked, "--json", "--full"],
+        None,
+        config,
+    );
+    while next["next"]["action"] == "lead_decision" {
+        source.return_stage_with_config(&blocked, &next["next"], "scoped", config);
+        next = source.value_with_config(
+            &["work", "next", &blocked, "--json", "--full"],
+            None,
+            config,
+        );
+    }
+    assert_eq!(next["next"]["role"], "worker");
+    source.value_with_config(
+        &[
+            "work",
+            "return",
+            &blocked,
+            next["next"]["assignment"].as_str().unwrap(),
+            "--outcome",
+            "blocked",
+        ],
+        Some("This distinct observer direction is blocked; it is not accepted.\n"),
+        config,
+    );
+    blocked
+}
+
 fn accept_recovery_integration(source: &Project, config: &Path) -> String {
     let integration = begin_in(
         source,
@@ -205,6 +242,21 @@ fn owner_status_offers_a_read_only_foreign_source_preview_without_credit() {
         }
     }
     assert!(!argv.iter().any(|word| word == "--apply"));
+    // Give the existing display a recognizable value so that a redundant
+    // post-preview refresh cannot pass merely because both writes shared a
+    // timestamp. The display belongs to this disposable native session.
+    let display_dir = owner.native_session.as_ref().unwrap().1.join("display");
+    let displays = fs::read_dir(display_dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
+        .collect::<Vec<_>>();
+    assert_eq!(displays.len(), 1);
+    let display_path = &displays[0];
+    let mut display: Value = serde_json::from_slice(&fs::read(display_path).unwrap()).unwrap();
+    display["writtenAt"] = json!("preview-display-sentinel");
+    let before_display = serde_json::to_vec(&display).unwrap();
+    fs::write(display_path, &before_display).unwrap();
     let preview = owner.call_exact_argv(&argv);
     assert!(
         preview.status.success(),
@@ -227,6 +279,7 @@ fn owner_status_offers_a_read_only_foreign_source_preview_without_credit() {
     );
     assert_eq!(fs::read(&journal).unwrap(), before_goal);
     assert_eq!(fs::read(&work_ledger).unwrap(), before_work);
+    assert_eq!(fs::read(display_path).unwrap(), before_display);
     assert_eq!(
         owner.status()["goalProgress"]["journeyCompletion"]["state"],
         "blocked"
@@ -272,6 +325,463 @@ fn recovery_form_keeps_pending_and_ambiguous_sources_uncredited() {
         ambiguous["goalProgress"]["journeyCompletion"]["state"],
         "blocked"
     );
+}
+
+#[test]
+fn uncredited_retirement_refuses_a_still_active_source_work() {
+    let (owner, source) = owner_and_source("native-recovery-retirement-active");
+    let config = source.root.join("exitbind.json");
+    let replacement = source_member(&source);
+    let active = begin_in(
+        &source,
+        &config,
+        "An active source Work",
+        "sh check.sh",
+        &[],
+    );
+    let initial = recovery_preview(&owner, &source, "", "active-base-recovery");
+    apply_recovery(&owner, &initial);
+    let before_goal = fs::read(native_journal(&owner)).unwrap();
+    let active_ledger = source.root.join(".exitbind/runs").join(format!(
+        "work-{}.jsonl",
+        active.strip_prefix("smw_").unwrap()
+    ));
+    let before_work = fs::read(&active_ledger).unwrap();
+    let selection = json!([{"work":active, "reason":"Do not retire active work",
+        "replacement":replacement}])
+    .to_string();
+    let refused = owner.call(
+        &[
+            "goal",
+            "recover",
+            "--source-config",
+            config.to_str().unwrap(),
+            "--retirements",
+            &selection,
+            "--source-writers-quiesced",
+            "--request-id",
+            "active-retirement",
+            "--reason",
+            "Active work is not an eligible abandoned direction",
+            "--json",
+        ],
+        None,
+    );
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("terminal blocked"));
+    assert_eq!(fs::read(native_journal(&owner)).unwrap(), before_goal);
+    assert_eq!(fs::read(active_ledger).unwrap(), before_work);
+}
+
+#[test]
+fn explicit_uncredited_retirement_preserves_members_and_requires_a_new_integration() {
+    let (owner, source) = owner_and_source("native-recovery-uncredited-retirement");
+    let config = source.root.join("exitbind.json");
+    let replacement = source_member(&source);
+    let blocked = blocked_source_member(&source, &config);
+    let initial = recovery_preview(&owner, &source, "", "uncredited-base-recovery");
+    apply_recovery(&owner, &initial);
+    let old_work = source.root.join(".exitbind/runs").join(format!(
+        "work-{}.jsonl",
+        blocked.strip_prefix("smw_").unwrap()
+    ));
+    let before_work = fs::read(&old_work).unwrap();
+    let before_goal = fs::read(native_journal(&owner)).unwrap();
+    let members = owner.status()["journeyMembers"].clone();
+    let selected = json!([{"work":blocked.as_str(),"reason":"The owner selected the already accepted alternative", "replacement":replacement.as_str()}]).to_string();
+    let args = [
+        "goal",
+        "recover",
+        "--source-config",
+        config.to_str().unwrap(),
+        "--retirements",
+        &selected,
+        "--request-id",
+        "uncredited-1",
+        "--reason",
+        "Select the alternative explicitly",
+        "--json",
+    ];
+    let without_attestation = owner.call(&args, None);
+    assert!(!without_attestation.status.success());
+    assert!(
+        String::from_utf8_lossy(&without_attestation.stderr).contains("source-writers-quiesced")
+    );
+    assert_eq!(fs::read(native_journal(&owner)).unwrap(), before_goal);
+    let mut attested = args.to_vec();
+    attested.push("--source-writers-quiesced");
+
+    // A retained result from any assignment remains an unresolved fact. Use
+    // the real held-file naming format with a different fixture assignment.
+    let held_dir = source.root.join(".exitbind/held");
+    fs::create_dir_all(&held_dir).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(&held_dir, fs::Permissions::from_mode(0o700)).unwrap();
+    let retained = b"an earlier assignment's retained result";
+    let held = held_dir.join(format!(
+        "hld_{}_{:x}_{:x}.bin",
+        blocked.strip_prefix("smw_").unwrap(),
+        Sha256::digest(b"an earlier assignment"),
+        Sha256::digest(retained)
+    ));
+    fs::write(&held, retained).unwrap();
+    let held_refusal = owner.call(&attested, None);
+    assert!(!held_refusal.status.success());
+    assert!(String::from_utf8_lossy(&held_refusal.stderr).contains("retained result"));
+    assert_eq!(fs::read(native_journal(&owner)).unwrap(), before_goal);
+    assert_eq!(fs::read(&old_work).unwrap(), before_work);
+    fs::remove_file(&held).unwrap();
+
+    let wrong_state = json!([{"work":replacement.as_str(), "reason":"not blocked", "replacement":blocked.as_str()}]).to_string();
+    let wrong_args = [
+        "goal",
+        "recover",
+        "--source-config",
+        config.to_str().unwrap(),
+        "--retirements",
+        &wrong_state,
+        "--source-writers-quiesced",
+        "--request-id",
+        "uncredited-wrong-state",
+        "--reason",
+        "Reject accepted Work",
+        "--json",
+    ];
+    let refused = owner.call(&wrong_args, None);
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("terminal blocked"));
+    assert_eq!(fs::read(native_journal(&owner)).unwrap(), before_goal);
+    let foreign = Project::new("native-recovery-retirement-foreign");
+    let foreign_config = foreign.root.join("exitbind.json");
+    let foreign_work = begin_in(&foreign, &foreign_config, "Foreign work", "true", &[]);
+    let foreign_selection = json!([{"work":blocked.as_str(), "reason":"foreign replacement",
+        "replacement":foreign_work.as_str()}])
+    .to_string();
+    let foreign_args = [
+        "goal",
+        "recover",
+        "--source-config",
+        config.to_str().unwrap(),
+        "--retirements",
+        &foreign_selection,
+        "--source-writers-quiesced",
+        "--request-id",
+        "uncredited-foreign",
+        "--reason",
+        "Reject foreign work",
+        "--json",
+    ];
+    let refused = owner.call(&foreign_args, None);
+    assert!(!refused.status.success());
+    assert_eq!(fs::read(native_journal(&owner)).unwrap(), before_goal);
+    assert_eq!(fs::read(&old_work).unwrap(), before_work);
+    let output = owner.call(&attested, None);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let preview: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(preview["readOnly"], true);
+    assert_eq!(
+        preview["retirementSelection"]["items"][0]["member"]["work"],
+        blocked
+    );
+    assert_eq!(
+        preview["retirementSelection"]["items"][0]["replacement"]["member"]["work"],
+        replacement
+    );
+    assert_eq!(fs::read(native_journal(&owner)).unwrap(), before_goal);
+    // An intervening owner observation invalidates the exact preview binding.
+    incorporate_native_generic_goal(
+        &owner,
+        "original-conversation",
+        "Complete the original conversation work with current accepted evidence",
+    );
+    let changed_goal = fs::read(native_journal(&owner)).unwrap();
+    let stale_argv = preview["applyArgv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|part| part.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    let stale = owner.call_exact_argv(&stale_argv);
+    assert!(!stale.status.success());
+    assert_eq!(fs::read(native_journal(&owner)).unwrap(), changed_goal);
+    assert_eq!(fs::read(&old_work).unwrap(), before_work);
+    let id = attested
+        .iter()
+        .position(|arg| *arg == "uncredited-1")
+        .unwrap();
+    attested[id] = "uncredited-2";
+    let fresh = owner.call(&attested, None);
+    assert!(
+        fresh.status.success(),
+        "{}",
+        String::from_utf8_lossy(&fresh.stderr)
+    );
+    let preview: Value = serde_json::from_slice(&fresh.stdout).unwrap();
+    let applied = apply_recovery(&owner, &preview);
+    assert_eq!(applied["kind"], "native_goal_recovery_applied");
+    let after = owner.status();
+    assert_eq!(after["journeyMembers"], members);
+    assert_eq!(
+        after["goalProgress"]["journeyCompletion"]["members"]["retiredUncredited"],
+        1
+    );
+    assert_eq!(
+        after["goalProgress"]["journeyCompletion"]["state"],
+        "blocked"
+    );
+    assert_eq!(fs::read(&old_work).unwrap(), before_work);
+
+    // An ordinary owner update with the same Goal text preserves the exact
+    // selection; it is still bound to the same explicitly selected scope.
+    incorporate_native_generic_goal(
+        &owner,
+        "original-conversation",
+        "Complete the original conversation work with current accepted evidence",
+    );
+    assert_eq!(
+        owner.status()["goalProgress"]["journeyCompletion"]["members"]["retiredUncredited"],
+        1
+    );
+    let integration = accept_recovery_integration(&source, &config);
+    let current = owner.status();
+    assert_eq!(
+        current["goalProgress"]["journeyCompletion"]["state"], "current",
+        "{current}"
+    );
+    assert_eq!(
+        current["goalProgress"]["journeyCompletion"]["members"]["retiredUncredited"],
+        1
+    );
+    assert_eq!(fs::read(&old_work).unwrap(), before_work);
+    let closed = owner.value(
+        &[
+            "goal",
+            "close",
+            "--goal-id",
+            "original-conversation",
+            "--result-ref",
+            &integration,
+        ],
+        None,
+    );
+    assert_eq!(closed["effect"], "committed");
+    assert_eq!(fs::read(&old_work).unwrap(), before_work);
+
+    // A later explicit selection with a different reason is a different
+    // integration binding even when the same original members remain.
+    incorporate_native_generic_goal(
+        &owner,
+        "original-conversation",
+        "Complete the original conversation work with current accepted evidence",
+    );
+    let changed_selection = json!([{"work":blocked.as_str(), "reason":"A newly stated owner decision", "replacement":replacement.as_str()}]).to_string();
+    let changed = owner.value(
+        &[
+            "goal",
+            "recover",
+            "--source-config",
+            config.to_str().unwrap(),
+            "--retirements",
+            &changed_selection,
+            "--source-writers-quiesced",
+            "--request-id",
+            "uncredited-3",
+            "--reason",
+            "Record the new selection explicitly",
+            "--json",
+        ],
+        None,
+    );
+    assert_ne!(changed["currentBinding"], preview["currentBinding"]);
+    apply_recovery(&owner, &changed);
+    let changed_status = owner.status();
+    assert_eq!(
+        changed_status["goalProgress"]["journeyCompletion"]["state"],
+        "blocked"
+    );
+    assert_eq!(fs::read(&old_work).unwrap(), before_work);
+    incorporate_native_generic_goal(
+        &owner,
+        "original-conversation",
+        "A materially different conversation Goal",
+    );
+    let new_goal = owner.status();
+    assert!(new_goal.get("nativeGoalRetirementSelection").is_none());
+    assert_ne!(
+        new_goal["goalProgress"]["journeyCompletion"]["state"],
+        "current"
+    );
+    assert_eq!(fs::read(&old_work).unwrap(), before_work);
+}
+
+#[test]
+#[ignore = "requires an independently pinned pre-retirement 0.31.28 executable"]
+fn old_reader_and_old_writer_do_not_restore_retirement_authority() {
+    let old = std::env::var("EXITBIND_TEST_PREVIOUS_EXECUTABLE")
+        .expect("set EXITBIND_TEST_PREVIOUS_EXECUTABLE to the exact old producer");
+    let expected_sha = std::env::var("EXITBIND_TEST_PREVIOUS_SHA256")
+        .expect("set EXITBIND_TEST_PREVIOUS_SHA256 to the verified old producer digest");
+    assert_eq!(
+        format!("{:x}", Sha256::digest(fs::read(&old).unwrap())),
+        expected_sha
+    );
+    let (owner, source) = owner_and_source("native-recovery-old-writer");
+    let config = source.root.join("exitbind.json");
+    let replacement = source_member(&source);
+    let blocked = blocked_source_member(&source, &config);
+    let initial = recovery_preview(&owner, &source, "", "old-reader-base-recovery");
+    apply_recovery(&owner, &initial);
+    let selected = json!([{"work":blocked.as_str(), "reason":"Select the accepted alternative", "replacement":replacement.as_str()}]).to_string();
+    let preview = owner.value(
+        &[
+            "goal",
+            "recover",
+            "--source-config",
+            config.to_str().unwrap(),
+            "--retirements",
+            &selected,
+            "--source-writers-quiesced",
+            "--request-id",
+            "old-reader-selection",
+            "--reason",
+            "Preserve the original blocked Work",
+            "--json",
+        ],
+        None,
+    );
+    apply_recovery(&owner, &preview);
+    let _integration = accept_recovery_integration(&source, &config);
+    assert_eq!(
+        owner.status()["goalProgress"]["journeyCompletion"]["state"],
+        "current"
+    );
+
+    let owner_config = owner
+        .root
+        .join("exitbind.json")
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let old_status = vec![
+        old.clone(),
+        "goal".into(),
+        "status".into(),
+        "--json".into(),
+        "--config".into(),
+        owner_config.clone(),
+    ];
+    let response = owner.call_exact_argv(&old_status);
+    assert!(
+        response.status.success(),
+        "{}",
+        String::from_utf8_lossy(&response.stderr)
+    );
+    let old_view: Value = serde_json::from_slice(&response.stdout).unwrap();
+    assert_eq!(old_view["journeyMembers"].as_array().unwrap().len(), 2);
+    assert_ne!(
+        old_view["goalProgress"]["journeyCompletion"]["state"],
+        "current"
+    );
+
+    let old_append = vec![
+        old,
+        "goal".into(),
+        "incorporate".into(),
+        "--goal-id".into(),
+        "original-conversation".into(),
+        "--goal".into(),
+        "Complete the original conversation work with current accepted evidence".into(),
+        "--config".into(),
+        owner_config,
+    ];
+    let output = owner.call_exact_argv(&old_append);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let after_old = owner.status();
+    assert!(after_old.get("nativeGoalRetirementSelection").is_none());
+    assert_eq!(after_old["journeyMembers"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        after_old["goalProgress"]["journeyCompletion"]["state"],
+        "blocked"
+    );
+    let replay = apply_recovery(&owner, &preview);
+    assert_eq!(replay["kind"], "native_goal_recovery_replayed");
+    assert_eq!(replay["historical"], true);
+    let latest = owner.status();
+    assert!(latest.get("nativeGoalRetirementSelection").is_none());
+    assert_eq!(
+        latest["goalProgress"]["journeyCompletion"]["state"],
+        "blocked"
+    );
+}
+
+#[test]
+fn uncredited_retirement_refuses_an_existing_successor_claim() {
+    let (owner, source) = owner_and_source("native-recovery-retirement-claim");
+    let config = source.root.join("exitbind.json");
+    let replacement = source_member(&source);
+    let blocked = blocked_source_member(&source, &config);
+    let initial = recovery_preview(&owner, &source, "", "claim-base-recovery");
+    apply_recovery(&owner, &initial);
+    let old_ledger = format!(
+        ".exitbind/runs/work-{}.jsonl",
+        blocked.strip_prefix("smw_").unwrap()
+    );
+    let successor_ledger = format!(".exitbind/runs/work-{}.jsonl", "d".repeat(64));
+    let claim = source.call_with_config(
+        &[
+            "run",
+            "supersede",
+            &old_ledger,
+            "--workflow",
+            "change",
+            "--goal",
+            "Abandoned observer direction",
+            "--ledger",
+            &successor_ledger,
+            "--review-policy",
+            "required",
+            "--json",
+        ],
+        None,
+        &config,
+    );
+    assert!(
+        claim.status.success(),
+        "{}",
+        String::from_utf8_lossy(&claim.stderr)
+    );
+    let before_goal = fs::read(native_journal(&owner)).unwrap();
+    let before_work = fs::read(source.root.join(&old_ledger)).unwrap();
+    let selected = json!([{"work":blocked.as_str(), "reason":"Do not discard a claim", "replacement":replacement.as_str()}]).to_string();
+    let refused = owner.call(
+        &[
+            "goal",
+            "recover",
+            "--source-config",
+            config.to_str().unwrap(),
+            "--retirements",
+            &selected,
+            "--source-writers-quiesced",
+            "--request-id",
+            "claim-refusal",
+            "--reason",
+            "Inspect the existing claim",
+            "--json",
+        ],
+        None,
+    );
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("claimed successor"));
+    assert_eq!(fs::read(native_journal(&owner)).unwrap(), before_goal);
+    assert_eq!(fs::read(source.root.join(old_ledger)).unwrap(), before_work);
 }
 
 #[path = "native_recovery/semantic_repair.rs"]
