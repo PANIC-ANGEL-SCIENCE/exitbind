@@ -6,13 +6,13 @@
     "sha": "d5ead03a5987630df2ced5fb0522570791ab6638"
   },
   "release": {
-    "label": "v0.31.27",
-    "tag": "v0.31.27",
-    "release_id": 443443036
+    "label": "v0.31.28",
+    "tag": "v0.31.28",
+    "release_id": 445368772
   },
   "license": {
     "label": "MIT",
     "spdx": "MIT"
   },
-  "checked_at": "2026-11-14T14:41:09.484977+00:00"
+  "checked_at": "2026-11-14T14:53:09.429561+00:00"
 }
