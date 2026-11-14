@@ -424,7 +424,7 @@ fn parse_index(bytes: &[u8]) -> Option<BTreeMap<PathBuf, String>> {
 
 #[cfg(unix)]
 fn parse_status(bytes: &[u8], root: &Path, git_root: &Path) -> Option<BTreeSet<PathBuf>> {
-    let prefix = root.strip_prefix(git_root).ok()?;
+    let prefix = crate::project::path::inputs::within(git_root, root)?;
     let mut changed = BTreeSet::new();
     for row in bytes.split(|byte| *byte == 0).filter(|row| !row.is_empty()) {
         if row.len() < 4
@@ -691,6 +691,12 @@ mod tests {
         assert!(parse_status(
             b" M outside/file\0",
             Path::new("/repo/nested"),
+            Path::new("/repo")
+        )
+        .is_none());
+        assert!(parse_status(
+            b" M outside/file\0",
+            Path::new("/outside"),
             Path::new("/repo")
         )
         .is_none());

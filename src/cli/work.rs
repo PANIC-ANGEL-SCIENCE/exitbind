@@ -60,6 +60,22 @@ fn current_child_prepare(value: &Value, child: &Value, config: &std::path::Path)
     let Ok(executable) = crate::emitted::executable() else {
         return false;
     };
+    let Ok(expected) = crate::emitted::Route::new([
+        "work",
+        "child",
+        "prepare",
+        work,
+        assignment,
+        "--agent-type",
+        native,
+        "--current-binding",
+        binding,
+    ])
+    .run_by(&executable)
+    .config_text(config)
+    .full_argv() else {
+        return false;
+    };
     let words = argv.iter().map(Value::as_str).collect::<Option<Vec<_>>>();
     let Some(words) = words else { return false };
     let exactly_one_pair = |flag: &str, expected: &str| {
@@ -72,14 +88,9 @@ fn current_child_prepare(value: &Value, child: &Value, config: &std::path::Path)
         && child["sameConfigRequired"] == false
         && words.len() >= 6
         && words[..6]
-            == [
-                executable.as_str(),
-                "work",
-                "child",
-                "prepare",
-                work,
-                assignment,
-            ]
+            .iter()
+            .copied()
+            .eq(expected[..6].iter().map(String::as_str))
         && exactly_one_pair("--current-binding", binding)
         && exactly_one_pair("--agent-type", native)
         && exactly_one_pair("--config", config)
@@ -504,14 +515,20 @@ fn omit_redundant_current_routes(value: &mut Value, executable: &str, config: &s
     let Some(binding) = value["current"]["binding"].as_str() else {
         return;
     };
+    let Ok(expected_full) = crate::emitted::Route::new(["work", "detail", work, "--json"])
+        .run_by(executable)
+        .config_text(config)
+        .full_argv()
+    else {
+        return;
+    };
     if value["effectiveAction"]["exists"] != true
         || value["effectiveAction"]["binding"] != binding
         || value["effectiveAction"]["requiresDetail"] == true
         || value["transportCompletion"]["complete"] == false
         || value["full"]["readOnly"] != true
         || value["full"]["binding"] != binding
-        || value["full"]["command"]
-            != json!([executable, "work", "detail", work, "--json", "--config", config])
+        || value["full"]["command"] != json!(expected_full)
     {
         return;
     }
@@ -556,11 +573,19 @@ fn omit_redundant_current_routes(value: &mut Value, executable: &str, config: &s
         } else {
             return false;
         };
-        route["reference"] == reference
-            && route["command"]
-                == json!([
-                    executable, "work", "expand", work, reference, "--json", "--config", config
-                ])
+        let Ok(expected) = crate::emitted::Route::new([
+            "work",
+            "expand",
+            work.as_str(),
+            reference.as_str(),
+            "--json",
+        ])
+        .run_by(executable)
+        .config_text(config)
+        .full_argv() else {
+            return false;
+        };
+        route["reference"] == reference && route["command"] == json!(expected)
     };
     let all_sections_current = value["current"]["details"]
         .as_object()
@@ -588,6 +613,18 @@ fn omit_redundant_current_routes(value: &mut Value, executable: &str, config: &s
                 .any(|choice| choice["command"]["argv"].is_array())
         });
     let fill = &action["fillRoute"];
+    // This is the explicitly nonexecutable expert template, compared only to
+    // recognize the existing public copy; a choice still has to be supplied.
+    let expected_fill = crate::emitted::Route::new([
+        "work",
+        "fill",
+        work.as_str(),
+        "--current-binding",
+        binding.as_str(),
+    ])
+    .run_by(executable)
+    .config_text(config)
+    .full_argv();
     if has_current_form
         && fill["executable"] == false
         && fill["meaning"] == "template prefix: choose a current form and supply its documented inputs; use its complete command for ordinary execution"
@@ -595,7 +632,9 @@ fn omit_redundant_current_routes(value: &mut Value, executable: &str, config: &s
             object.keys().all(|key| matches!(key.as_str(), "executable" | "meaning" | "sameConfigRequired" | "sameExecutableRequired" | "templatePrefix"))
                 && ["sameConfigRequired", "sameExecutableRequired"].iter().all(|key| fill[*key] == false)
         })
-        && fill["templatePrefix"] == json!([executable, "work", "fill", work, "--current-binding", binding, "--config", config])
+        && expected_fill
+            .as_ref()
+            .is_ok_and(|expected| fill["templatePrefix"] == json!(expected))
     {
         value["effectiveAction"]
             .as_object_mut()
@@ -1035,10 +1074,18 @@ fn omit_self_navigation(help: &mut Value, current: &Value, loaded: &config::Load
     let exact_route = crate::emitted::executable()
         .ok()
         .zip(loaded.path.to_str())
-        .is_some_and(|(executable, config)| {
-            command["argv"] == json!([executable, "work", "next", work, "--config", config])
-        });
-    if exact_route
+        .and_then(|(executable, config)| {
+            crate::emitted::Route::new(["work", "next", work])
+                .run_by(&executable)
+                .config_text(config)
+                .full_argv()
+                .ok()
+        })
+        .filter(|expected| command["argv"] == json!(expected));
+    let exact_args = exact_route
+        .as_ref()
+        .is_some_and(|expected| command["args"] == json!(expected[1..expected.len() - 2]));
+    if exact_args
         && action["actor"] == current["recipient"]["actor"]
         && action["summary"] == "run the pending worker assignment"
         && action.as_object().is_some_and(|object| {
@@ -1051,7 +1098,6 @@ fn omit_self_navigation(help: &mut Value, current: &Value, loaded: &config::Load
                 .keys()
                 .all(|key| matches!(key.as_str(), "args" | "argv" | "program"))
         })
-        && command["args"] == json!(["work", "next", work])
         && command["program"] == "exitbind"
     {
         help.as_object_mut()
@@ -1105,6 +1151,25 @@ mod child_prepare_partial_tests {
         for flag in ["sameExecutableRequired", "sameConfigRequired"] {
             let (mut value, mut child) = fixture();
             child[flag] = json!(true);
+            retain_partial_child_prepare(&mut value, &child, Path::new("/tmp/config")).unwrap();
+            assert_eq!(value["next"]["prepareChild"]["available"], false);
+            assert!(value["next"]["prepareChild"].get("command").is_none());
+        }
+
+        let (mut value, mut child) = fixture();
+        let argv = child["command"].as_array_mut().unwrap();
+        drop(argv.splice(10..10, [json!("--perspectives"), json!("security")]));
+        retain_partial_child_prepare(&mut value, &child, Path::new("/tmp/config")).unwrap();
+        assert_eq!(value["next"]["prepareChild"], child);
+
+        for (flag, argument) in [
+            ("--agent-type", "sonic"),
+            ("--current-binding", "binding"),
+            ("--config", "/tmp/config"),
+        ] {
+            let (mut value, mut child) = fixture();
+            let argv = child["command"].as_array_mut().unwrap();
+            drop(argv.splice(10..10, [json!(flag), json!(argument)]));
             retain_partial_child_prepare(&mut value, &child, Path::new("/tmp/config")).unwrap();
             assert_eq!(value["next"]["prepareChild"]["available"], false);
             assert!(value["next"]["prepareChild"].get("command").is_none());
@@ -1308,6 +1373,41 @@ mod public_step_metadata_tests {
         let before = wrong_binding.clone();
         omit_redundant_current_routes(&mut wrong_binding, "/bin/exitbind", "/tmp/config");
         assert_eq!(wrong_binding, before);
+        for (index, wrong) in [
+            (0, "/other/exitbind"),
+            (3, "other-work"),
+            (6, "/other/config"),
+        ] {
+            let mut wrong_full = original.clone();
+            wrong_full["full"]["command"][index] = json!(wrong);
+            let before = wrong_full.clone();
+            omit_redundant_current_routes(&mut wrong_full, "/bin/exitbind", "/tmp/config");
+            assert_eq!(wrong_full, before);
+        }
+        for (index, wrong) in [(0, "/other/exitbind"), (3, "other-work"), (4, "other-ref")] {
+            let mut wrong_section = original.clone();
+            wrong_section["current"]["details"]["assignment"]["command"][index] = json!(wrong);
+            let expected = wrong_section["current"]["details"].clone();
+            omit_redundant_current_routes(&mut wrong_section, "/bin/exitbind", "/tmp/config");
+            assert_eq!(wrong_section["current"]["details"], expected);
+        }
+        for (index, wrong) in [
+            (0, "/other/exitbind"),
+            (3, "other-work"),
+            (5, "other-binding"),
+            (7, "/other/config"),
+        ] {
+            let mut wrong_fill = original.clone();
+            wrong_fill["effectiveAction"]["fillRoute"]["templatePrefix"][index] = json!(wrong);
+            let expected = wrong_fill["effectiveAction"]["fillRoute"].clone();
+            omit_redundant_current_routes(&mut wrong_fill, "/bin/exitbind", "/tmp/config");
+            assert_eq!(wrong_fill["effectiveAction"]["fillRoute"], expected);
+        }
+        let mut unknown_fill = original.clone();
+        unknown_fill["effectiveAction"]["fillRoute"]["unknown"] = json!("retain");
+        let expected = unknown_fill["effectiveAction"]["fillRoute"].clone();
+        omit_redundant_current_routes(&mut unknown_fill, "/bin/exitbind", "/tmp/config");
+        assert_eq!(unknown_fill["effectiveAction"]["fillRoute"], expected);
         let mut wrong_config = original.clone();
         wrong_config["current"]["details"]["assignment"]["command"][7] = json!("/other");
         let expected = wrong_config["current"]["details"].clone();
@@ -1318,6 +1418,54 @@ mod public_step_metadata_tests {
         let before = incomplete.clone();
         omit_redundant_current_routes(&mut incomplete, "/bin/exitbind", "/tmp/config");
         assert_eq!(incomplete, before);
+    }
+
+    #[test]
+    fn self_navigation_is_omitted_only_for_the_exact_current_route_and_args() {
+        let loaded = config::Loaded {
+            config: json!({}),
+            agents: Default::default(),
+            lead: None,
+            architecture_contract: None,
+            capabilities: Vec::new(),
+            workflows: Default::default(),
+            verification_preparation: None,
+            path: "/tmp/config".into(),
+            control_root: "/tmp".into(),
+            product_root: "/tmp".into(),
+            state_root: "/tmp".into(),
+            mode: crate::project::layout_types::Mode::Portable,
+            project_id: None,
+            source: String::new(),
+        };
+        let executable = crate::emitted::executable().unwrap();
+        let current = json!({"recipient":{"actor":"worker"}});
+        let original = json!({"nextAction":{"actor":"worker",
+            "summary":"run the pending worker assignment", "command":{"program":"exitbind",
+                "args":["work","next","w"],
+                "argv":[executable,"work","next","w","--config","/tmp/config"]}}});
+        let mut matching = original.clone();
+        omit_self_navigation(&mut matching, &current, &loaded, "w");
+        assert!(matching.get("nextAction").is_none());
+
+        for (pointer, wrong) in [
+            ("/nextAction/actor", "lead"),
+            ("/nextAction/command/argv/0", "/other/exitbind"),
+            ("/nextAction/command/argv/3", "other-work"),
+            ("/nextAction/command/argv/5", "/other/config"),
+            ("/nextAction/command/args/2", "other-work"),
+        ] {
+            let mut different = original.clone();
+            *different.pointer_mut(pointer).unwrap() = json!(wrong);
+            let before = different.clone();
+            omit_self_navigation(&mut different, &current, &loaded, "w");
+            assert_eq!(different, before);
+        }
+        let mut unknown = original.clone();
+        unknown["nextAction"]["command"]["unknown"] = json!("retain");
+        let before = unknown.clone();
+        omit_self_navigation(&mut unknown, &current, &loaded, "w");
+        assert_eq!(unknown, before);
     }
 
     #[test]
@@ -1607,16 +1755,16 @@ fn print_compact_read(loaded: &config::Loaded, value: &serde_json::Value) -> Res
                 *value.pointer_mut(pointer).expect("existing route") = previous;
             }
         }
-        let mut route = if value["status"] == "resumed" {
-            crate::emitted::Route::new(["work", "resume", "--full", "--json"])
-        } else if let Some(work) = value["work"].as_str() {
-            crate::emitted::Route::new(["work", "detail", work, "--json"])
-        } else {
-            crate::emitted::Route::new(["work", "resume", "--full", "--json"])
-        }
-        .config(&loaded.path)
-        .within(1024)
-        .command_json();
+        let mut route = match (value["status"] == "resumed", value["work"].as_str()) {
+            (false, Some(work)) => crate::emitted::Route::new(["work", "detail", work, "--json"])
+                .config(&loaded.path)
+                .within(1024)
+                .command_json(),
+            _ => crate::emitted::Route::new(["work", "resume", "--full", "--json"])
+                .config(&loaded.path)
+                .within(1024)
+                .command_json(),
+        };
         crate::emitted::complete_known(&mut route, &loaded.path);
         route["readOnly"] = json!(true);
         if !grouped_retained {
