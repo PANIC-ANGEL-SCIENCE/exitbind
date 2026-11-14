@@ -633,9 +633,7 @@ fn public_proposal_path(loaded: &Loaded, argument: &str) -> Option<String> {
     }
     let root = loaded.product_root.canonicalize().ok()?;
     let resolved = loaded.product_root.join(&relative).canonicalize().ok()?;
-    if crate::project::path::inputs::within(&root, &resolved).is_none() {
-        return None;
-    }
+    crate::project::path::inputs::within(&root, &resolved)?;
     let state = loaded.state_root.canonicalize().ok()?;
     if (state != root && crate::project::path::inputs::within(&state, &resolved).is_some())
         || loaded
