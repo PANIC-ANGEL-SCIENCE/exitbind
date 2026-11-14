@@ -237,13 +237,85 @@ pub(crate) fn refresh(
     session: &super::native::Session,
     journal: Option<Journal>,
 ) -> Result<(), String> {
-    if crate::run::inputs::active_resume_budget().is_some() {
+    if let Some(mut budget) = crate::run::inputs::active_resume_budget() {
+        if let Some(reason) = budget.limited_reason() {
+            return refresh_limited(loaded, session, journal, reason);
+        }
         return refresh_bounded(loaded, session, journal);
     }
     let mut budget = crate::run::inputs::ResumeInputBudget::new();
     crate::run::inputs::with_resume_budget(&mut budget, |_| {
         refresh_bounded(loaded, session, journal)
     })
+}
+
+/// A limited resume cannot use its exhausted budget to confirm an owner. Use a
+/// separate bounded scope only to revalidate an existing session display and
+/// replace its progress with unknown metadata; the parent budget stays limited.
+fn refresh_limited(
+    loaded: &Loaded,
+    session: &super::native::Session,
+    journal: Option<Journal>,
+    reason: &str,
+) -> Result<(), String> {
+    if journal == Some(Journal::Project) {
+        return Ok(());
+    }
+    let mut owner_budget = crate::run::inputs::ResumeInputBudget::new();
+    crate::run::inputs::with_resume_budget(&mut owner_budget, |budget| {
+        let path = path_for_key(&session.selector_key)?;
+        let Some((previous_bytes, previous)) = read_limited_display(&path) else {
+            return Ok(());
+        };
+        budget.check().map_err(str::to_owned)?;
+        if previous["journal"] != "session" || previous["host"] != session.host {
+            return Ok(());
+        }
+        let Some(snapshot) = session.recovery_snapshot(super::native::Access::RequireWritable)?
+        else {
+            return Ok(());
+        };
+        budget.check().map_err(str::to_owned)?;
+        let local = super::native::owner_for(loaded)?;
+        if local.identity_sha256 != snapshot.owner.identity_sha256
+            || local.project_id != snapshot.owner.project_id
+        {
+            return Ok(());
+        }
+        let Some(record) = snapshot.latest.as_ref() else {
+            return Ok(());
+        };
+        if read_limited_display(&path)
+            .as_ref()
+            .map(|(bytes, _)| bytes.as_slice())
+            != Some(previous_bytes.as_slice())
+        {
+            return Ok(());
+        }
+        budget.check().map_err(str::to_owned)?;
+        let mut state = metadata_only(
+            record,
+            Journal::Session,
+            session.host,
+            &crate::memory::state::now(),
+        );
+        state["currentReadiness"]["reason"] = json!(reason);
+        write(&path, &state)
+    })
+}
+
+fn read_limited_display(path: &Path) -> Option<(Vec<u8>, Value)> {
+    let bytes = match crate::project::path::secure_bytes_observation_bounded(
+        path.parent()?,
+        path.file_name()?.to_str()?,
+        "native Goal display",
+        MAX_BYTES,
+    ) {
+        crate::project::path::SecureBytesResult::Bytes(bytes) => bytes,
+        _ => return None,
+    };
+    let value: Value = serde_json::from_slice(&bytes).ok()?;
+    (value["kind"] == KIND && value["version"] == 1).then_some((bytes, value))
 }
 
 fn refresh_bounded(

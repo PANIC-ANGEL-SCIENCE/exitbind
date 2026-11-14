@@ -155,6 +155,14 @@ fn assert_direct_state(resumed: &Value, expected: &str) {
     assert!(resumed["presentation"]["terminal"].is_null());
 }
 
+fn session_display_path(project: &Project, session: &str) -> std::path::PathBuf {
+    let key = crate::fixture::digest_value(&json!({"host":"codex","identity":session}));
+    project
+        .session_store
+        .join("display")
+        .join(format!("{key}.json"))
+}
+
 #[test]
 fn blocked_terminal_goal_projection_obeys_resume_input_limit() {
     let project = Project::new("resume-terminal-goal-budget");
@@ -188,22 +196,138 @@ fn blocked_terminal_goal_projection_obeys_resume_input_limit() {
     #[cfg(target_os = "linux")]
     watch.assert_unopened();
 
-    let key = crate::fixture::digest_value(&json!({"host":"codex","identity":session}));
-    let display: Value = serde_json::from_slice(
-        &fs::read(
-            project
-                .session_store
-                .join("display")
-                .join(format!("{key}.json")),
-        )
-        .unwrap(),
-    )
-    .unwrap();
+    let display: Value =
+        serde_json::from_slice(&fs::read(session_display_path(&project, session)).unwrap())
+            .unwrap();
     assert_eq!(display["goalId"], "resume-budget");
     assert_eq!(display["journal"], "session");
     assert_eq!(display["state"], "open");
+    assert_eq!(display["currentReadiness"]["state"], "unknown");
+    assert_eq!(
+        display["currentReadiness"]["reason"],
+        "fingerprint_byte_limit_exceeded"
+    );
     assert!(display.get("requirements").is_none(), "{display}");
     assert!(display.get("met").is_none(), "{display}");
+    assert!(display.get("total").is_none(), "{display}");
+    assert!(display.get("nextAction").is_none(), "{display}");
+    assert!(display.get("closingRoute").is_none(), "{display}");
+}
+
+#[test]
+fn limited_resume_preserves_a_foreign_owner_display() {
+    let owner = Project::new("resume-limited-owner");
+    let other = Project::new("resume-limited-foreign");
+    let session = "resume-limited-foreign";
+    let work = begin(&owner, session);
+    block(&owner, session, &work);
+    direct(&owner, session);
+    let display = session_display_path(&owner, session);
+    let previous = fs::read(&display).unwrap();
+
+    fs::write(other.root.join("input"), b"foreign input").unwrap();
+    other.value_in_session(
+        "codex",
+        session,
+        &owner.session_store,
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "Foreign Work",
+            "--check-command",
+            "true",
+            "--review-policy",
+            "required",
+        ],
+    );
+    assert_eq!(fs::read(&display).unwrap(), previous);
+    fs::File::create(other.root.join("large"))
+        .unwrap()
+        .set_len(16 * 1024 * 1024 + 1)
+        .unwrap();
+    let limited = other.value_in_session(
+        "codex",
+        session,
+        &owner.session_store,
+        &["work", "resume", "--json"],
+    );
+    assert_eq!(limited["status"], "unresolved", "{limited}");
+    assert_eq!(
+        limited["discovery"]["limitedReason"],
+        "fingerprint_byte_limit_exceeded"
+    );
+    assert!(limited["presentation"]["terminal"].is_null());
+    assert_eq!(fs::read(&display).unwrap(), previous);
+}
+
+#[test]
+fn limited_resume_preserves_an_explicit_project_display() {
+    let project = Project::new("resume-limited-project-display");
+    let session = "resume-limited-project-display";
+    let work = begin(&project, session);
+    block(&project, session, &work);
+    direct(&project, session);
+    in_session(
+        &project,
+        session,
+        &[
+            "goal",
+            "incorporate",
+            "--project",
+            "--goal-id",
+            "project-display",
+            "--goal",
+            "Keep the selected project display",
+            "--none-applicable",
+            "obligations,findings,blockers,decisions,externalActions",
+        ],
+    );
+    let display = session_display_path(&project, session);
+    let previous = fs::read(&display).unwrap();
+    let value: Value = serde_json::from_slice(&previous).unwrap();
+    assert_eq!(value["journal"], "project");
+    fs::File::create(project.root.join("large"))
+        .unwrap()
+        .set_len(16 * 1024 * 1024 + 1)
+        .unwrap();
+    let limited = in_session(&project, session, &["work", "resume", "--json"]);
+    assert_eq!(limited["status"], "unresolved", "{limited}");
+    assert_eq!(
+        limited["discovery"]["limitedReason"],
+        "fingerprint_byte_limit_exceeded"
+    );
+    assert!(limited["presentation"]["terminal"].is_null());
+    assert_eq!(fs::read(&display).unwrap(), previous);
+}
+
+#[test]
+fn limited_resume_preserves_display_when_owner_history_is_unavailable() {
+    let project = Project::new("resume-limited-owner-history");
+    let session = "resume-limited-owner-history";
+    let work = begin(&project, session);
+    block(&project, session, &work);
+    direct(&project, session);
+    let display = session_display_path(&project, session);
+    let previous = fs::read(&display).unwrap();
+    let journal = crate::fixture::native_session_root(&project.session_store, "codex", session)
+        .join(".exitbind/session-goal.jsonl");
+    fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(journal)
+        .unwrap()
+        .set_len(64 * 1024 * 1024 + 1)
+        .unwrap();
+    fs::File::create(project.root.join("large"))
+        .unwrap()
+        .set_len(16 * 1024 * 1024 + 1)
+        .unwrap();
+    let limited = in_session(&project, session, &["work", "resume", "--json"]);
+    assert_eq!(limited["status"], "unresolved", "{limited}");
+    assert!(limited["presentation"]["terminal"].is_null());
+    assert_eq!(fs::read(&display).unwrap(), previous);
 }
 
 #[test]
