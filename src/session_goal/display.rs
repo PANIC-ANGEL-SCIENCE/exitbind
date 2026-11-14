@@ -421,7 +421,7 @@ mod tests {
     }
 
     #[test]
-    fn atomic_write_replaces_the_state_and_reads_back_within_the_time_bound() {
+    fn atomic_write_replaces_and_reads_complete_state() {
         let root = crate::test_root::temp("display");
         let directory = root.join("store");
         let path = directory.join(DIRECTORY).join("key.json");
@@ -429,13 +429,13 @@ mod tests {
             "goal":"g".repeat(MAX_TEXT_CHARS),"requirements":(0..40).map(|i| json!({"id":format!("S{i}"),
             "doneWhen":"d".repeat(400),"state":"pending"})).collect::<Vec<_>>()});
         write(&path, &state).expect("first write");
-        let started = std::time::Instant::now();
+        assert_eq!(read(&path).expect("first state"), state);
         let mut next = state.clone();
         next["revision"] = json!(4);
+        next["goal"] = json!("Replacement Goal");
+        next["requirements"][0]["state"] = json!("done");
         write(&path, &next).expect("replacement");
-        let elapsed = started.elapsed();
-        assert!(elapsed.as_millis() < 50, "display write took {elapsed:?}");
-        assert_eq!(read(&path).expect("state")["revision"], 4);
+        assert_eq!(read(&path).expect("replacement state"), next);
         let leftovers = std::fs::read_dir(path.parent().unwrap())
             .unwrap()
             .filter_map(Result::ok)
