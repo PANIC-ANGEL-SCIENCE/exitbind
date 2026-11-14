@@ -36,7 +36,8 @@ mod progress;
 pub(crate) use presentation::{
     context_summary, presentation, presentation_for_loaded, presentation_for_selected,
     progress_detail_for_work, progress_for_loaded, progress_for_work,
-    project_goal_progress_for_work, record_for_work, terminal_for_work, WorkGoalObservation,
+    project_goal_progress_for_work, record_for_work, selected_observation_still_current,
+    terminal_for_work, WorkGoalObservation,
 };
 pub(crate) mod usage;
 pub(crate) use continuity::{
@@ -64,27 +65,110 @@ fn relative() -> String {
     )
 }
 
-fn raw_history(root: &Path) -> Result<Option<String>, String> {
-    match crate::project::path::secure_bytes_observation(root, &relative(), "session goal") {
-        crate::project::path::SecureBytesResult::Bytes(bytes) => String::from_utf8(bytes)
-            .map(Some)
-            .map_err(|_| "session goal is not valid UTF-8".into()),
-        crate::project::path::SecureBytesResult::Absent(_) => {
-            let legacy = root.join(format!(
-                "{}/session-goal.json",
-                crate::project::layout_types::state_namespace()
-            ));
-            match std::fs::symlink_metadata(legacy) {
-                Ok(_) => Err("legacy session goal format is unbound and unsupported".into()),
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-                Err(error) => Err(error.to_string()),
+/// A Goal observation can encounter the same retained history through more
+/// than one owner. Keep its failures on the request's existing budget so a
+/// caller that omits optional journey details cannot present them as current.
+fn with_history_observation<T>(
+    operation: impl FnOnce(&mut Option<crate::run::inputs::ResumeInputBudget>) -> Result<T, String>,
+) -> Result<T, String> {
+    let mut budget = crate::run::inputs::active_resume_budget();
+    let result = check_history_observation(&mut budget)
+        .and_then(|()| operation(&mut budget))
+        .and_then(|value| {
+            check_history_observation(&mut budget)?;
+            Ok(value)
+        });
+    if result.is_err() {
+        if let Some(budget) = budget.as_mut() {
+            if budget.limited_reason().is_none() {
+                budget.mark_limited("goal_history_unavailable");
             }
         }
-        crate::project::path::SecureBytesResult::Unsafe(error)
-        | crate::project::path::SecureBytesResult::Unreadable(error) => Err(error),
-        #[cfg(not(unix))]
-        crate::project::path::SecureBytesResult::Unsupported(error) => Err(error),
     }
+    result
+}
+
+fn check_history_observation(
+    budget: &mut Option<crate::run::inputs::ResumeInputBudget>,
+) -> Result<(), String> {
+    if let Some(budget) = budget {
+        budget.check().map_err(str::to_owned)?;
+    }
+    Ok(())
+}
+
+fn observed_history_limit(
+    budget: &mut Option<crate::run::inputs::ResumeInputBudget>,
+    reason: &'static str,
+    message: &'static str,
+) -> Result<(), String> {
+    if let Some(budget) = budget {
+        budget.mark_limited(reason);
+        return Err(message.into());
+    }
+    Ok(())
+}
+
+fn raw_history(root: &Path) -> Result<Option<String>, String> {
+    with_history_observation(|budget| {
+        let observed = if budget.is_some() {
+            crate::project::path::secure_bytes_observation_bounded(
+                root,
+                &relative(),
+                "session goal",
+                RECOVERY_MAX_BYTES,
+            )
+        } else {
+            crate::project::path::secure_bytes_observation(root, &relative(), "session goal")
+        };
+        let result = match observed {
+            crate::project::path::SecureBytesResult::Bytes(bytes) => String::from_utf8(bytes)
+                .map(Some)
+                .map_err(|_| "session goal is not valid UTF-8".into()),
+            crate::project::path::SecureBytesResult::Absent(_) => {
+                let legacy = root.join(format!(
+                    "{}/session-goal.json",
+                    crate::project::layout_types::state_namespace()
+                ));
+                match std::fs::symlink_metadata(legacy) {
+                    Ok(_) => Err("legacy session goal format is unbound and unsupported".into()),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+                    Err(error) => Err(error.to_string()),
+                }
+            }
+            crate::project::path::SecureBytesResult::Unsafe(error)
+            | crate::project::path::SecureBytesResult::Unreadable(error) => Err(error),
+            #[cfg(not(unix))]
+            crate::project::path::SecureBytesResult::Unsupported(error) => Err(error),
+        }?;
+        check_history_observation(budget)?;
+        if budget.is_some() {
+            let raw = result.as_deref().unwrap_or_default();
+            let mut physical = 0usize;
+            for chunk in raw.as_bytes().chunks(16 * 1024) {
+                check_history_observation(budget)?;
+                physical += chunk.iter().filter(|byte| **byte == b'\n').count();
+                if physical > RECOVERY_MAX_EVENTS {
+                    observed_history_limit(
+                        budget,
+                        "goal_history_record_limit_exceeded",
+                        "session goal observation exceeds 4096 physical records",
+                    )?;
+                }
+            }
+            if !raw.is_empty() && !raw.ends_with('\n') {
+                physical += 1;
+            }
+            if physical > RECOVERY_MAX_EVENTS {
+                observed_history_limit(
+                    budget,
+                    "goal_history_record_limit_exceeded",
+                    "session goal observation exceeds 4096 physical records",
+                )?;
+            }
+        }
+        Ok(result)
+    })
 }
 
 fn records(root: &Path) -> Result<Vec<Value>, String> {
@@ -132,26 +216,51 @@ fn records_from_raw(raw: Option<&str>) -> Result<Vec<Value>, String> {
     let Some(raw) = raw else {
         return Ok(Vec::new());
     };
-    let mut lines = raw.split('\n').collect::<Vec<_>>();
-    if lines.last() == Some(&"") {
-        lines.pop();
-    }
-    let mut parsed = Vec::with_capacity(lines.len());
-    for (index, line) in lines.iter().enumerate() {
-        if line.trim().is_empty() {
-            return Err(format!(
-                "invalid canonical session goal line {}: empty line",
-                index + 1
-            ));
+    with_history_observation(|budget| {
+        if budget.is_some() && raw.len() as u64 > RECOVERY_MAX_BYTES {
+            observed_history_limit(
+                budget,
+                "goal_history_byte_limit_exceeded",
+                "session goal observation exceeds its byte bound",
+            )?;
         }
-        let value: Value = serde_json::from_str(line).map_err(|error| {
-            format!("invalid canonical session goal line {}: {error}", index + 1)
-        })?;
-        let value = journal_form::resolve(value, parsed.last(), index + 1)?;
-        validate_record(&value, parsed.last(), index + 1)?;
-        parsed.push(value);
-    }
-    Ok(parsed)
+        let mut lines = if budget.is_some() {
+            raw.split('\n')
+                .take(RECOVERY_MAX_EVENTS + 2)
+                .collect::<Vec<_>>()
+        } else {
+            raw.split('\n').collect::<Vec<_>>()
+        };
+        if lines.last() == Some(&"") {
+            lines.pop();
+        }
+        if budget.is_some() && lines.len() > RECOVERY_MAX_EVENTS {
+            observed_history_limit(
+                budget,
+                "goal_history_record_limit_exceeded",
+                "session goal observation exceeds 4096 physical records",
+            )?;
+        }
+        let mut parsed = Vec::with_capacity(lines.len());
+        for (index, line) in lines.iter().enumerate() {
+            check_history_observation(budget)?;
+            if line.trim().is_empty() {
+                return Err(format!(
+                    "invalid canonical session goal line {}: empty line",
+                    index + 1
+                ));
+            }
+            let value: Value = serde_json::from_str(line).map_err(|error| {
+                format!("invalid canonical session goal line {}: {error}", index + 1)
+            })?;
+            let value = journal_form::resolve(value, parsed.last(), index + 1)?;
+            check_history_observation(budget)?;
+            validate_record(&value, parsed.last(), index + 1)?;
+            check_history_observation(budget)?;
+            parsed.push(value);
+        }
+        Ok(parsed)
+    })
 }
 
 pub(crate) fn read(root: &Path) -> Result<Option<Value>, String> {

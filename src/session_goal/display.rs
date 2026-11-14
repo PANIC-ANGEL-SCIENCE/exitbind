@@ -49,6 +49,29 @@ fn bounded(text: &str) -> String {
     text.chars().take(MAX_TEXT_CHARS).collect()
 }
 
+fn unavailable(journal: Journal, host: &str, now: &str, reason: &str) -> Value {
+    json!({"kind":KIND,"version":1,"host":host,"journal":journal.name(),
+        "state":"unavailable","currentReadiness":{"state":"unknown","reason":reason},
+        "writtenAt":now})
+}
+
+fn finish_display_observation(
+    root: &Path,
+    observed: Option<&Value>,
+    journal: Journal,
+    host: &str,
+    now: &str,
+    state: Value,
+) -> Value {
+    if super::selected_observation_still_current(root, observed) {
+        return state;
+    }
+    let reason = crate::run::inputs::active_resume_budget()
+        .and_then(|mut budget| budget.limited_reason())
+        .unwrap_or("goal_journal_unavailable");
+    unavailable(journal, host, now, reason)
+}
+
 /// Build the display state from the selected journal's latest record and the
 /// same presentation `goal status` uses. A closed record reads CLOSED from the
 /// ledger itself, so a later tree change cannot reopen it on the screen.
@@ -77,19 +100,18 @@ fn build_bounded(
 ) -> Result<Value, String> {
     let record = match super::read_for_recovery(root) {
         Ok(record) => record,
-        Err(_) => {
-            return Ok(
-                json!({"kind":KIND,"version":1,"host":host,"journal":journal.name(),
-                "state":"unavailable","currentReadiness":{"state":"unknown","reason":"goal_journal_unavailable"},
-                "writtenAt":now}),
-            );
-        }
+        Err(_) => return Ok(unavailable(journal, host, now, "goal_journal_unavailable")),
     };
     let Some(record) = record else {
-        return Ok(
+        return Ok(finish_display_observation(
+            root,
+            None,
+            journal,
+            host,
+            now,
             json!({"kind":KIND,"version":1,"host":host,"journal":journal.name(),
             "state":"none","revision":Value::Null,"writtenAt":now}),
-        );
+        ));
     };
     let limited_resume = || {
         crate::run::inputs::active_resume_budget()
@@ -108,6 +130,12 @@ fn build_bounded(
         Ok(presentation) => presentation,
         Err(_) => return Ok(metadata_only(&record, journal, host, now)),
     };
+    if let Some(
+        reason @ ("goal_journal_changed" | "goal_journal_missing" | "goal_journal_unavailable"),
+    ) = crate::run::inputs::active_resume_budget().and_then(|mut budget| budget.limited_reason())
+    {
+        return Ok(unavailable(journal, host, now, reason));
+    }
     if limited_resume() || presentation["currentReadiness"]["state"] == "unknown" {
         return Ok(metadata_only(&record, journal, host, now));
     }
@@ -154,7 +182,7 @@ fn build_bounded(
     if limited_resume() {
         return Ok(metadata_only(&record, journal, host, now));
     }
-    Ok(json!({
+    let state = json!({
         "kind":KIND,"version":1,"host":host,"journal":journal.name(),
         "state":if closed {"closed"} else {"open"},
         "goalId":record["goalId"],"goal":bounded(goal),
@@ -163,7 +191,15 @@ fn build_bounded(
         "currentWork":current_work,"nextAction":next,"lessonCount":lessons,
         "revision":record["revision"],"eventSha256":record["eventSha256"],"writtenAt":now,
         "currentReadiness":presentation["currentReadiness"],
-    }))
+    });
+    Ok(finish_display_observation(
+        root,
+        Some(&record),
+        journal,
+        host,
+        now,
+        state,
+    ))
 }
 
 /// The same metadata-only shape used by native recovery when current task
@@ -201,6 +237,20 @@ pub(crate) fn refresh(
     session: &super::native::Session,
     journal: Option<Journal>,
 ) -> Result<(), String> {
+    if crate::run::inputs::active_resume_budget().is_some() {
+        return refresh_bounded(loaded, session, journal);
+    }
+    let mut budget = crate::run::inputs::ResumeInputBudget::new();
+    crate::run::inputs::with_resume_budget(&mut budget, |_| {
+        refresh_bounded(loaded, session, journal)
+    })
+}
+
+fn refresh_bounded(
+    loaded: &Loaded,
+    session: &super::native::Session,
+    journal: Option<Journal>,
+) -> Result<(), String> {
     let path = path_for_key(&session.selector_key)?;
     let journal = journal.unwrap_or(match read(&path) {
         Some(previous) if previous["journal"] == "project" => Journal::Project,
@@ -230,6 +280,20 @@ pub(crate) fn refresh(
 /// runs the ordinary full display projection or evaluates Work and lessons.
 /// Failure is silent and must not interfere with the recovery prompt.
 pub(crate) fn refresh_claude_session(
+    loaded: &Loaded,
+    identity: &str,
+    recovery: Option<&(super::native::Session, super::native::RecoverySnapshot)>,
+) {
+    if crate::run::inputs::active_resume_budget().is_some() {
+        return refresh_claude_session_bounded(loaded, identity, recovery);
+    }
+    let mut budget = crate::run::inputs::ResumeInputBudget::new();
+    crate::run::inputs::with_resume_budget(&mut budget, |_| {
+        refresh_claude_session_bounded(loaded, identity, recovery)
+    })
+}
+
+fn refresh_claude_session_bounded(
     loaded: &Loaded,
     identity: &str,
     recovery: Option<&(super::native::Session, super::native::RecoverySnapshot)>,
@@ -415,6 +479,116 @@ pub(crate) fn read(path: &Path) -> Option<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn display_refuses_a_captured_closure_after_append_or_deletion() {
+        let root = crate::test_root::temp("display-goal-snapshot");
+        let path = crate::project::onboarding::init_with_options(
+            crate::project::onboarding::InitOptions {
+                product_root: root.to_str().unwrap(),
+                coffee: false,
+                skip_skills: true,
+                mode: Some("portable"),
+                project_id: None,
+                control_root: None,
+                state_root: None,
+            },
+        )
+        .unwrap();
+        let loaded = crate::config::load(path.to_str()).unwrap();
+        let store = loaded.state_root.join(".exitbind/test-native-session");
+        crate::project::portability::create_private_directory(&store).unwrap();
+        let (host, identity) = super::super::native::current_identity()
+            .unwrap()
+            .unwrap_or(("codex", "display-snapshot-fixture".to_owned()));
+        let key = super::super::native::session_key(host, &identity);
+        let session = super::super::native::Session {
+            host,
+            key: key.clone(),
+            selector_key: key.clone(),
+            root: store.join(format!("session-{key}")),
+        };
+        assert!(
+            super::super::native::scope_for(&loaded, session.clone(), true)
+                .unwrap()
+                .owner_matches
+        );
+        let _session = super::super::native::scoped_callback_session(session).unwrap();
+        super::super::incorporate(
+            &loaded.state_root,
+            &loaded,
+            "display-snapshot",
+            "Close the fixture Goal",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("obligations,findings,blockers,decisions,externalActions"),
+            false,
+        )
+        .unwrap();
+        let captured =
+            super::super::close_direct(&loaded.state_root, &loaded, "display-snapshot", None)
+                .unwrap();
+        let previous = build(
+            &loaded,
+            &loaded.state_root,
+            Journal::Project,
+            "claude",
+            "now",
+        )
+        .unwrap();
+        assert_eq!(previous["state"], "closed");
+        assert_eq!(previous["currentReadiness"]["state"], "current");
+        super::super::incorporate(
+            &loaded.state_root,
+            &loaded,
+            "display-snapshot",
+            "Close the fixture Goal",
+            Some("A later ordinary obligation"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
+        .unwrap();
+        for (remove, reason) in [
+            (false, "goal_journal_changed"),
+            (true, "goal_journal_missing"),
+        ] {
+            if remove {
+                std::fs::remove_file(loaded.state_root.join(".exitbind/session-goal.jsonl"))
+                    .unwrap();
+            }
+            let mut budget = crate::run::inputs::ResumeInputBudget::new();
+            let result = crate::run::inputs::with_resume_budget(&mut budget, |_| {
+                finish_display_observation(
+                    &loaded.state_root,
+                    Some(&captured),
+                    Journal::Project,
+                    "claude",
+                    "now",
+                    previous.clone(),
+                )
+            });
+            assert_eq!(result["state"], "unavailable");
+            assert_eq!(result["currentReadiness"]["state"], "unknown");
+            assert_eq!(result["currentReadiness"]["reason"], reason);
+            assert!(result.get("met").is_none());
+            assert!(result.get("nextAction").is_none());
+        }
+    }
 
     #[test]
     fn session_start_does_not_reuse_unverified_progress_even_for_same_event() {

@@ -34,8 +34,21 @@ pub(crate) fn uncredited_retirement_snapshot(
     if state["status"] != "blocked" {
         return Err("only a terminal blocked Work can be retired without credit".into());
     }
-    if start["configSha256"] != hash::text(&loaded.source) {
-        return Err("retired Work configuration no longer matches its exact start".into());
+    let bound_config = start["configSha256"]
+        .as_str()
+        .ok_or("retired Work configuration identity is unavailable")?;
+    let current_config = hash::text(&loaded.source);
+    if bound_config != current_config.as_str() {
+        return Err(crate::drift::refusal(
+            crate::drift::Class::JourneyMemberConfiguration,
+            bound_config,
+            Some(&current_config),
+            None,
+            crate::drift::Route::WorkDetail {
+                work,
+                config: &loaded.path,
+            },
+        ));
     }
     if run::ledger::valid_claim(&run::ledger::claim_path(&ledger))?.is_some() {
         return Err("a claimed successor prevents uncredited retirement".into());
@@ -59,8 +72,10 @@ pub(crate) fn uncredited_retirement_snapshot(
     if run::pre_return::retirement_has_unresolved(loaded, &state)? {
         return Err("an unresolved pre-return attempt prevents retirement".into());
     }
-    if session_goal::blocking_child(loaded, work)?.is_some() {
-        return Err("a live, prepared or retained child prevents retirement".into());
+    if let Some(child) = session_goal::blocking_child(loaded, work)? {
+        return Err(format!(
+            "a live, prepared or retained child prevents retirement: {child}"
+        ));
     }
     if held::has_for_work(loaded, work)? {
         return Err("a retained result prevents retirement".into());

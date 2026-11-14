@@ -496,7 +496,7 @@ fn display_keeps_closed_history_without_claiming_current_progress_over_budget() 
 }
 
 #[test]
-fn claude_session_start_marks_over_limit_history_unavailable() {
+fn claude_session_start_preserves_unverified_display_when_history_is_over_limit() {
     let session = Session::new("native-display-recovery-limits");
     let output = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
         .args(["init", "--mode", "portable", "--skip-skills", "--root"])
@@ -514,11 +514,18 @@ fn claude_session_start_marks_over_limit_history_unavailable() {
         "g",
         "--goal",
         "Keep the Goal",
+        "--obligation",
+        "Complete the fixture task",
+        "--none-applicable",
+        "findings,blockers,decisions,externalActions",
         "--config",
         &config,
         "--json",
     ]);
     let display_path = session.display_path();
+    let previous_display = fs::read(&display_path).unwrap();
+    let previous: Value = serde_json::from_slice(&previous_display).unwrap();
+    assert_eq!(previous["total"], 1);
     let journal = fs::read_dir(&session.store)
         .unwrap()
         .filter_map(Result::ok)
@@ -564,13 +571,105 @@ fn claude_session_start_marks_over_limit_history_unavailable() {
             "{context}"
         );
         assert!(context.contains(expected), "{context}");
-        let display: Value = serde_json::from_slice(&fs::read(&display_path).unwrap()).unwrap();
-        assert_eq!(display["state"], "unavailable");
-        assert_eq!(display["currentReadiness"]["state"], "unknown");
-        assert!(display.get("requirements").is_none());
-        assert_eq!(session.status_line().0, "");
+        assert!(!context.contains("S0/1 met"), "{context}");
+        assert!(!context.contains("Complete the fixture task"), "{context}");
+        assert!(!context.contains("EXIT READY"), "{context}");
+        assert!(!context.contains("Goal: CLOSED"), "{context}");
+        assert!(result["presentation"]["terminal"].is_null());
+        assert_eq!(fs::read(&display_path).unwrap(), previous_display);
     }
+
+    // A different working-directory project cannot overwrite the same
+    // session display while its effective owner is unresolved.
+    let mut foreign = Session::new("native-display-unresolved-foreign");
+    let init = support::git_topology::command(exe)
+        .args(["init", "--mode", "portable", "--skip-skills", "--root"])
+        .arg(&foreign.root)
+        .output()
+        .unwrap();
+    assert!(init.status.success(), "{init:?}");
+    foreign.store = session.store.clone();
+    foreign.id = session.id.clone();
+    let foreign_env = foreign.home.join("claude-env");
+    fs::write(&foreign_env, "").unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&foreign_env, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    foreign.extra.push(("CLAUDE_ENV_FILE", foreign_env));
+    let foreign_payload = json!({"hook_event_name":"SessionStart","source":"resume",
+        "session_id":foreign.id,"cwd":foreign.root});
+    let foreign_hook = foreign.call(
+        &[exe, "hook-run", "--host", "claude"],
+        foreign_payload.to_string().as_bytes(),
+    );
+    assert!(foreign_hook.status.success(), "{foreign_hook:?}");
+    let foreign_result: Value = serde_json::from_slice(&foreign_hook.stdout).unwrap();
+    assert!(foreign_result["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap()
+        .contains("session recovery is unresolved"));
+    assert_eq!(fs::read(&display_path).unwrap(), previous_display);
+
+    // An explicit project display is equally preserved when the session
+    // owner cannot be established from the unavailable Goal history.
+    let mut project_display = previous;
+    project_display["journal"] = json!("project");
+    let project_bytes = serde_json::to_vec(&project_display).unwrap();
+    fs::write(&display_path, &project_bytes).unwrap();
+    let hook = session.call(
+        &[exe, "hook-run", "--host", "claude"],
+        payload.to_string().as_bytes(),
+    );
+    assert!(hook.status.success(), "{hook:?}");
+    assert_eq!(fs::read(&display_path).unwrap(), project_bytes);
     fs::write(journal, valid).unwrap();
+}
+
+#[test]
+fn owner_preflight_limit_preserves_previous_display_without_claiming_currentness() {
+    let session = Session::new("native-display-owner-confirmed-limit");
+    let exe = env!("CARGO_BIN_EXE_exitbind");
+    let init = support::git_topology::command(exe)
+        .args(["init", "--mode", "portable", "--skip-skills", "--root"])
+        .arg(&session.root)
+        .output()
+        .unwrap();
+    assert!(init.status.success(), "{init:?}");
+    let config = session.config();
+    session.json(&[
+        exe,
+        "goal",
+        "incorporate",
+        "--goal-id",
+        "g",
+        "--goal",
+        "Owner fixture",
+        "--json",
+        "--config",
+        &config,
+    ]);
+    assert_eq!(session.display()["state"], "open");
+    let previous_display = fs::read(session.display_path()).unwrap();
+    let journal = fs::read_dir(&session.store)
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path().join(".exitbind/session-goal.jsonl"))
+        .find(|path| path.is_file())
+        .expect("the owner-confirmed native Goal journal");
+    fs::write(journal, "{}\n".repeat(4097)).unwrap();
+    let usage = session.json(&[
+        exe,
+        "goal",
+        "usage",
+        "--goal-id",
+        "g",
+        "--json",
+        "--config",
+        &config,
+    ]);
+    assert_eq!(usage["status"], "unknown");
+    assert_eq!(fs::read(session.display_path()).unwrap(), previous_display);
 }
 
 #[test]

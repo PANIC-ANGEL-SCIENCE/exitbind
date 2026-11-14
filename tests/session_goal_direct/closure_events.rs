@@ -191,6 +191,46 @@ fn native_and_explicit_project_status_keep_close_routes_on_the_selected_journal(
 }
 
 #[test]
+fn completion_event_rechecks_the_selected_native_or_project_journal() {
+    let project = Project::new("direct-goal-selected-event");
+    establish_direct_goal(&project);
+    project.value(&["goal", "close", "--direct", "--goal-id", "direct"]);
+    let session = "direct-goal-selected-event-session";
+    establish_native_direct_goal(&project, session);
+    project.value_in_session(
+        "codex",
+        session,
+        &project.session_store,
+        &[
+            "goal",
+            "close",
+            "--direct",
+            "--goal-id",
+            "direct-event",
+            "--json",
+        ],
+    );
+    let native = project.value_in_session(
+        "codex",
+        session,
+        &project.session_store,
+        &["goal", "status", "--view", "event", "--json"],
+    );
+    let selected_project = project.value_in_session(
+        "codex",
+        session,
+        &project.session_store,
+        &["goal", "status", "--project", "--view", "event", "--json"],
+    );
+    assert_eq!(native["presentation"]["terminal"], CARD);
+    assert_eq!(selected_project["presentation"]["terminal"], CARD);
+    assert_ne!(
+        native["completionEvent"]["id"],
+        selected_project["completionEvent"]["id"]
+    );
+}
+
+#[test]
 fn completion_event_is_suppressed_for_unfinished_stale_and_foreign_goals() {
     let unfinished = Project::new("direct-goal-event-unfinished");
     let unfinished_session = "direct-goal-event-unfinished-session";
@@ -416,8 +456,12 @@ fn goal_status_refuses_an_unavailable_bounded_journal() {
         .unwrap();
     let output = project.call(&["goal", "status", "--json"]);
     assert!(!output.status.success());
-    assert!(output.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("goal status observation unavailable"));
+    let error: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(error["error"]
+        .as_str()
+        .is_some_and(|message| message.contains("goal status observation unavailable")));
+    assert!(error.get("goalProgress").is_none());
+    assert!(error["presentation"]["terminal"].is_null());
 }
 
 #[test]

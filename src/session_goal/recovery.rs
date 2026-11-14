@@ -872,22 +872,10 @@ fn recover_current(
         if let Some(selection) = &selection {
             response["retirementSelection"] = json!(selection);
             response["sourceWriterAttestation"] = json!("The owner attests that all source Work writers, including old producers, remain quiescent through each governed use. This does not fence an already-running writer or waive any observable refusal.");
-            match apply_route.full_argv() {
-                Ok(argv)
-                    if serde_json::to_vec(&argv)
-                        .map_err(|error| error.to_string())?
-                        .len()
-                        <= 16 * 1024 =>
-                {
-                    response["applyArgv"] = json!(argv);
-                    response["sameConfigRequired"] = json!(false);
-                    response["sameExecutableRequired"] = json!(false);
-                }
-                _ => {
-                    response["applyArgv"] = Value::Null;
-                    response["applyArgvState"] = json!("unavailable");
-                    response["meaning"] = json!("A complete apply command is unavailable; shorten the explicit selection or restore the executable and request a fresh preview.");
-                }
+            if apply_command.needs_config() || apply_command.needs_executable() {
+                response["applyArgv"] = Value::Null;
+                response["applyArgvState"] = json!("unavailable");
+                response["meaning"] = json!("A complete apply command is unavailable; shorten the explicit selection or restore the executable and request a fresh preview.");
             }
         }
         return Ok(response);

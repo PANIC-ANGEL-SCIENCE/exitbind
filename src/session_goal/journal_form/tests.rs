@@ -181,6 +181,25 @@ fn journal(records: &[Value]) -> (String, Vec<usize>) {
     (raw, sizes)
 }
 
+fn observation_loaded(root: &std::path::Path, state: &std::path::Path) -> crate::config::Loaded {
+    crate::config::Loaded {
+        config: json!({}),
+        agents: std::collections::BTreeMap::new(),
+        lead: None,
+        architecture_contract: None,
+        capabilities: Vec::new(),
+        workflows: std::collections::BTreeMap::new(),
+        verification_preparation: None,
+        path: root.join("exitbind.json"),
+        control_root: root.to_owned(),
+        product_root: root.to_owned(),
+        state_root: state.to_owned(),
+        mode: crate::project::layout_types::Mode::Portable,
+        project_id: None,
+        source: "{}".into(),
+    }
+}
+
 #[test]
 fn r55_shaped_revisions_store_only_what_changed() {
     let mut records = vec![r55_shaped()];
@@ -460,4 +479,116 @@ fn recovery_record_limit_does_not_change_exact_goal_reads() {
     );
     let error = read_for_recovery(&root).unwrap_err();
     assert!(error.contains("4096 physical records"), "{error}");
+
+    let mut budget = crate::run::inputs::ResumeInputBudget::new();
+    let error = crate::run::inputs::with_resume_budget(&mut budget, |_| {
+        crate::session_goal::read(&root).unwrap_err()
+    });
+    assert!(error.contains("4096 physical records"), "{error}");
+    assert_eq!(
+        budget.limited_reason(),
+        Some("goal_history_record_limit_exceeded")
+    );
+
+    // Leaving the read-only observation scope restores the ordinary writer:
+    // it reads the full retained history and appends the next sealed record.
+    let loaded = observation_loaded(&root, &root);
+    let appended = crate::session_goal::mutate(&root, &loaded, |prior| {
+        let prior = prior.expect("the complete Goal history remains available");
+        let mut next = prior.clone();
+        let revision = prior["revision"].as_u64().unwrap();
+        next.as_object_mut().unwrap().remove("eventSha256");
+        next["revision"] = json!(revision + 1);
+        next["predecessor"] = json!({"goalId": prior["goalId"], "revision": revision});
+        next["successorOf"] = Value::Null;
+        Ok(sealed(next, Some(prior)))
+    })
+    .unwrap();
+    assert_eq!(
+        appended["revision"],
+        previous["revision"].as_u64().unwrap() + 1
+    );
+    assert_eq!(
+        crate::session_goal::read(&root).unwrap().as_ref(),
+        Some(&appended)
+    );
+}
+
+#[test]
+fn journey_observation_retains_prior_membership_and_marks_overlimit_unavailable() {
+    use crate::session_goal::{display, journey, native};
+
+    let root = crate::test_root::temp("journey-history-observation");
+    let project = root.join("project");
+    let state = project.join(".exitbind");
+    std::fs::create_dir_all(&state).unwrap();
+    let loaded = observation_loaded(&project, &state);
+    let private = root.join("private");
+    crate::project::portability::create_private_directory(&private).unwrap();
+    let (host, identity) = native::current_identity()
+        .unwrap()
+        .unwrap_or(("codex", "history-observation-fixture".to_owned()));
+    let key = native::session_key(host, &identity);
+    let session = native::Session {
+        host,
+        key: key.clone(),
+        selector_key: key.clone(),
+        root: private.join(format!("session-{key}")),
+    };
+    crate::project::portability::create_private_directory(&session.root).unwrap();
+    let session_state = session.root.join(".exitbind");
+    crate::project::portability::create_private_directory(&session_state).unwrap();
+    let scope = native::scope_for(&loaded, session.clone(), true).unwrap();
+    assert!(scope.owner_matches);
+    let journal = session_state.join("session-goal.jsonl");
+    std::fs::write(&journal, COMPLETE_FIXTURE).unwrap();
+    let records = records_from_raw(Some(COMPLETE_FIXTURE)).unwrap();
+    let prior = &records[0];
+    assert_ne!(prior["eventSha256"], records.last().unwrap()["eventSha256"]);
+    let _session_guard = native::scoped_callback_session(session.clone()).unwrap();
+    let mut budget = crate::run::inputs::ResumeInputBudget::new();
+    crate::run::inputs::with_resume_budget(&mut budget, |budget| {
+        // An earlier validated event remains a member of this full history.
+        let prior_readiness =
+            journey::readiness_for_record_with_access(&loaded, prior, native::Access::ReadExisting)
+                .unwrap();
+        assert!(prior_readiness.is_some());
+
+        // A changed history on the later observation exceeds the physical
+        // limit. The progress helper intentionally drops its Err, so the
+        // request-level marker must still suppress fresh display progress.
+        std::fs::write(&journal, "{}\n".repeat(4097)).unwrap();
+        assert!(journey::progress_for_record_readonly(Some(&loaded), prior).is_none());
+        assert_eq!(
+            budget.limited_reason(),
+            Some("goal_history_record_limit_exceeded")
+        );
+        std::fs::write(&journal, COMPLETE_FIXTURE).unwrap();
+        let display = display::build(
+            &loaded,
+            &session.root,
+            display::Journal::Session,
+            host,
+            "now",
+        )
+        .unwrap();
+        assert_eq!(display["state"], "open");
+        assert_eq!(display["currentReadiness"]["state"], "unknown");
+        assert!(display.get("requirements").is_none());
+        assert!(display.get("met").is_none());
+    });
+    let mut byte_budget = crate::run::inputs::ResumeInputBudget::new();
+    crate::run::inputs::with_resume_budget(&mut byte_budget, |budget| {
+        std::fs::File::create(&journal)
+            .unwrap()
+            .set_len(64 * 1024 * 1024 + 1)
+            .unwrap();
+        assert!(journey::progress_for_record_readonly(Some(&loaded), prior).is_none());
+        assert!(budget.limited_reason().is_some());
+    });
+    std::fs::write(&journal, COMPLETE_FIXTURE).unwrap();
+    assert_eq!(
+        crate::session_goal::read(&session.root).unwrap().as_ref(),
+        records.last()
+    );
 }

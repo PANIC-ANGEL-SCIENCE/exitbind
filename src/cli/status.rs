@@ -35,6 +35,33 @@ fn incomplete_presentation(value: &mut Value, presentation: &mut Value, reason: 
     presentation["terminal"] = Value::Null;
 }
 
+fn finish_status_observation(
+    root: &std::path::Path,
+    record: Option<&Value>,
+    value: &mut Value,
+    presentation: &mut Value,
+) {
+    crate::session_goal::selected_observation_still_current(root, record);
+    if let Some(reason) = observation_limit() {
+        incomplete_presentation(value, presentation, reason);
+    } else if presentation["currentReadiness"]["state"] == "unknown" {
+        let reason = presentation["currentReadiness"]["reason"]
+            .as_str()
+            .unwrap_or("currentness_unavailable")
+            .to_owned();
+        incomplete_presentation(value, presentation, &reason);
+    }
+}
+
+fn finish_event_observation(root: &std::path::Path, record: Option<&Value>, response: &mut Value) {
+    crate::session_goal::selected_observation_still_current(root, record);
+    if let Some(reason) = observation_limit() {
+        response["completionEvent"] = Value::Null;
+        response["presentation"]["terminal"] = Value::Null;
+        response["currentReadiness"] = json!({"state":"unknown","reason":reason});
+    }
+}
+
 fn goal_status_bounded(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
     args::assert_options(
         "goal status",
@@ -64,6 +91,9 @@ fn goal_status_bounded(l: &config::Loaded, a: &Arguments) -> Result<(), String> 
             return Err("goal expansion is unavailable outside the owning session".into());
         }
         let value = crate::session_goal::context_summary(l, record.as_ref(), scope.owner.as_ref());
+        if !crate::session_goal::selected_observation_still_current(&scope.root, record.as_ref()) {
+            return Err("goal status observation unavailable: selected Goal journal changed or could not be read".into());
+        }
         print_json(&crate::producer::observed(value))?;
         return Ok(());
     }
@@ -84,12 +114,9 @@ fn goal_status_bounded(l: &config::Loaded, a: &Arguments) -> Result<(), String> 
             l,
             record.as_ref(),
             a.flags.contains_key("project"),
+            &scope.root,
         )?;
-        if let Some(reason) = observation_limit() {
-            response["completionEvent"] = Value::Null;
-            response["presentation"]["terminal"] = Value::Null;
-            response["currentReadiness"] = json!({"state":"unknown","reason":reason});
-        }
+        finish_event_observation(&scope.root, record.as_ref(), &mut response);
         return print_json(&crate::producer::observed(response));
     }
     let mut presentation = crate::session_goal::presentation_for_selected(
@@ -150,15 +177,7 @@ fn goal_status_bounded(l: &config::Loaded, a: &Arguments) -> Result<(), String> 
             return Err("goal record changed during expansion".into());
         }
     }
-    if let Some(reason) = observation_limit() {
-        incomplete_presentation(&mut value, &mut presentation, reason);
-    } else if presentation["currentReadiness"]["state"] == "unknown" {
-        let reason = presentation["currentReadiness"]["reason"]
-            .as_str()
-            .unwrap_or("currentness_unavailable")
-            .to_owned();
-        incomplete_presentation(&mut value, &mut presentation, &reason);
-    }
+    finish_status_observation(&scope.root, record.as_ref(), &mut value, &mut presentation);
     if named || native_governed {
         value["presentation"] = json!({"terminal": presentation["terminal"]});
         if !a.flags.contains_key("json") {
@@ -293,4 +312,173 @@ pub(super) fn run_explain(l: &config::Loaded, a: &Arguments) -> Result<(), Strin
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::session_goal::native;
+
+    fn closed_project() -> (
+        crate::test_root::TempRoot,
+        config::Loaded,
+        Value,
+        crate::session_goal::native::CallbackSessionGuard,
+    ) {
+        let root = crate::test_root::temp("goal-status-snapshot");
+        let path = crate::project::onboarding::init_with_options(
+            crate::project::onboarding::InitOptions {
+                product_root: root.to_str().unwrap(),
+                coffee: false,
+                skip_skills: true,
+                mode: Some("portable"),
+                project_id: None,
+                control_root: None,
+                state_root: None,
+            },
+        )
+        .unwrap();
+        let loaded = config::load(path.to_str()).unwrap();
+        let store = loaded.state_root.join(".exitbind/test-native-session");
+        crate::project::portability::create_private_directory(&store).unwrap();
+        let (host, identity) = native::current_identity()
+            .unwrap()
+            .unwrap_or(("codex", "status-snapshot-fixture".to_owned()));
+        let key = native::session_key(host, &identity);
+        let session = native::Session {
+            host,
+            key: key.clone(),
+            selector_key: key.clone(),
+            root: store.join(format!("session-{key}")),
+        };
+        assert!(
+            native::scope_for(&loaded, session.clone(), true)
+                .unwrap()
+                .owner_matches
+        );
+        let guard = native::scoped_callback_session(session).unwrap();
+        crate::session_goal::incorporate(
+            &loaded.state_root,
+            &loaded,
+            "snapshot",
+            "Close the fixture Goal",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("obligations,findings,blockers,decisions,externalActions"),
+            false,
+        )
+        .unwrap();
+        let closed =
+            crate::session_goal::close_direct(&loaded.state_root, &loaded, "snapshot", None)
+                .unwrap();
+        (root, loaded, closed, guard)
+    }
+
+    #[test]
+    fn changed_or_deleted_selected_journal_cannot_present_old_completion() {
+        for remove in [false, true] {
+            let (_root, loaded, closed, _session) = closed_project();
+            let captured = crate::session_goal::read_for_recovery(&loaded.state_root)
+                .unwrap()
+                .unwrap();
+            assert_eq!(captured["eventSha256"], closed["eventSha256"]);
+            let rendered = crate::session_goal::presentation_for_selected(
+                &loaded,
+                Some(&captured),
+                &loaded.state_root,
+                true,
+            )
+            .unwrap();
+            assert_eq!(rendered["currentReadiness"]["state"], "current");
+            let event = super::super::goal_completion::read_response(
+                &loaded,
+                Some(&captured),
+                true,
+                &loaded.state_root,
+            )
+            .unwrap();
+            assert!(event["presentation"]["terminal"].is_string());
+
+            if remove {
+                std::fs::remove_file(loaded.state_root.join(".exitbind/session-goal.jsonl"))
+                    .unwrap();
+            } else {
+                let appended = crate::session_goal::incorporate(
+                    &loaded.state_root,
+                    &loaded,
+                    "snapshot",
+                    "Close the fixture Goal",
+                    Some("A later ordinary obligation"),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                )
+                .unwrap();
+                assert_ne!(appended["eventSha256"], captured["eventSha256"]);
+            }
+            let expected = if remove {
+                "goal_journal_missing"
+            } else {
+                "goal_journal_changed"
+            };
+            let mut status_value = captured.clone();
+            let mut status_presentation = rendered.clone();
+            let mut status_budget = crate::run::inputs::ResumeInputBudget::new();
+            crate::run::inputs::with_resume_budget(&mut status_budget, |_| {
+                finish_status_observation(
+                    &loaded.state_root,
+                    Some(&captured),
+                    &mut status_value,
+                    &mut status_presentation,
+                );
+            });
+            assert_eq!(status_value["currentReadiness"]["state"], "unknown");
+            assert_eq!(status_value["currentReadiness"]["reason"], expected);
+            assert_eq!(status_value["goalProgress"]["overall"], "unavailable");
+            assert_eq!(status_presentation["explicitLeadClosure"], false);
+            assert!(status_presentation["terminal"].is_null());
+
+            let mut stale_event = event;
+            let mut event_budget = crate::run::inputs::ResumeInputBudget::new();
+            crate::run::inputs::with_resume_budget(&mut event_budget, |_| {
+                finish_event_observation(&loaded.state_root, Some(&captured), &mut stale_event);
+            });
+            assert_eq!(stale_event["currentReadiness"]["reason"], expected);
+            assert!(stale_event["completionEvent"].is_null());
+            assert!(stale_event["presentation"]["terminal"].is_null());
+
+            let mut projection_budget = crate::run::inputs::ResumeInputBudget::new();
+            let projected = crate::run::inputs::with_resume_budget(&mut projection_budget, |_| {
+                crate::session_goal::presentation_for_selected(
+                    &loaded,
+                    Some(&captured),
+                    &loaded.state_root,
+                    true,
+                )
+                .unwrap()
+            });
+            assert_eq!(projected["currentReadiness"]["reason"], expected);
+            assert_eq!(projected["explicitLeadClosure"], false);
+            assert!(projected["terminal"].is_null());
+            // No-budget callers retain their pre-existing behavior.
+            assert!(crate::session_goal::selected_observation_still_current(
+                &loaded.state_root,
+                Some(&captured)
+            ));
+        }
+    }
 }

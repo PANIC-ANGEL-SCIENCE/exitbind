@@ -107,6 +107,47 @@ pub(crate) fn presentation_for_loaded(
     presentation_for_selected(loaded, value, &loaded.state_root, false)
 }
 
+/// Revalidate only an active read-only observation against the same selected
+/// journal. Canonical mutations do not enter or acquire this budget.
+pub(crate) fn selected_observation_still_current(
+    root: &std::path::Path,
+    observed: Option<&Value>,
+) -> bool {
+    let Some(mut budget) = crate::run::inputs::active_resume_budget() else {
+        return true;
+    };
+    if budget.limited_reason().is_some() {
+        return false;
+    }
+    let latest = match super::read_for_recovery(root) {
+        Ok(latest) => latest,
+        Err(_) => {
+            if budget.limited_reason().is_none() {
+                budget.mark_limited("goal_journal_unavailable");
+            }
+            return false;
+        }
+    };
+    let mismatch = match (observed, latest.as_ref()) {
+        (None, None) => None,
+        (Some(_), None) => Some("goal_journal_missing"),
+        (Some(previous), Some(current))
+            if previous["eventSha256"]
+                .as_str()
+                .is_some_and(|hash| current["eventSha256"].as_str() == Some(hash)) =>
+        {
+            None
+        }
+        _ => Some("goal_journal_changed"),
+    };
+    if let Some(reason) = mismatch {
+        if budget.limited_reason().is_none() {
+            budget.mark_limited(reason);
+        }
+    }
+    mismatch.is_none() && budget.limited_reason().is_none()
+}
+
 pub(crate) fn presentation_for_selected(
     loaded: &crate::config::Loaded,
     value: Option<&Value>,
@@ -120,6 +161,20 @@ pub(crate) fn presentation_for_selected(
     rendered["currentReadiness"] = readiness.value();
     rendered["goalProgress"] =
         progress::project_selected(loaded, root, project_selected, value, &rendered, None);
+    if !selected_observation_still_current(root, value) {
+        let reason = crate::run::inputs::active_resume_budget()
+            .and_then(|mut budget| budget.limited_reason())
+            .unwrap_or("goal_journal_unavailable");
+        rendered["explicitLeadClosure"] = json!(false);
+        rendered["currentReadiness"] = json!({"state":"unknown","reason":reason});
+        rendered["goalProgress"] = progress::unavailable(
+            None,
+            reason,
+            "Goal observation is unavailable",
+            value.and_then(|record| record["goal"].as_str()),
+            "unavailable",
+        );
+    }
     rendered["terminal"] = json!(crate::presentation_events::whole_goal_terminal(&rendered));
     Ok(rendered)
 }

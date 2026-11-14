@@ -194,6 +194,82 @@ fn blocked_source_member(source: &Project, config: &Path) -> String {
     blocked
 }
 
+fn work_ledger(source: &Project, work: &str) -> PathBuf {
+    source
+        .root
+        .join(".exitbind/runs")
+        .join(format!("work-{}.jsonl", work.strip_prefix("smw_").unwrap()))
+}
+
+fn retirement_request(
+    owner: &Project,
+    config: &Path,
+    work: &str,
+    replacement: &str,
+    request_id: &str,
+) -> Output {
+    let selection = json!([{"work":work,"reason":"This direction was explicitly abandoned",
+        "replacement":replacement}])
+    .to_string();
+    owner.call(
+        &[
+            "goal",
+            "recover",
+            "--source-config",
+            config.to_str().unwrap(),
+            "--retirements",
+            &selection,
+            "--source-writers-quiesced",
+            "--request-id",
+            request_id,
+            "--reason",
+            "Retain the original Work without accepted credit",
+            "--json",
+        ],
+        None,
+    )
+}
+
+fn assert_json_refusal(output: &Output, cause: &str) {
+    assert!(!output.status.success(), "{output:?}");
+    let response: Value = serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|error| panic!("invalid JSON refusal: {error}: {output:?}"));
+    let diagnostic = response["error"].as_str().expect("JSON refusal error");
+    assert!(diagnostic.contains(cause), "{diagnostic}");
+}
+
+fn assert_retirement_refused_without_changes(
+    owner: &Project,
+    source: &Project,
+    config: &Path,
+    work: &str,
+    replacement: &str,
+    request_id: &str,
+    cause: &str,
+) {
+    let goal_path = native_journal(owner);
+    let work_path = work_ledger(source, work);
+    let before_goal = fs::read(&goal_path).unwrap();
+    let before_work = fs::read(&work_path).unwrap();
+    let before = owner.status();
+    assert!(before["eventSha256"].is_string());
+    assert!(before["journeyMembers"].is_array());
+    let ledger = format!(".exitbind/runs/work-{}.jsonl", &work[4..]);
+    let before_run = source.value_with_config(&["run", "inspect", &ledger, "--json"], None, config);
+    assert_eq!(before_run["status"], "blocked");
+    let refused = retirement_request(owner, config, work, replacement, request_id);
+    assert_json_refusal(&refused, cause);
+    assert_eq!(fs::read(&goal_path).unwrap(), before_goal);
+    assert_eq!(fs::read(&work_path).unwrap(), before_work);
+    let after = owner.status();
+    assert_eq!(after["eventSha256"], before["eventSha256"]);
+    assert_eq!(after["journeyMembers"], before["journeyMembers"]);
+    let after_run = source.value_with_config(&["run", "inspect", &ledger, "--json"], None, config);
+    assert_eq!(after_run["governor"], before_run["governor"]);
+    assert_eq!(fs::read(goal_path).unwrap(), before_goal);
+    assert_eq!(fs::read(work_path).unwrap(), before_work);
+}
+
 fn accept_recovery_integration(source: &Project, config: &Path) -> String {
     let integration = begin_in(
         source,
@@ -367,10 +443,613 @@ fn uncredited_retirement_refuses_a_still_active_source_work() {
         ],
         None,
     );
-    assert!(!refused.status.success());
-    assert!(String::from_utf8_lossy(&refused.stderr).contains("terminal blocked"));
+    assert_json_refusal(&refused, "terminal blocked");
     assert_eq!(fs::read(native_journal(&owner)).unwrap(), before_goal);
     assert_eq!(fs::read(active_ledger).unwrap(), before_work);
+}
+
+#[test]
+fn uncredited_retirement_refuses_a_real_late_pending_admission() {
+    use std::os::unix::fs::symlink;
+
+    struct RestoreRuns {
+        runs: PathBuf,
+        saved: PathBuf,
+    }
+    impl Drop for RestoreRuns {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.runs);
+            if self.saved.exists() {
+                fs::rename(&self.saved, &self.runs).expect("restore fixture Work directory");
+            }
+        }
+    }
+
+    let (owner, source) = owner_and_source("native-recovery-retirement-pending-admission");
+    let config = source.root.join("exitbind.json");
+    let replacement = source_member(&source);
+    let blocked = blocked_source_member(&source, &config);
+    let initial = recovery_preview(&owner, &source, "", "pending-base-recovery");
+    apply_recovery(&owner, &initial);
+
+    let safe = retirement_request(
+        &owner,
+        &config,
+        &blocked,
+        &replacement,
+        "pending-retirement-selection",
+    );
+    assert!(safe.status.success(), "{safe:?}");
+    let safe: Value = serde_json::from_slice(&safe.stdout).unwrap();
+    assert_eq!(safe["readOnly"], true);
+    let apply = safe["applyArgv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|part| part.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    assert!(apply.iter().any(|arg| arg == "--apply"));
+
+    // `work begin` first admits its exact native Goal intent, then creates the
+    // Run. The outside-pointing fixture symlink lets readiness pass but makes
+    // the actual Run path fail its existing state-root confinement check.
+    let runs = source.root.join(".exitbind/runs");
+    let saved = source.root.join(".exitbind/runs-retained-for-admission");
+    let outside = source.root.parent().unwrap().join("outside-runs");
+    fs::create_dir(&outside).unwrap();
+    fs::rename(&runs, &saved).unwrap();
+    let restore = RestoreRuns {
+        runs: runs.clone(),
+        saved,
+    };
+    symlink(&outside, &runs).unwrap();
+    let failed = source.call_with_config(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "A pending fixture admission",
+            "--check-command",
+            "sh check.sh",
+            "--review-policy",
+            "required",
+            "--json",
+        ],
+        None,
+        &config,
+    );
+    assert!(!failed.status.success(), "{failed:?}");
+    let diagnostic = format!(
+        "{}{}",
+        String::from_utf8_lossy(&failed.stdout),
+        String::from_utf8_lossy(&failed.stderr)
+    );
+    assert!(
+        diagnostic.contains("native journey admission remains unresolved"),
+        "{diagnostic}"
+    );
+    drop(restore);
+    assert!(runs.is_dir());
+    assert!(!fs::symlink_metadata(&runs)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    let pending = owner.status();
+    assert_eq!(pending["journeyAdmissions"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        pending["goalProgress"]["journeyCompletion"]["pendingAdmissions"],
+        1
+    );
+    let pending_work = pending["journeyAdmissions"][0]["work"].as_str().unwrap();
+    assert!(!work_ledger(&source, pending_work).exists());
+    let before_goal = fs::read(native_journal(&owner)).unwrap();
+    let before_work = fs::read(work_ledger(&source, &blocked)).unwrap();
+    let ledger = format!(".exitbind/runs/work-{}.jsonl", &blocked[4..]);
+    let before_run =
+        source.value_with_config(&["run", "inspect", &ledger, "--json"], None, &config);
+
+    // This is the exact previously emitted apply argv; the admitted Work is a
+    // later real state change, not a fabricated supposedly-current binding.
+    let refused = owner.call_exact_argv(&apply);
+    assert!(!refused.status.success(), "{refused:?}");
+    let diagnostic = format!(
+        "{}{}",
+        String::from_utf8_lossy(&refused.stdout),
+        String::from_utf8_lossy(&refused.stderr)
+    );
+    assert!(
+        diagnostic.contains("pending native Goal admission prevents retirement"),
+        "{diagnostic}"
+    );
+    assert_eq!(fs::read(native_journal(&owner)).unwrap(), before_goal);
+    assert_eq!(
+        fs::read(work_ledger(&source, &blocked)).unwrap(),
+        before_work
+    );
+    let after_apply = owner.status();
+    assert_eq!(after_apply["eventSha256"], pending["eventSha256"]);
+    assert_eq!(after_apply["journeyMembers"], pending["journeyMembers"]);
+    assert_eq!(
+        after_apply["journeyAdmissions"],
+        pending["journeyAdmissions"]
+    );
+    let after_run = source.value_with_config(&["run", "inspect", &ledger, "--json"], None, &config);
+    assert_eq!(after_run["governor"], before_run["governor"]);
+    assert_retirement_refused_without_changes(
+        &owner,
+        &source,
+        &config,
+        &blocked,
+        &replacement,
+        "pending-fresh-preview",
+        "pending native Goal admission prevents retirement",
+    );
+}
+
+#[test]
+fn uncredited_retirement_refuses_an_actual_prepared_child() {
+    let (owner, source) = owner_and_source("native-recovery-retirement-child");
+    let config = source.root.join("exitbind.json");
+    let replacement = source_member(&source);
+    let work = begin_in(
+        &source,
+        &config,
+        "The selected direction has a prepared child",
+        "sh check.sh",
+        &[
+            "--preserve-requirement",
+            "docs:Check docs.",
+            "--preservation-check-command",
+            "true",
+        ],
+    );
+    let intake = json!({"action":"init","sourceRef":"owner:request",
+        "sourceText":"Check docs.","requirements":[{"id":"docs","text":"Check docs."}]})
+    .to_string();
+    source.value_with_config(&["work", "record", &work], Some(&intake), &config);
+    let continuation =
+        source.value_with_config(&["work", "continuation", &work, "--json"], None, &config);
+    let mutation_context_value = continuation["mutationContext"]["token"].as_str().unwrap();
+    source.value_with_config(
+        &[
+            "work",
+            "bind",
+            &work,
+            "--context",
+            mutation_context_value,
+            "--host",
+            "codex",
+            "--session",
+            "retirement-child-session",
+            "--host-version",
+            "fixture",
+        ],
+        None,
+        &config,
+    );
+    let continuation =
+        source.value_with_config(&["work", "continuation", &work, "--json"], None, &config);
+    let mutation_context_value = continuation["mutationContext"]["token"].as_str().unwrap();
+    let prepared = source.value_with_config(
+        &[
+            "work",
+            "child",
+            "prepare",
+            &work,
+            "Check the documentation",
+            "--context",
+            mutation_context_value,
+        ],
+        None,
+        &config,
+    );
+    assert_eq!(prepared["effect"], "prepared");
+    let intent = prepared["intent"].as_str().unwrap();
+    let mut next =
+        source.value_with_config(&["work", "next", &work, "--json", "--full"], None, &config);
+    while next["next"]["action"] == "lead_decision" {
+        source.return_stage_with_config(&work, &next["next"], "scoped", &config);
+        next =
+            source.value_with_config(&["work", "next", &work, "--json", "--full"], None, &config);
+    }
+    assert_eq!(next["next"]["role"], "worker");
+    source.return_stage_with_config(&work, &next["next"], "blocked", &config);
+    let continuation =
+        source.value_with_config(&["work", "continuation", &work, "--json"], None, &config);
+    assert!(
+        continuation["preparedChildren"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["intent"] == intent && item["state"] == "prepared"),
+        "{continuation}"
+    );
+    let initial = recovery_preview(&owner, &source, "", "child-base-recovery");
+    apply_recovery(&owner, &initial);
+    let child_refusal =
+        format!("a live, prepared or retained child prevents retirement: child {intent}");
+    assert_retirement_refused_without_changes(
+        &owner,
+        &source,
+        &config,
+        &work,
+        &replacement,
+        "child-retirement-preview",
+        &child_refusal,
+    );
+    let after = source.value_with_config(&["work", "continuation", &work, "--json"], None, &config);
+    assert_eq!(after["preparedChildren"], continuation["preparedChildren"]);
+}
+
+// The checker kills only its own capture capsule. Run this one Linux case in
+// an isolated subreaper process, so the exact orphaned fixture shell can be
+// reaped without claiming or signalling any unrelated process.
+#[cfg(target_os = "linux")]
+fn isolated_retirement_unknown(test: &str) -> bool {
+    if std::env::var("EXITBIND_RETIREMENT_REAPER_FIXTURE").as_deref() == Ok(test) {
+        assert_eq!(
+            unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) },
+            0
+        );
+        return false;
+    }
+    let output = support::temp("retirement-unknown-controller");
+    let mut child = support::git_topology::command(std::env::current_exe().unwrap())
+        .args(["--exact", test, "--nocapture", "--test-threads=1"])
+        .env("EXITBIND_RETIREMENT_REAPER_FIXTURE", test)
+        .stdout(fs::File::create(output.join("stdout")).unwrap())
+        .stderr(fs::File::create(output.join("stderr")).unwrap())
+        .spawn()
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if std::time::Instant::now() >= deadline {
+            child.kill().unwrap();
+            let _ = child.wait();
+            panic!("owned retirement unknown fixture exceeded its deadline");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    };
+    let stdout = fs::read_to_string(output.join("stdout")).unwrap();
+    let stderr = fs::read_to_string(output.join("stderr")).unwrap();
+    assert!(status.success(), "{status}; {stdout}; {stderr}");
+    assert!(stdout.contains("1 passed; 0 failed"), "{stdout}");
+    true
+}
+
+#[cfg(target_os = "linux")]
+struct RetirementOwnedShell(i32);
+
+#[cfg(target_os = "linux")]
+impl Drop for RetirementOwnedShell {
+    fn drop(&mut self) {
+        let mut info = unsafe { std::mem::zeroed::<libc::siginfo_t>() };
+        if unsafe {
+            libc::waitid(
+                libc::P_PID,
+                self.0 as u32,
+                &mut info,
+                libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+            )
+        } == 0
+        {
+            if unsafe { info.si_pid() } == 0 {
+                unsafe {
+                    libc::kill(self.0, libc::SIGKILL);
+                }
+            }
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+            while std::time::Instant::now() < deadline {
+                if unsafe { libc::waitpid(self.0, std::ptr::null_mut(), libc::WNOHANG) } == self.0 {
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            panic!("the owned retirement fixture shell was not reaped");
+        }
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ECHILD)
+        );
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn uncredited_retirement_refuses_a_real_unknown_check() {
+    const TEST: &str =
+        "goal_requirements::native_recovery::uncredited_retirement_refuses_a_real_unknown_check";
+    if isolated_retirement_unknown(TEST) {
+        return;
+    }
+    let (owner, source) = owner_and_source("native-recovery-retirement-unknown-check");
+    source.file(
+        "unknown-check.sh",
+        "printf '%s' $$ > .exitbind/unknown-child; kill -KILL $PPID; exit 0\n",
+    );
+    let config = source.root.join("exitbind.json");
+    let replacement = source_member(&source);
+    let work = begin_in(
+        &source,
+        &config,
+        "The check has an unknown termination",
+        "exec sh unknown-check.sh",
+        &[],
+    );
+    let initial = recovery_preview(&owner, &source, "", "unknown-base-recovery");
+    apply_recovery(&owner, &initial);
+    let mut next =
+        source.value_with_config(&["work", "next", &work, "--json", "--full"], None, &config);
+    while next["next"]["action"] == "lead_decision" {
+        source.return_stage_with_config(&work, &next["next"], "scoped", &config);
+        next =
+            source.value_with_config(&["work", "next", &work, "--json", "--full"], None, &config);
+    }
+    assert_eq!(next["next"]["role"], "worker");
+    source.return_stage_with_config(&work, &next["next"], "completed", &config);
+    let failure = source.call_with_config(
+        &["work", "check", &work, "--timeout-ms", "2000"],
+        None,
+        &config,
+    );
+    assert!(!failure.status.success(), "{failure:?}");
+    let failure: Value = serde_json::from_slice(&failure.stdout).unwrap();
+    let facts = &failure["observationFailure"]["facts"];
+    assert!(facts.get("process").is_some() && facts["process"].is_null());
+    assert_eq!(facts["groupEnded"], false);
+    assert_eq!(facts["termination"], "unknown");
+    let pid = fs::read_to_string(source.root.join(".exitbind/unknown-child"))
+        .unwrap()
+        .parse::<i32>()
+        .unwrap();
+    let owned = RetirementOwnedShell(pid);
+    let lead =
+        source.value_with_config(&["work", "next", &work, "--json", "--full"], None, &config);
+    assert_eq!(lead["next"]["role"], "lead");
+    assert!(lead["next"]["outcomes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|outcome| outcome == "blocked"));
+    source.return_stage_with_config(&work, &lead["next"], "blocked", &config);
+    let diagnostic =
+        source.value_with_config(&["work", "recover-check", &work, "--json"], None, &config);
+    assert_eq!(diagnostic["effect"], "no-change");
+    assert_eq!(diagnostic["status"], "historical_unknown_termination");
+    assert_eq!(diagnostic["observation"]["termination"], "unknown");
+    assert_eq!(diagnostic["checkRecorded"], false);
+    drop(owned);
+    assert_retirement_refused_without_changes(
+        &owner,
+        &source,
+        &config,
+        &work,
+        &replacement,
+        "unknown-retirement-preview",
+        "an active, unknown or retained Work operation prevents retirement",
+    );
+}
+
+#[cfg(target_os = "linux")]
+struct RetirementPreReturnCaller {
+    child: Option<std::process::Child>,
+    started: PathBuf,
+    release: PathBuf,
+    finished: PathBuf,
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for RetirementPreReturnCaller {
+    fn drop(&mut self) {
+        let _ = fs::write(&self.release, b"cleanup");
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        if self.started.exists() {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while !self.finished.exists() && std::time::Instant::now() < deadline {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            if !self.finished.exists() && !std::thread::panicking() {
+                panic!("owned pre-return fixture did not finish after release");
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn uncredited_retirement_refuses_a_real_unresolved_pre_return() {
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::Stdio;
+
+    let (owner, source) = owner_and_source("native-recovery-retirement-pre-return");
+    source.file("pre-return-check.sh", "set -eu\nprintf x >> .exitbind/pre-return-count\n: > .exitbind/pre-return-started\nwhile test ! -f .exitbind/pre-return-release; do sleep 0.05; done\n: > .exitbind/pre-return-ended\n");
+    let config = source.root.join("exitbind.json");
+    let mut settings: Value = serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
+    settings["project"]["verificationPreparation"] =
+        json!({"version":1,"pythonBytecode":"disabled","scratch":"taskOwned"});
+    fs::write(&config, serde_json::to_vec_pretty(&settings).unwrap()).unwrap();
+    let replacement = source_member(&source);
+    let work = begin_in(
+        &source,
+        &config,
+        "The pre-return result is unresolved",
+        "sh check.sh",
+        &[
+            "--pre-return-command",
+            "sh pre-return-check.sh",
+            "--pre-return-timeout-ms",
+            "20000",
+        ],
+    );
+    let initial = recovery_preview(&owner, &source, "", "pre-return-base-recovery");
+    apply_recovery(&owner, &initial);
+    let mut next =
+        source.value_with_config(&["work", "next", &work, "--json", "--full"], None, &config);
+    while next["next"]["action"] == "lead_decision" {
+        source.return_stage_with_config(&work, &next["next"], "scoped", &config);
+        next =
+            source.value_with_config(&["work", "next", &work, "--json", "--full"], None, &config);
+    }
+    assert_eq!(next["next"]["role"], "worker");
+    let assignment = next["next"]["assignment"].as_str().unwrap().to_owned();
+    let (session, store) = source.native_session.as_ref().unwrap();
+    let outside = source.root.parent().unwrap();
+    let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
+    command
+        .current_dir(&source.root)
+        .args([
+            "work",
+            "return",
+            &work,
+            &assignment,
+            "--outcome",
+            "completed",
+            "--config",
+        ])
+        .arg(&config)
+        .env("EXITBIND_NO_UPDATE_CHECK", "1")
+        .env_remove("CODEX_THREAD_ID")
+        .env_remove("CODEX_SESSION_ID")
+        .env_remove("CLAUDE_CODE_SESSION_ID")
+        .env_remove("EXITBIND_NATIVE_SESSION_ID")
+        .env_remove("EXITBIND_SESSION_GOALS_DIR")
+        .env_remove("CLAUDE_ENV_FILE")
+        .env_remove("XDG_STATE_HOME")
+        .env("CODEX_THREAD_ID", session)
+        .env("EXITBIND_SESSION_GOALS_DIR", store)
+        .stdin(Stdio::piped())
+        .stdout(fs::File::create(outside.join("pre-return-caller.stdout")).unwrap())
+        .stderr(fs::File::create(outside.join("pre-return-caller.stderr")).unwrap());
+    let child = command.spawn().unwrap();
+    let mut caller = RetirementPreReturnCaller {
+        child: Some(child),
+        started: source.root.join(".exitbind/pre-return-started"),
+        release: source.root.join(".exitbind/pre-return-release"),
+        finished: source.root.join(".exitbind/pre-return-ended"),
+    };
+    caller
+        .child
+        .as_mut()
+        .unwrap()
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"The complete fixture worker result.\n")
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !caller.started.exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "pre-return did not start"
+        );
+        assert!(
+            caller.child.as_mut().unwrap().try_wait().unwrap().is_none(),
+            "caller exited before admission"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let ledger = format!(".exitbind/runs/work-{}.jsonl", &work[4..]);
+    let admitted = source.value_with_config(&["run", "inspect", &ledger, "--json"], None, &config);
+    let attempt = admitted["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|event| event["action"] == "pre_return_admitted")
+        .and_then(|event| event["admission"]["attemptId"].as_str())
+        .expect("real public pre-return admission")
+        .to_owned();
+    caller.child.as_mut().unwrap().kill().unwrap();
+    let status = caller.child.take().unwrap().wait().unwrap();
+    assert_eq!(status.signal(), Some(9));
+    fs::write(&caller.release, b"finish the owned checker").unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
+    loop {
+        let observation = source.value_with_config(
+            &["work", "recover-pre-return", &work, "--json"],
+            None,
+            &config,
+        );
+        if observation["ownerDecision"]["snapshot"]["evidence"]["type"] == "owned_observer_v1" {
+            let facts = &observation["ownerDecision"]["snapshot"]["evidence"]["facts"];
+            assert_eq!(facts["ownedChildrenDrained"], true);
+            assert_eq!(facts["checkCredit"], false);
+            assert_eq!(facts["nativeExit"], "unknown");
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "owned observer did not finish: {observation}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert!(caller.finished.exists());
+    let read = source.value_with_config(
+        &["run", "pre-return", "read", &work, &attempt, "--json"],
+        None,
+        &config,
+    );
+    assert!(
+        read.get("result").is_some() && read["result"].is_null(),
+        "{read}"
+    );
+    let held = format!(
+        "hld_{}_{:x}_{:x}.bin",
+        &work[4..],
+        Sha256::digest(assignment.as_bytes()),
+        Sha256::digest(b"The complete fixture worker result.\n")
+    );
+    let held = source.root.join(".exitbind/held").join(held);
+    let held_before = fs::read(&held).unwrap();
+    assert_eq!(held_before, b"The complete fixture worker result.\n");
+    let blocked = source.call_with_config(
+        &[
+            "work",
+            "return",
+            &work,
+            &assignment,
+            "--outcome",
+            "blocked",
+            "--json",
+        ],
+        Some("The interrupted pre-return attempt remains uncredited.\n"),
+        &config,
+    );
+    assert!(blocked.status.success(), "{blocked:?}");
+    assert_eq!(
+        fs::read(source.root.join(".exitbind/pre-return-count")).unwrap(),
+        b"x"
+    );
+    assert_retirement_refused_without_changes(
+        &owner,
+        &source,
+        &config,
+        &work,
+        &replacement,
+        "pre-return-retirement-preview",
+        "an unresolved pre-return attempt prevents retirement",
+    );
+    let retained = source.value_with_config(
+        &["run", "pre-return", "read", &work, &attempt, "--json"],
+        None,
+        &config,
+    );
+    assert!(
+        retained.get("result").is_some() && retained["result"].is_null(),
+        "{retained}"
+    );
+    assert_eq!(retained, read);
+    assert_eq!(fs::read(held).unwrap(), held_before);
+    assert_eq!(
+        fs::read(source.root.join(".exitbind/pre-return-count")).unwrap(),
+        b"x"
+    );
 }
 
 #[test]
@@ -403,10 +1082,7 @@ fn explicit_uncredited_retirement_preserves_members_and_requires_a_new_integrati
         "--json",
     ];
     let without_attestation = owner.call(&args, None);
-    assert!(!without_attestation.status.success());
-    assert!(
-        String::from_utf8_lossy(&without_attestation.stderr).contains("source-writers-quiesced")
-    );
+    assert_json_refusal(&without_attestation, "source-writers-quiesced");
     assert_eq!(fs::read(native_journal(&owner)).unwrap(), before_goal);
     let mut attested = args.to_vec();
     attested.push("--source-writers-quiesced");
@@ -426,8 +1102,7 @@ fn explicit_uncredited_retirement_preserves_members_and_requires_a_new_integrati
     ));
     fs::write(&held, retained).unwrap();
     let held_refusal = owner.call(&attested, None);
-    assert!(!held_refusal.status.success());
-    assert!(String::from_utf8_lossy(&held_refusal.stderr).contains("retained result"));
+    assert_json_refusal(&held_refusal, "retained result");
     assert_eq!(fs::read(native_journal(&owner)).unwrap(), before_goal);
     assert_eq!(fs::read(&old_work).unwrap(), before_work);
     fs::remove_file(&held).unwrap();
@@ -448,8 +1123,7 @@ fn explicit_uncredited_retirement_preserves_members_and_requires_a_new_integrati
         "--json",
     ];
     let refused = owner.call(&wrong_args, None);
-    assert!(!refused.status.success());
-    assert!(String::from_utf8_lossy(&refused.stderr).contains("terminal blocked"));
+    assert_json_refusal(&refused, "terminal blocked");
     assert_eq!(fs::read(native_journal(&owner)).unwrap(), before_goal);
     let foreign = Project::new("native-recovery-retirement-foreign");
     let foreign_config = foreign.root.join("exitbind.json");
@@ -557,6 +1231,7 @@ fn explicit_uncredited_retirement_preserves_members_and_requires_a_new_integrati
         1
     );
     assert_eq!(fs::read(&old_work).unwrap(), before_work);
+    let before_close = fs::read(native_journal(&owner)).unwrap();
     let closed = owner.value(
         &[
             "goal",
@@ -568,7 +1243,15 @@ fn explicit_uncredited_retirement_preserves_members_and_requires_a_new_integrati
         ],
         None,
     );
-    assert_eq!(closed["effect"], "committed");
+    assert_eq!(closed["closure"]["closed"], true);
+    assert_eq!(closed["closure"]["resultRefs"], json!([integration]));
+    assert_eq!(closed["previousEventSha256"], current["eventSha256"]);
+    assert_eq!(
+        closed["revision"].as_u64(),
+        Some(current["revision"].as_u64().unwrap() + 1)
+    );
+    let after_close = fs::read(native_journal(&owner)).unwrap();
+    assert!(after_close.starts_with(&before_close) && after_close.len() > before_close.len());
     assert_eq!(fs::read(&old_work).unwrap(), before_work);
 
     // A later explicit selection with a different reason is a different
@@ -778,8 +1461,7 @@ fn uncredited_retirement_refuses_an_existing_successor_claim() {
         ],
         None,
     );
-    assert!(!refused.status.success());
-    assert!(String::from_utf8_lossy(&refused.stderr).contains("claimed successor"));
+    assert_json_refusal(&refused, "claimed successor");
     assert_eq!(fs::read(native_journal(&owner)).unwrap(), before_goal);
     assert_eq!(fs::read(source.root.join(old_ledger)).unwrap(), before_work);
 }

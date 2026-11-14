@@ -61,6 +61,11 @@ RoutedInText	src/session_goal/recovery.rs	Source configuration changed or became
 RoutedInText	src/session_goal/recovery.rs	native Goal recovery preview is stale; request a new preview
 Transient	src/session_goal/recovery.rs	owner configuration changed or became unavailable; reload and preview recovery: {error}
 RoutedInText	src/session_goal/recovery.rs	saved Source configuration changed; preview recovery again
+RoutedInText	src/session_goal/recovery.rs	saved Source configuration changed; preview recovery again
+# These compare the selected Goal identity and the replacement's entire
+# configuration/root binding during owner preparation, not just file bytes.
+Identity	src/session_goal/recovery/retirement.rs	native Goal retirement selection belongs to different Goal text
+LeadPreparation	src/session_goal/recovery/retirement.rs	retirement replacement configuration changed
 NotARefusal	src/session_goal/requirements.rs	additional direct completion is stale or unknown
 NotARefusal	src/session_goal/requirements.rs	additional direct completion is stale or unknown
 NotARefusal	src/session_goal/requirements.rs	additional goal result in {category} is stale or unknown

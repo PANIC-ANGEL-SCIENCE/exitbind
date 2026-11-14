@@ -190,11 +190,16 @@ selection, the earlier recovery request and integration digests are unchanged.
 The selection also binds the Goal text; an update that changes that text drops
 the selection and requires a new explicit owner decision, even if the Goal ID
 is unchanged. Same-Goal category updates preserve it.
-Read-only Goal observation uses cooperative limits and reports unavailable
-currentness when it cannot establish the evidence; these limits are not a hard
-operating-system latency guarantee. SessionStart does not revalidate previous
-task progress: it shows Goal metadata while omitting current task counts until
-an actual observation is performed.
+Goal status and ordinary display projection use the existing cooperative
+observation limits and report unavailable currentness when they cannot
+establish the evidence. These limits do not cover every read-only command or
+owner-bootstrap path and are not a hard operating-system latency guarantee.
+After owner verification, SessionStart
+does not revalidate previous task progress: it shows Goal metadata with unknown
+currentness and omits current task counts until an actual observation is
+performed. If the owner cannot be verified, the recovery context reports that
+it is unresolved and preserves any previous non-authoritative human display
+cache; that cache is not a current readiness decision.
 
 For a compact completion response, close the whole conversation Goal with
 `goal close --direct --goal-id ID --view event --json`. The response carries the

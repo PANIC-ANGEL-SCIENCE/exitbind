@@ -266,14 +266,17 @@ pub(super) fn resolve_history(
     value: &Value,
     history: &[Value],
 ) -> Result<Resolved, String> {
-    let marker = Marker::parse(session, value)?;
-    let mut fold = OwnershipFold::new(session, &marker.original);
-    let mut previous = None;
-    for record in history {
-        fold.observe(record, previous)?;
-        previous = Some(record);
-    }
-    finish(&marker, fold, previous)
+    super::super::with_history_observation(|budget| {
+        let marker = Marker::parse(session, value)?;
+        let mut fold = OwnershipFold::new(session, &marker.original);
+        let mut previous = None;
+        for record in history {
+            super::super::check_history_observation(budget)?;
+            fold.observe(record, previous)?;
+            previous = Some(record);
+        }
+        finish(&marker, fold, previous)
+    })
 }
 
 pub(in crate::session_goal) fn resolve_owner(
@@ -281,15 +284,19 @@ pub(in crate::session_goal) fn resolve_owner(
     value: &Value,
     access: Access,
 ) -> Result<Resolved, String> {
-    let raw = super::super::raw_history(&session.root)?;
-    let history = super::super::records_from_raw(raw.as_deref())?;
-    let result = resolve_history(session, value, &history)?;
-    if session.owner_value(access)?.as_ref() != Some(value)
-        || super::super::raw_history(&session.root)? != raw
-    {
-        return Err("native Goal owner and journal snapshot is inconsistent; retry".into());
-    }
-    Ok(result)
+    super::super::with_history_observation(|budget| {
+        let raw = super::super::raw_history(&session.root)?;
+        let history = super::super::records_from_raw(raw.as_deref())?;
+        super::super::check_history_observation(budget)?;
+        let result = resolve_history(session, value, &history)?;
+        super::super::check_history_observation(budget)?;
+        if session.owner_value(access)?.as_ref() != Some(value)
+            || super::super::raw_history(&session.root)? != raw
+        {
+            return Err("native Goal owner and journal snapshot is inconsistent; retry".into());
+        }
+        Ok(result)
+    })
 }
 
 pub(in crate::session_goal) fn validate_legacy_history(
@@ -297,33 +304,40 @@ pub(in crate::session_goal) fn validate_legacy_history(
     value: &Value,
     access: Access,
 ) -> Result<(), String> {
-    let raw = super::super::raw_history(&session.root)?;
-    if raw
-        .as_deref()
-        .map(legacy_contains_correction)
-        .transpose()?
-        .unwrap_or(false)
-    {
-        return Err("native Goal owner marker is missing for correction history".into());
-    }
-    if session.owner_value(access)?.as_ref() != Some(value) {
-        return Err("native Goal owner and journal snapshot is inconsistent; retry".into());
-    }
-    Ok(())
+    super::super::with_history_observation(|budget| {
+        let raw = super::super::raw_history(&session.root)?;
+        if raw
+            .as_deref()
+            .map(legacy_contains_correction)
+            .transpose()?
+            .unwrap_or(false)
+        {
+            return Err("native Goal owner marker is missing for correction history".into());
+        }
+        super::super::check_history_observation(budget)?;
+        if session.owner_value(access)?.as_ref() != Some(value) {
+            return Err("native Goal owner and journal snapshot is inconsistent; retry".into());
+        }
+        Ok(())
+    })
 }
 
 /// Legacy owners need only detect an illicit marker downgrade here. Avoid
 /// reducing and hashing the whole Goal history on every legacy owner lookup;
 /// ordinary Goal reads still validate the complete chain independently.
 fn legacy_contains_correction(raw: &str) -> Result<bool, String> {
-    for line in raw.lines() {
-        let physical: Value = serde_json::from_str(line)
-            .map_err(|_| "native Goal journal contains malformed JSON")?;
-        if legacy_physical_contains_correction(&physical)? {
-            return Ok(true);
+    super::super::with_history_observation(|budget| {
+        for line in raw.lines() {
+            super::super::check_history_observation(budget)?;
+            let physical: Value = serde_json::from_str(line)
+                .map_err(|_| "native Goal journal contains malformed JSON")?;
+            super::super::check_history_observation(budget)?;
+            if legacy_physical_contains_correction(&physical)? {
+                return Ok(true);
+            }
         }
-    }
-    Ok(false)
+        Ok(false)
+    })
 }
 
 fn legacy_physical_contains_correction(physical: &Value) -> Result<bool, String> {
@@ -505,6 +519,18 @@ mod tests {
             )
             .is_err());
         }
+    }
+
+    #[test]
+    fn malformed_owner_history_marks_the_active_observation_unavailable() {
+        let mut budget = crate::run::inputs::ResumeInputBudget::new();
+        let error = crate::run::inputs::with_resume_budget(&mut budget, |_| {
+            legacy_contains_correction("{not-json}\n").unwrap_err()
+        });
+        assert!(error.contains("malformed JSON"));
+        assert_eq!(budget.limited_reason(), Some("goal_history_unavailable"));
+        assert!(!legacy_contains_correction("{}\n").unwrap());
+        assert!(crate::run::inputs::active_resume_budget().is_none());
     }
 
     #[cfg(unix)]
