@@ -572,6 +572,314 @@ fn context_surface_inventory_is_reproducible_and_path_free() {
     );
 }
 
+#[cfg(unix)]
+fn run_inventory_validator(
+    name: &str,
+    args: &[std::ffi::OsString],
+    marker: &Path,
+) -> std::process::Output {
+    let script = source("tooling/repository/ci/context-surface-inventory.sh");
+    let validators = script
+        .split_once("# BEGIN inventory receipt validators\n")
+        .expect("inventory validators missing")
+        .1
+        .split_once("# END inventory receipt validators")
+        .expect("inventory validators not closed")
+        .0;
+    let call = if name == "validate_inventory_submit" {
+        "receipt=$(validate_inventory_submit \"$@\")\ntest -n \"$receipt\"".to_owned()
+    } else {
+        format!("{name} \"$@\"")
+    };
+    let shell = format!("set -e\n{validators}\n{call}\nprintf reached > \"$INVENTORY_MARKER\"\n");
+    support::git_topology::command("sh")
+        .arg("-c")
+        .arg(shell)
+        .arg("inventory-validator")
+        .args(args)
+        .env("INVENTORY_MARKER", marker)
+        .output()
+        .unwrap()
+}
+
+#[cfg(unix)]
+fn assert_inventory_validator(
+    name: &str,
+    args: &[std::ffi::OsString],
+    marker: &Path,
+    expected: bool,
+) -> std::process::Output {
+    if marker.exists() {
+        fs::remove_file(marker).unwrap();
+    }
+    let output = run_inventory_validator(name, args, marker);
+    assert_eq!(output.status.success(), expected, "{output:?}");
+    assert_eq!(marker.exists(), expected, "{output:?}");
+    output
+}
+
+/// A held, incomplete or foreign result must not advance to the next check.
+#[cfg(unix)]
+#[test]
+fn inventory_receipts_fail_closed_before_following_actions() {
+    use serde_json::json;
+
+    let root = support::temp("inventory-receipt");
+    let path = root.join("receipt.json");
+    let marker = root.join("next-action");
+    let work = "smw_fixture";
+    let assignment = "sma_fixture";
+    let event = "a".repeat(64);
+    let valid = json!({"work":work,"assignment":assignment,"status":"recorded",
+        "effect":"recorded","outcome":"completed","eventSha256":event,"event":{"action":"submit",
+        "outcome":"completed","eventSha256":event}});
+    let mut held = valid.clone();
+    held["status"] = json!("held");
+    held["effect"] = json!("held");
+    held["event"] = serde_json::Value::Null;
+    let mut missing = valid.clone();
+    missing.as_object_mut().unwrap().remove("event");
+    let mut foreign_work = valid.clone();
+    foreign_work["work"] = json!("smw_foreign");
+    let mut foreign_assignment = valid.clone();
+    foreign_assignment["assignment"] = json!("sma_foreign");
+    let mut mismatched_event = valid.clone();
+    mismatched_event["eventSha256"] = json!("f".repeat(64));
+    let args = vec![
+        path.as_os_str().to_owned(),
+        work.into(),
+        assignment.into(),
+        "completed".into(),
+    ];
+    for (value, accepted) in [
+        (valid, true),
+        (held, false),
+        (missing, false),
+        (foreign_work, false),
+        (foreign_assignment, false),
+        (mismatched_event, false),
+    ] {
+        fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+        assert_inventory_validator("validate_inventory_submit", &args, &marker, accepted);
+    }
+
+    let valid = json!({"work":work,"status":"recorded","effect":"recorded",
+        "eventSha256":"b".repeat(64),"targetEventSha256":event,"result":{"kind":"exit","code":0},
+        "event":{"action":"check","eventSha256":"b".repeat(64),
+        "targetEventSha256":event,"result":{"kind":"exit","code":0}}});
+    let mut wrong_target = valid.clone();
+    wrong_target["event"]["targetEventSha256"] = json!("c".repeat(64));
+    let mut failed_check = valid.clone();
+    failed_check["event"]["result"]["code"] = json!(1);
+    let mut ambiguous_check = valid.clone();
+    ambiguous_check["event"]["result"]["code"] = json!(false);
+    ambiguous_check["result"]["code"] = json!(false);
+    let args = vec![path.as_os_str().to_owned(), work.into(), event.into()];
+    for (value, accepted) in [
+        (valid, true),
+        (wrong_target, false),
+        (failed_check, false),
+        (ambiguous_check, false),
+    ] {
+        fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+        assert_inventory_validator("validate_inventory_check", &args, &marker, accepted);
+    }
+}
+
+/// Recovery uses observed growing history and checked events, never a copied
+/// or foreign envelope merely to reopen the governor.
+#[cfg(unix)]
+#[test]
+fn inventory_evidence_rejects_duplicate_and_foreign_observations() {
+    use serde_json::{json, Value};
+
+    let root = support::temp("inventory-evidence");
+    let marker = root.join("next-action");
+    let detail_path = root.join("detail.json");
+    let history = root.join("history.jsonl");
+    let next1 = root.join("next-1.json");
+    let next2 = root.join("next-2.json");
+    let ledger1 = root.join("ledger-1.jsonl");
+    let ledger2 = root.join("ledger-2.jsonl");
+    let submit1 = root.join("submit-1.json");
+    let submit2 = root.join("submit-2.json");
+    let check1 = root.join("check-1.json");
+    let check2 = root.join("check-2.json");
+    let work = "smw_fixture";
+    let binary_file = root.join("inventory-bin");
+    let binary_alias = root.join("inventory-bin-alias");
+    let config_file = root.join("exitbind.json");
+    let config_alias = root.join("inventory-config-alias");
+    fs::write(&binary_file, b"fixture").unwrap();
+    fs::write(&config_file, b"{}\n").unwrap();
+    std::os::unix::fs::symlink(&binary_file, &binary_alias).unwrap();
+    std::os::unix::fs::symlink(&config_file, &config_alias).unwrap();
+    let binary = binary_file.to_str().unwrap();
+    let config = config_file.to_str().unwrap().to_owned();
+    let detail = json!({"work":work,"complete":true,"valid":true,"binding":"b3",
+        "recipient":{"role":"worker","assignment":"sma_3"},
+        "actionForms":{"work":work,"assignment":"sma_3","binding":"b3",
+          "choiceActor":{"role":"lead"},"recovery":{"state":"replan_required"},
+          "choices":[{"label":"evidence","placeholders":["ARTIFACT_ROOT","ARTIFACT_PATH"],
+            "inputConstraints":{"ARTIFACT_ROOT":{"allowedValues":["product","state"]}},
+            "command":{"sameConfigRequired":false,"sameExecutableRequired":false,
+              "argv":[binary,"work","evidence",work,"sma_3","--artifact-root","<ARTIFACT_ROOT>",
+                "--artifact","<ARTIFACT_PATH>","--config",config]}}]},
+        "sections":{"assignment":{"assignment":{"context":{"loop":{"state":"replan_required",
+          "spent":2,"noInformationStreak":2,"evidence":[],"seenEvidenceSha256":[]}}}}}});
+    let packet = |assignment: &str| {
+        json!({"work":work,"next":{"role":"worker","assignment":assignment,
+        "packet":{"context":{"expansions":[{}],"evidence":[]},"upstreamArtifacts":[]}}})
+    };
+    let submit = |assignment: &str, hash: &str| {
+        json!({"work":work,"assignment":assignment,
+        "status":"recorded","effect":"recorded","outcome":"completed","eventSha256":hash,
+        "event":{"action":"submit","outcome":"completed","eventSha256":hash}})
+    };
+    let check = |target: &str, hash: &str| {
+        json!({"work":work,"status":"recorded","effect":"recorded",
+        "eventSha256":hash,"targetEventSha256":target,"result":{"kind":"exit","code":0},
+        "event":{"action":"check","eventSha256":hash,"targetEventSha256":target,
+        "result":{"kind":"exit","code":0}}})
+    };
+    let write_json = |path: &Path, value: &Value| {
+        fs::write(path, serde_json::to_vec(value).unwrap()).unwrap();
+    };
+    let worker1 = "a".repeat(64);
+    let worker2 = "b".repeat(64);
+    let checked1 = "c".repeat(64);
+    let checked2 = "d".repeat(64);
+    let first = json!({"historyEvents":1,"routineExpansionCount":1,"routineFieldsBounded":true});
+    let second = json!({"historyEvents":2,"routineExpansionCount":1,"routineFieldsBounded":true});
+    write_json(&detail_path, &detail);
+    write_json(&next1, &packet("sma_1"));
+    write_json(&next2, &packet("sma_2"));
+    fs::write(&ledger1, b"{}\n").unwrap();
+    fs::write(&ledger2, b"{}\n{}\n").unwrap();
+    fs::write(&history, format!("{first}\n{second}\n")).unwrap();
+    write_json(&submit1, &submit("sma_1", &worker1));
+    write_json(&submit2, &submit("sma_2", &worker2));
+    write_json(&check1, &check(&worker1, &checked1));
+    write_json(&check2, &check(&worker2, &checked2));
+    let route_args = vec![
+        detail_path.as_os_str().to_owned(),
+        binary.into(),
+        root.as_os_str().to_owned(),
+        work.into(),
+    ];
+    assert_inventory_validator(
+        "validate_inventory_evidence_route",
+        &route_args,
+        &marker,
+        true,
+    );
+    let mut aliases = detail.clone();
+    aliases["actionForms"]["choices"][0]["command"]["argv"][0] =
+        json!(binary_alias.to_str().unwrap());
+    aliases["actionForms"]["choices"][0]["command"]["argv"][10] =
+        json!(config_alias.to_str().unwrap());
+    write_json(&detail_path, &aliases);
+    assert_inventory_validator(
+        "validate_inventory_evidence_route",
+        &route_args,
+        &marker,
+        true,
+    );
+    let mut foreign_route = detail.clone();
+    foreign_route["actionForms"]["choices"][0]["command"]["argv"][0] = json!("/foreign");
+    write_json(&detail_path, &foreign_route);
+    assert_inventory_validator(
+        "validate_inventory_evidence_route",
+        &route_args,
+        &marker,
+        false,
+    );
+    let mut absent_route = detail.clone();
+    absent_route["actionForms"]["choices"] = json!([]);
+    write_json(&detail_path, &absent_route);
+    assert_inventory_validator(
+        "validate_inventory_evidence_route",
+        &route_args,
+        &marker,
+        false,
+    );
+    let mut foreign_config = detail.clone();
+    foreign_config["actionForms"]["choices"][0]["command"]["argv"][10] =
+        json!("/foreign/exitbind.json");
+    write_json(&detail_path, &foreign_config);
+    assert_inventory_validator(
+        "validate_inventory_evidence_route",
+        &route_args,
+        &marker,
+        false,
+    );
+    let mut stale_binding = detail.clone();
+    stale_binding["actionForms"]["binding"] = json!("stale");
+    write_json(&detail_path, &stale_binding);
+    assert_inventory_validator(
+        "validate_inventory_evidence_route",
+        &route_args,
+        &marker,
+        false,
+    );
+    let mut duplicate_placeholder = detail.clone();
+    duplicate_placeholder["actionForms"]["choices"][0]["placeholders"] =
+        json!(["ARTIFACT_ROOT", "ARTIFACT_PATH", "ARTIFACT_PATH"]);
+    write_json(&detail_path, &duplicate_placeholder);
+    assert_inventory_validator(
+        "validate_inventory_evidence_route",
+        &route_args,
+        &marker,
+        false,
+    );
+    write_json(&detail_path, &detail);
+
+    let args = vec![
+        work.into(),
+        detail_path.as_os_str().to_owned(),
+        history.as_os_str().to_owned(),
+        next1.as_os_str().to_owned(),
+        next2.as_os_str().to_owned(),
+        ledger1.as_os_str().to_owned(),
+        ledger2.as_os_str().to_owned(),
+        submit1.as_os_str().to_owned(),
+        submit2.as_os_str().to_owned(),
+        check1.as_os_str().to_owned(),
+        check2.as_os_str().to_owned(),
+    ];
+    let output = assert_inventory_validator("inventory_history_evidence", &args, &marker, true);
+    let observation: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(observation["work"], work);
+    assert_eq!(observation["samples"], json!([first, second]));
+    assert_eq!(observation["checks"][1]["targetEventSha256"], worker2);
+
+    fs::write(&history, format!("{first}\n{first}\n")).unwrap();
+    fs::write(&ledger2, b"{}\n").unwrap();
+    assert_inventory_validator("inventory_history_evidence", &args, &marker, false);
+    fs::write(&history, format!("{first}\n{second}\n")).unwrap();
+    fs::write(&ledger2, b"{}\n{}\n").unwrap();
+    let mut seen = detail.clone();
+    seen["sections"]["assignment"]["assignment"]["context"]["loop"]["seenEvidenceSha256"] =
+        json!(["e".repeat(64)]);
+    write_json(&detail_path, &seen);
+    assert_inventory_validator("inventory_history_evidence", &args, &marker, false);
+    let mut ambiguous_spent = detail.clone();
+    ambiguous_spent["sections"]["assignment"]["assignment"]["context"]["loop"]["spent"] =
+        json!(2.0);
+    write_json(&detail_path, &ambiguous_spent);
+    assert_inventory_validator("inventory_history_evidence", &args, &marker, false);
+    write_json(&detail_path, &detail);
+    let mut foreign_check = check(&worker2, &checked2);
+    foreign_check["event"]["targetEventSha256"] = json!("f".repeat(64));
+    write_json(&check2, &foreign_check);
+    assert_inventory_validator("inventory_history_evidence", &args, &marker, false);
+    write_json(&check2, &check(&worker2, &checked2));
+    let mut held_worker = submit("sma_2", &worker2);
+    held_worker["effect"] = json!("held");
+    write_json(&submit2, &held_worker);
+    assert_inventory_validator("inventory_history_evidence", &args, &marker, false);
+}
+
 /// This explicit maintainer check builds the measured Source and exercises the
 /// complete three-attempt fixture; the ordinary inventory check stays cheap.
 #[cfg(unix)]
