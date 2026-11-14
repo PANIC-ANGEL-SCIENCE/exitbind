@@ -524,6 +524,20 @@ fn context_surface_inventory_is_reproducible_and_path_free() {
         assert!(here.contains(stage), "inventory omits stage {stage}");
     }
 
+    let agents = fs::read(root.join("AGENTS.md")).unwrap();
+    let row = here
+        .lines()
+        .find(|line| line.split_whitespace().next() == Some("AGENTS.md"))
+        .expect("inventory omits the source-reading rules");
+    let fields: Vec<_> = row.split_whitespace().collect();
+    assert_eq!(fields.len(), 4, "unexpected AGENTS row: {row}");
+    assert_eq!(fields[1].parse::<usize>().unwrap(), agents.len());
+    assert_eq!(
+        fields[2].parse::<usize>().unwrap(),
+        agents.iter().filter(|byte| **byte == b'\n').count()
+    );
+    assert_eq!(fields[3], "source-reading");
+
     // Leave the absolute checkout path out: no root prefix, no home directory.
     let absolute = root.to_str().unwrap();
     assert!(
@@ -556,4 +570,90 @@ fn context_surface_inventory_is_reproducible_and_path_free() {
         !here.to_lowercase().contains("token"),
         "the inventory must not estimate provider tokens: {here}"
     );
+}
+
+/// This explicit maintainer check builds the measured Source and exercises the
+/// complete three-attempt fixture; the ordinary inventory check stays cheap.
+#[cfg(unix)]
+#[test]
+#[ignore = "builds the measured product and runs the complete inventory fixture"]
+fn context_surface_json_measures_real_packets_and_history() {
+    use sha2::{Digest, Sha256};
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let git = |args: &[&str]| {
+        let output = support::git_topology::command("git")
+            .args(args)
+            .current_dir(root)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "git failed: {output:?}");
+        output.stdout
+    };
+    let revision = String::from_utf8(git(&["rev-parse", "HEAD"]))
+        .unwrap()
+        .trim()
+        .to_owned();
+    let before = git(&["diff", "--binary", "--", "."]);
+    let output = support::git_topology::command("sh")
+        .arg(root.join("tooling/repository/ci/context-surface-inventory.sh"))
+        .arg("--json")
+        .current_dir(root)
+        .output()
+        .unwrap();
+    print!("{}", String::from_utf8_lossy(&output.stdout));
+    eprint!("{}", String::from_utf8_lossy(&output.stderr));
+    assert!(output.status.success(), "inventory failed: {output:?}");
+    assert_eq!(git(&["diff", "--binary", "--", "."]), before);
+
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let agents = report["surfaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["path"] == "AGENTS.md")
+        .expect("missing source-reading rules");
+    let bytes = fs::read(root.join("AGENTS.md")).unwrap();
+    assert_eq!(agents["stage"], "source-reading");
+    assert_eq!(agents["projection"], "explicit");
+    assert!(agents["duplicateOf"].is_null());
+    assert_eq!(agents["after"]["bytes"], bytes.len());
+    assert_eq!(
+        agents["after"]["lines"],
+        bytes.iter().filter(|byte| **byte == b'\n').count()
+    );
+    assert_eq!(
+        agents["after"]["sha256"],
+        format!("{:x}", Sha256::digest(bytes))
+    );
+
+    let dynamic = &report["dynamic"];
+    assert_eq!(dynamic["sourceMode"], "worktree");
+    assert_eq!(dynamic["sourceRevision"], revision);
+    assert_eq!(dynamic["sourceIdentity"]["mode"], "worktree");
+    assert_eq!(dynamic["sourceIdentity"]["revision"], revision);
+    assert_eq!(
+        dynamic["trackedDiffSha256"],
+        format!("{:x}", Sha256::digest(before))
+    );
+    let binary_sha = dynamic["binarySha256"].as_str().unwrap();
+    assert_eq!(binary_sha.len(), 64);
+    assert!(binary_sha.bytes().all(|byte| byte.is_ascii_hexdigit()));
+    for role in ["lead", "worker", "reviewer"] {
+        let packet = &dynamic["packets"][role];
+        assert!(packet["bytes"].as_u64().unwrap() > 0, "{role}: {packet}");
+        assert!(packet["expansionCount"].is_u64(), "{role}: {packet}");
+    }
+    let history = dynamic["historyGrowth"].as_array().unwrap();
+    assert_eq!(history.len(), 3);
+    let mut previous = 0;
+    for item in history {
+        let events = item["historyEvents"].as_u64().unwrap();
+        assert!(events > previous, "history did not grow: {history:?}");
+        assert!(item["routineExpansionCount"].is_u64());
+        assert_eq!(item["routineFieldsBounded"], true);
+        previous = events;
+    }
+    assert!(dynamic["tokenTelemetry"].is_null());
+    assert!(dynamic["humanTelemetry"].is_null());
 }

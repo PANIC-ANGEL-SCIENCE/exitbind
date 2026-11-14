@@ -21,6 +21,9 @@ The configured coordinator owns the task's meaning and final user report. A
 pending recipient identifies a particular role and assignment. It does not
 change the parent session's identity. `displayName` is an owner-chosen human
 label; the agent key, role, native name and rights retain their own meanings.
+When asked your conversational name, answer briefly with the configured parent
+coordinator's display or conversation name, if known, without an unrequested
+platform preface. Answer actual host or model questions truthfully.
 
 Capture a command's process status, complete stdout and stderr separately before
 decoding. Keep private captures outside the project's tested inputs. A nonzero
@@ -97,7 +100,11 @@ In grouped detail, `sections.assignment.projection.residualRecoveryAliases`
 maps each removed equal `residual.context.recovery` field to its source field
 in `residual.context`. Only fields actually removed appear in that map;
 unequal and absent fields keep their original meaning. The scoped assignment
-section route continues to provide the original section bytes.
+section route continues to provide the original section bytes. A reader that
+used a fixed residual recovery path must follow this alias metadata or read the
+scoped assignment section; an arbitrary fixed-key reader is not automatically
+compatible with the presentation projection. Native proofs and historical raw
+readers retain their own canonical content.
 
 When details are incomplete or the host cannot retain a full response, follow
 the exact public section/expansion routes. Section responses state the byte
@@ -126,12 +133,12 @@ cannot recover text a host discarded or change that host's limit.
 
 ## Routine Lead decisions
 
-After acquiring the complete current assignment and required instructions, use
-`work detail WORK --view action --json` for routine state and action inspection.
-This diagnostic view keeps its existing compact navigation budget; it is not a
-replacement for the complete delivery above. Each command that it does expose
-is complete. When a whole command cannot fit, the view marks it unavailable
-instead of emitting an argv prefix for the reader to repair.
+After consuming the current required instructions and action, use
+`work detail WORK --view action --json` when diagnostic inspection is needed.
+Its navigation is bounded to 8 KiB, with separately bounded recipient guidance;
+it is not a replacement for the complete delivery above. Each command that it
+does expose is complete. When a whole command cannot fit, the view marks it
+unavailable instead of emitting an argv prefix for the reader to repair.
 The optional expert `fillRoute` is a `templatePrefix`, not an executable
 `argv`: a choice and its documented values must be selected first. Ordinary
 execution uses the complete command on the selected choice.
@@ -139,16 +146,18 @@ It also carries the guidance bodies and lessons delivered to the current
 recipient for its phase, each with its read route; read them before dependent
 work. It still marks instructions incomplete (profile, rules, assignment and
 evidence stay behind section routes): this is navigation, never review or
-acceptance evidence. On a changed recipient, binding or instruction/evidence
-source, acquire and consume the applicable complete current bytes before the
-next dependent effect. At substantive review or acceptance, inspect complete
-relevant artifacts and negative cases; earlier acquisition and an approval
+acceptance evidence. Verify the current binding and applicable grant. When the
+recipient or required instruction/evidence content changes, acquire and consume
+the applicable complete current bytes before the next dependent effect. At
+substantive review or acceptance, inspect complete relevant artifacts and
+negative cases; earlier acquisition and an approval
 label do not substitute for current evidence. Retain full responses through
 protected host capture, then display the needed fields and one next command.
 Without complete capture, use exact expansion pages and verify every required
-byte. Start with one complete `--detail` response, then use the action view for
-routine navigation and expand changed required sections as needed. Never treat
-a truncated model-visible projection as complete delivery.
+byte. An ordinary step that already supplies all current required bytes and a
+complete action needs no duplicate discovery read. Expand changed required
+sections as needed. Never treat a truncated model-visible projection as complete
+delivery.
 
 For `work resume` in a Git worktree, the tested-input identity retains the
 existing SHA-256 format. Exitbind can hash clean blob bytes from Git and reads

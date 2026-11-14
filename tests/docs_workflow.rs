@@ -162,6 +162,43 @@ fn contribution_audiences_and_coffee_contract_stay_separate() {
 }
 
 #[test]
+fn exitbind_skills_keep_current_step_and_parent_name_guidance_aligned() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let main = fs::read_to_string(root.join("skills/exitbind/SKILL.md")).unwrap();
+    let mirror =
+        fs::read_to_string(root.join("plugins/exitbind/skills/exitbind/SKILL.md")).unwrap();
+    assert_eq!(
+        main, mirror,
+        "packaged skill must match the maintained skill"
+    );
+
+    for (path, text) in [
+        ("skills/exitbind/SKILL.md", main),
+        (
+            "skills/exitbind-bootstrap/SKILL.md",
+            fs::read_to_string(root.join("skills/exitbind-bootstrap/SKILL.md")).unwrap(),
+        ),
+    ] {
+        let compact = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        for contract in [
+            "current required instructions and evidence in `currentDelivery`",
+            "`requiredContentComplete: true` describes the included required bytes",
+            "same-actor content identity can be compared only with bytes already acquired",
+            "separately bounded recipient guidance",
+            "ordinary mutation and readable detail can use the existing 256 KiB readable bound",
+            "`fillRoute.templatePrefix` is not an executable argv",
+            "configured parent coordinator's display or conversation name",
+            "Answer actual host or model questions truthfully",
+        ] {
+            assert!(
+                compact.contains(contract),
+                "{path} lost contract: {contract}"
+            );
+        }
+    }
+}
+
+#[test]
 fn repository_toolchain_is_the_only_development_and_ci_selector() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let read = |file: &str| fs::read_to_string(root.join(file)).unwrap();

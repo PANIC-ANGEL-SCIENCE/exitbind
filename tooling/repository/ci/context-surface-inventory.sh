@@ -15,7 +15,7 @@ while test "$#" -gt 0; do
 done
 test "$before" = WORKTREE || git rev-parse --verify "$before^{commit}" >/dev/null 2>&1 || { printf '%s\n' 'before revision is not immutable' >&2; exit 2; }
 test "$after" = WORKTREE || git rev-parse --verify "$after^{commit}" >/dev/null 2>&1 || { printf '%s\n' 'after revision is not immutable' >&2; exit 2; }
-entries='AGENTS.md|retired-contributor|absent|CONTRIBUTING.md
+entries='AGENTS.md|source-reading|explicit|none
 CONTRIBUTING.md|contributor-only|explicit|none
 skills/exitbind-bootstrap/SKILL.md|bootstrap|router|none
 skills/exitbind/SKILL.md|activated-skill|router|skills/exitbind/references/preservation.md
@@ -96,7 +96,7 @@ if test "$json" = 1; then
   : >"$tmp/history.jsonl"
   for attempt in 1 2 3; do
     worker="$tmp/worker-$attempt.json"
-    run_product work next "$work" >"$worker"
+    run_product work next "$work" --full --json >"$worker"
     if test "$attempt" = 1; then worker_metric=$(packet_metric "$worker"); fi
     ledger_file=$(find "$fixture" -type f -path '*/runs/*.jsonl' -print | sort | head -n 1)
     test -n "$ledger_file" || { printf '%s\n' 'product fixture ledger unavailable' >&2; exit 2; }
@@ -106,7 +106,7 @@ if test "$json" = 1; then
     printf 'worker\n' | run_product work return "$work" "$worker_assignment" --outcome completed >/dev/null
     run_product work check "$work" >/dev/null
     reviewer="$tmp/reviewer-$attempt.json"
-    run_product work next "$work" >"$reviewer"
+    run_product work next "$work" --full --json >"$reviewer"
     if test "$attempt" = 1; then reviewer_metric=$(packet_metric "$reviewer"); fi
     reviewer_assignment=$(json_field "$reviewer" next.assignment)
     printf 'review\n' | run_product work return "$work" "$reviewer_assignment" --outcome approved >/dev/null

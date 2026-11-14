@@ -28,24 +28,32 @@ Neutral starter responsibilities are available for [Lead](references/roles/lead.
 [Worker](references/roles/worker.md) and [Reviewer](references/roles/reviewer.md).
 Configured profiles retain their ownership and authority.
 
-After acquiring the complete current assignment and required instructions, use
-`work detail WORK --view action --json` for routine state and action inspection.
-It also carries the guidance bodies and lessons delivered to the current
-recipient for its phase, each with its read route; read them before dependent
-work. It still marks instructions incomplete (profile, rules, assignment and
-evidence stay behind section routes): this is navigation, never review or
-acceptance evidence. On a changed recipient, binding or instruction/evidence
-source, acquire and consume the applicable complete current bytes before the
-next dependent effect. At substantive review or acceptance, inspect complete
-relevant artifacts and negative cases; earlier acquisition and an approval
-label do not substitute for current evidence. Retain full responses through
-protected host capture, then display the needed fields and one next command.
-Without complete capture, use exact expansion pages and verify every required
-byte. Never treat a truncated model-visible projection as complete delivery.
+An ordinary step may already carry current required instructions and evidence
+in `currentDelivery`, with the current action in `effectiveAction`.
+`requiredContentComplete: true` describes the included required bytes, not the
+whole detail. Consume those complete bytes and use a complete offered command
+without another discovery read. A same-actor content identity can be compared
+only with bytes already acquired; it does not prove reading or grant authority.
+Verify the current binding and applicable grant. If the recipient or required content
+changed, or continuity cannot be established, acquire the applicable complete
+bytes through the emitted route before the next dependent effect.
+
+When diagnostic navigation is needed, use `work detail WORK --view action --json`.
+Its navigation is bounded to 8 KiB, with separately bounded recipient guidance;
+it is incomplete and never review or acceptance evidence. Compact `work next`
+and `work resume` retain their 8 KiB bound; ordinary mutation and readable
+detail can use the existing 256 KiB readable bound. All emitted bytes count.
+A fixture's metadata-only 8 KiB measurement is not a universal mutation limit.
+Read delivered guidance and lessons before dependent work. At substantive
+review or acceptance, inspect complete relevant artifacts and negative cases; earlier acquisition and
+an approval label do not substitute for current evidence. Retain full responses
+through protected host capture, then display the needed fields and one next
+command. Without complete capture, use exact expansion pages and verify every
+required byte. Never treat a truncated model-visible projection as complete delivery.
 
 ## Current route
 
-- Known Work in this conversation or an explicit `smw_…` locator: run the selected executable's `work detail WORK --json` directly. It validates the current recipient binding and delivers profile/rules, assignment, upstream evidence, task obligations and executable action forms. Do not rediscover that same route with another `work next` first.
+- Known Work without a complete current delivery: run the selected executable's `work detail WORK --json` directly. It validates the current recipient binding and delivers profile/rules, assignment, upstream evidence, task obligations and executable action forms. Do not rediscover that same route with another `work next` first.
 - Unknown Work or project focus: use `work resume --json`; focus is navigation with no authority. Use its current grouped detail route before dependent action. A stale locator or revoked expansion needs a fresh detail/current read; if the Work cannot be resolved, use project resume/history rather than guessing.
 - New material Work: after authorized setup, follow setup's exact next argv, or use `work begin WORKFLOW --goal GOAL --check-command COMMAND --review-policy required|omitted --detail`. This delivers the current recipient's verified detail with the recorded start; consume it directly when complete. It still requires the Lead's scope decision before worker editing. The Lead recommends independent review and the owner decides; reuse an existing decision. Unmarked historical entry retains required review and cannot revise it.
 
@@ -72,7 +80,7 @@ If start records a Work but detail delivery fails, follow its read-only recovery
 for that existing Work. If the start reply was lost, use `work resume --json`
 with the same configuration. Never repeat `work begin` to recover a lost reply.
 
-A complete detail is the sufficient ordinary read. If required profile, rules, evidence or sections are incomplete, follow the exact emitted expansion before action. Expert `work next --full`, saved-packet `work validate` and scoped sections remain available when needed. Missing information is never permission to act. Follow `sameExecutableRequired`/`sameConfigRequired` with the exact current arguments when long paths yield a partial argv; never execute placeholders, substitute a PATH binary or invent flags. Supply only meaningful task intent, complete result, reason and decisions your role owns.
+A complete detail is a sufficient ordinary read. If required profile, rules, evidence or sections are incomplete, follow the exact emitted recovery before action. Expert `work next --full`, saved-packet `work validate` and scoped sections remain available when needed. Missing information is never permission to act. A current public command is complete or wholly omitted with a recovery route; execute its argv unchanged and fill only documented semantic inputs. The expert `fillRoute.templatePrefix` is not an executable argv. Historical raw partial descriptors retain their documented same-executable/config resolution. Never execute unfilled placeholders, substitute a PATH binary or invent flags. Supply only meaningful task intent, complete results, reasons and decisions your role owns.
 
 ## Keep decisions clear without forcing commitment
 
@@ -247,9 +255,13 @@ Before skipping work listed in a saved packet, run
 
 Keep the returned executable/configuration/project and native execution handle. Capture process status and complete stdout/stderr before decoding; parse the declared operation's output and exact field types. Follow emitted argv without a generic --json/--config suffix: init prints prose, version --json is flat and accepts no config, permit prints JSON without a --json option, and detail uses actionForms rather than next. A parser failure after an effect requires readback, never replay. Discover unknown paths and test targets once; require an actual nonzero selected test for a coverage claim.
 
-Consume complete current required instructions once. Use the host's protected full-response capture or native artifact when available, then display selected fields instead of duplicate context/evidence/action-form copies. Bound both each item and the total displayed batch. If the first reply was cut and cannot be parsed, recover a known Work with work next WORK --json using the same executable/config; recover a lost handle with work resume --json. Never repeat its mutation. Follow current.details for assignment, evidence, tasks and recipient independently. Current v2 sections page 4 KiB of exact content; recipient includes the full current profile, rules and selected lessons. Without full capture, retain exact hashes, encodings, offsets and all pages. Missing mandatory instructions stay missing. A failed preflight prevents dependent launch; inspect only owned handles, saved statuses, locks and boot/process identity before retrying. Timeout or PID absence after reboot cannot establish completion or replay authority.
+Consume complete current required instructions once. Use the host's protected full-response capture or native artifact when available, then display selected fields instead of duplicate context/evidence/action-form copies. Bound both each item and the total displayed batch. If the first reply was cut and cannot be parsed, recover a known Work with work next WORK --json using the same executable/config; recover a lost handle with work resume --json. Never repeat its mutation. Follow current.details for assignment, evidence, tasks and recipient when those routes are present. A complete emitted full.command instead returns work detail with actionForms and recipientContext; explicit work next --full retains the next/section shape. Execute the emitted route unchanged. Current v2 sections page 4 KiB of exact content; recipient includes the full current profile, rules and selected lessons. Without full capture, retain exact hashes, encodings, offsets and all pages. Missing mandatory instructions stay missing. A failed preflight prevents dependent launch; inspect only owned handles, saved statuses, locks and boot/process identity before retrying. Timeout or PID absence after reboot cannot establish completion or replay authority.
 
 The configured coordinator owns the selected task and user-facing result. Current recipient role/agent/assignment describe the next actor and do not assign the parent's identity. Use its current profile and purpose. Prefer the owner's displayName in human output; agent keys, native names, roles and rights remain separate. Names are configurable; a worker's label never grants Lead authority. Keep old Work configurations and custom profiles intact.
+
+When asked your conversational name, answer briefly with the configured parent
+coordinator's display or conversation name, if known, without an unrequested
+platform preface. Answer actual host or model questions truthfully.
 
 Begin the human report with the requested useful result and actual checks in the user's language. Then briefly explain a meaningful tool incident and its permitted recovery. Optional display/export failure does not reopen completed user work; required review/permission/input or uncertain effects remain unfinished outcomes. Recover saved results through public Work inspection/continuation without requiring Exitbind source, a private launcher or weaker gates. Preserve technical failures; forward only the producer's actual terminal.
 

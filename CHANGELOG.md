@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.31.28
+
+Release: https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/tag/v0.31.28 — the tag sits on this entry's release commit, and the page lists its assets once they are published.
+
+- Deliver the current actor's required context and complete action on ordinary
+  Work steps when available. A content identity compares previously acquired
+  bytes; it does not prove that a person or model read them or grant authority.
+- Migrate CLI JSON readers to the emitted current route: a step's `full.command`
+  reads Work detail, while explicit `work next --full` retains the `next` and
+  section shapes. Current action commands are complete or wholly omitted with
+  a recovery route; the expert `fillRoute.templatePrefix` is not an argv.
+- Readers of fixed `residual.context.recovery` paths must follow
+  `sections.assignment.projection.residualRecoveryAliases` or read the scoped
+  raw assignment section. Native proofs and historical raw readers retain their
+  canonical content; arbitrary fixed-key presentation readers need migration.
+- Keep the covered-content SHA-256 identity for Git-backed resume, with actual
+  blob bytes for eligible clean files and worktree bytes for changed or uncertain
+  files. Existing non-Git bounds and older reader refusal behavior remain.
+- Show checker preparation and inert starter-boundary proposals without running
+  the check or granting rights. Explain that ordinary host workspace permits are
+  advisory while controlled effects retain their existing checks.
+- Add source-reading guidance for contributors and keep context inventory
+  measurements aligned with the current source and canonical packet reader.
+
 ## 0.31.27
 
 Release: https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/tag/v0.31.27 — the tag sits on this entry's release commit, and the page lists its assets once they are published.
