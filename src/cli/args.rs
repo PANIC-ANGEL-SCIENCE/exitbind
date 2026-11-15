@@ -32,6 +32,7 @@ const VALUE_OPTIONS: &[&str] = &[
     "control-root",
     "duration-ms",
     "events",
+    "expected-event-sha256",
     "expected-sha256",
     "event",
     "external-scope",

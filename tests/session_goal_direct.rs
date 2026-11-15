@@ -7,6 +7,8 @@ mod closure_events;
 mod direct_scope;
 #[path = "session_goal_direct/fixture.rs"]
 mod fixture;
+#[path = "session_goal_direct/guarded_decision.rs"]
+mod guarded_decision;
 #[path = "session_goal_direct/native_context.rs"]
 mod native_context;
 #[path = "session_goal_direct/native_supersede.rs"]

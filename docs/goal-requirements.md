@@ -18,6 +18,15 @@ silent. Registration, native hook trust and observed execution are distinct;
 Codex users review exact definitions with `/hooks`. Continuation grants no new
 permission and does not prove the model understood or completed the task.
 
+When recording an answer to a decision bound to an earlier external request,
+the owning Lead can pass `--expected-event-sha256 HASH` with the exact Goal,
+`--decision QUESTION`, `--disposition accepted`, and `--result-ref REF` to
+`goal incorporate`. The journal lock checks that the Goal text and identity,
+event hash, and open decision still match before appending. A mismatch writes no
+event. The guarded form cannot be combined with `--direct` or other Goal items.
+It does not prove that an external client accepted the answer; inspect that
+effect separately before recovery or retry.
+
 When Exitbind runs with one unambiguous host-reported native session identity,
 Goal operations use that conversation's canonical Goal journal. Codex
 `CODEX_THREAD_ID` or `CODEX_SESSION_ID` and Claude Code

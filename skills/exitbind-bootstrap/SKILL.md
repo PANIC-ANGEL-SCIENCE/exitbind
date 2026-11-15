@@ -13,6 +13,8 @@ Exitbind is installed. It supplies local exact-result checks, review and Lead ac
 
 Classify actual effects and existing project policy before setup. For read-only questions, disposable prototypes and tiny obvious reversible edits, do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions. Material or promotion consequences select governance before mutation. The Lead recommends review and the owner chooses required/omitted; reuse existing scoped decisions. Failed required activation stays an explicit blocker.
 
+Before a consequential approach, goal or checker choice in a configured project, preserve the owner's current intent, constraints and corrections and acquire the applicable configured Lead profile. Reuse complete host-supplied bytes when they match the current profile identity; a hash alone is not acquisition. Otherwise follow SessionStart's current project facts route and its `lead.profileAccess` command. Follow every exact page route, verify contiguous offsets, total bytes and profile SHA-256, and refresh project facts if the binding changes or a page is unavailable. If required content remains unavailable, report that limit before dependent action. Do not infer host reading from installation or projection. This does not initialize a project or add a preflight to direct work.
+
 For selected material whole-session work, record the accepted goal with `goal incorporate --goal-id ID --goal TEXT` before dependent actions. Retain every approved outcome and refinement, including selected publication and installation. Answer a side request in commentary and continue the active goal. A real owner-only question can use an open Goal decision recorded with `--decision QUESTION`; ask that exact recorded question. Stop hooks allow that declared wait and bounded host re-entry; a question mark alone is no exemption. Close through the current Goal route only after every obligation and required check is satisfied. The final whole-Goal answer is only its emitted room card, with no `EXIT READY` suffix. Small direct tasks stay direct.
 
 Keep confirmed constraints, exploratory ideas, consequential unknowns, decision reasons and when to reconsider, and accepted changes distinct. Discuss options before a goal without starting Work; proceed on clear tasks. Ask one focused question or suggest a small permitted test only when an essential unknown affects a costly or hard-to-reverse choice. Accepted changes use the existing authorized route and retain the earlier reason and affected main and side commitments. Use current applicable lessons; dialogue and inferred preferences grant no policy or permission, and raw dialogue or tool output is not added as permanent policy.
@@ -29,8 +31,8 @@ If an optional pre-return diagnostic and limits are already approved, supply
 into the emitted begin argv. Neither setup nor begin executes the diagnostic.
 It gates the successful Worker return and never replaces the final check.
 
-For a consequential unresolved assumption, `work challenge WORK --question
-QUESTION` supplies a read-only packet with separate native first-pass
+For a consequential unresolved assumption on an active Work, `work challenge WORK --question
+QUESTION` can supply a read-only packet with separate native first-pass
 assignments and an ordinary-result `earlyEvidence` template. An already
 permitted `--probe-command COMMAND --probe-source PROJECT_FILE` can bind a
 behavioral discriminator. Follow the packet through the host, observe the probe

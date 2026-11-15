@@ -789,6 +789,47 @@ pub(crate) fn incorporate(
     none_applicable: Option<&str>,
     native_session: bool,
 ) -> Result<Value, String> {
+    incorporate_with_expected_event(
+        root,
+        loaded,
+        goal_id,
+        goal,
+        obligation,
+        finding,
+        blocker,
+        decision,
+        external_action,
+        external_scope,
+        disposition,
+        result_ref,
+        considered,
+        none_applicable,
+        native_session,
+        None,
+    )
+}
+
+/// Optionally bind a decision resolution to the exact current open Goal event.
+/// The comparison and append share the canonical journal lock.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn incorporate_with_expected_event(
+    root: &Path,
+    loaded: &crate::config::Loaded,
+    goal_id: &str,
+    goal: &str,
+    obligation: Option<&str>,
+    finding: Option<&str>,
+    blocker: Option<&str>,
+    decision: Option<&str>,
+    external_action: Option<&str>,
+    external_scope: Option<&str>,
+    disposition: Option<&str>,
+    result_ref: Option<&str>,
+    considered: Option<&str>,
+    none_applicable: Option<&str>,
+    native_session: bool,
+    expected_event_sha256: Option<&str>,
+) -> Result<Value, String> {
     let goal_id = text(Some(goal_id), "goal-id")?;
     let goal = text(Some(goal), "goal")?;
     let considered = category_set(considered, "consider")?;
@@ -800,7 +841,46 @@ pub(crate) fn incorporate(
         return Err("a category cannot be both considered and none-applicable".into());
     }
     let refs = result_refs(result_ref)?;
+    let guarded_decision = if let Some(expected) = expected_event_sha256 {
+        if !valid_hash(expected) {
+            return Err("--expected-event-sha256 must be a SHA-256 hash".into());
+        }
+        if disposition != Some("accepted")
+            || refs.is_empty()
+            || obligation.is_some()
+            || finding.is_some()
+            || blocker.is_some()
+            || external_action.is_some()
+            || external_scope.is_some()
+            || !considered.is_empty()
+            || !none_applicable.is_empty()
+        {
+            return Err(
+                "--expected-event-sha256 requires one accepted decision and --result-ref".into(),
+            );
+        }
+        Some(text(decision, "decision")?)
+    } else {
+        None
+    };
     mutate(root, loaded, |previous| {
+        if let (Some(expected), Some(question)) =
+            (expected_event_sha256, guarded_decision.as_deref())
+        {
+            let current = previous.ok_or("expected Goal event is unavailable")?;
+            if current["eventSha256"].as_str() != Some(expected)
+                || current["goalId"].as_str() != Some(goal_id.as_str())
+                || current["goal"].as_str() != Some(goal.as_str())
+                || current["closure"]["closed"].as_bool() != Some(false)
+                || !items(Some(current), "decisions").iter().any(|item| {
+                    item["id"].as_str() == Some(question)
+                        && item["text"].as_str() == Some(question)
+                        && item["disposition"].as_str() == Some("open")
+                })
+            {
+                return Err("expected open Goal decision is no longer current".into());
+            }
+        }
         let revision = previous
             .and_then(|value| value["revision"].as_u64())
             .unwrap_or(0)

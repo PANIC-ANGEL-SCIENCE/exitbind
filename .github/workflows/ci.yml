@@ -83,6 +83,12 @@ jobs:
           fetch-depth: ${{ github.event.repository.private == true && 1 || 0 }}
       - name: Assert exact GitHub SHA checkout
         run: test "$(git rev-parse HEAD)" = "$EXITBIND_EXPECTED_SHA"
+      - name: Prepare Node for the optional owner bridge
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22.23.4'
+      - name: Test the Mercury Telegram adapter
+        run: node --test adapters/mercury-telegram/test/*.test.mjs
       - name: Complete selected Git history
         env:
           GITHUB_REPOSITORY_PRIVATE: ${{ github.event.repository.private }}

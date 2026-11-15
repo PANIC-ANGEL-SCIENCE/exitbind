@@ -81,6 +81,15 @@ to carry protocol JSON or event hashes between turns.
 
 ### Explore before committing to a goal
 
+For a consequential choice in a configured project, first use the Lead profile
+already supplied by the host if its complete bytes match the current identity.
+Otherwise follow the SessionStart project-facts route and `lead.profileAccess`.
+Its exact read-only commands return bounded pages of the selected Lead's current
+profile: check contiguous offsets, total bytes and SHA-256 before using the whole
+profile. A changed or unavailable binding requires fresh project facts. These
+reads do not grant permissions, initialize Work or replace the owner's current
+intent and constraints. Small reversible tasks remain direct.
+
 Keep confirmed constraints, ideas, consequential unknowns, decision reasons and when to reconsider, and accepted changes distinct. Discuss options before a goal without starting Work; clear tasks proceed directly. The Lead asks one focused question or suggests a small permitted test only when an essential unknown affects a costly or hard-to-reverse choice. Accepted changes use the existing authorized route and retain the earlier reason and affected main and side commitments. Use only current applicable lessons; dialogue and inferred preferences grant no policy or permission, and raw dialogue or tool output is not automatically retained as policy.
 
 ### Review the starter setup once

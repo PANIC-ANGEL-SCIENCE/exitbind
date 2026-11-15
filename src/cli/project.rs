@@ -219,6 +219,26 @@ pub(super) fn command(loaded: &Loaded, arguments: &Arguments) -> Result<(), Stri
                 Ok(())
             }
         }
+        Some("lead-profile") => {
+            args::assert_positionals("project context lead-profile", arguments, 4)?;
+            if !arguments.flags.contains_key("json")
+                || ["task", "agent", "host", "expected-sha256"]
+                    .iter().any(|name| arguments.options.contains_key(*name))
+            {
+                return Err("project context lead-profile requires its emitted binding, offset and --json".into());
+            }
+            let binding = arguments.positional.get(2)
+                .ok_or("project context lead-profile requires its emitted binding and offset")?;
+            let offset_text = arguments.positional.get(3)
+                .ok_or("project context lead-profile requires its emitted binding and offset")?;
+            let offset = offset_text.parse::<u64>().map_err(|_| "invalid Lead profile page offset")?;
+            if binding.len() != 64 || !binding.bytes().all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+                || offset.to_string() != *offset_text
+            {
+                return Err("invalid Lead profile page binding or offset".into());
+            }
+            print_json(&context::lead_profile_page(loaded, binding, offset)?)
+        }
         Some("memory") => {
             args::assert_positionals("project context memory", arguments, 3)?;
             let id = arguments
@@ -281,6 +301,6 @@ pub(super) fn command(loaded: &Loaded, arguments: &Arguments) -> Result<(), Stri
                 Ok(())
             }
         }
-        _ => Err("project context accepts only memory ITEM_ID or guidance ITEM_ID".into()),
+        _ => Err("project context accepts lead-profile BINDING OFFSET, memory ITEM_ID or guidance ITEM_ID".into()),
     }
 }

@@ -86,6 +86,9 @@ fn install_makes_both_hosts_discoverable_and_status_separates_the_layers() {
         assert!(text.contains("<!-- exitbind-managed-bootstrap:v1 -->"));
         assert!(text.contains("do not run Exitbind commands, initialize a project, or ask workflow or review-policy questions"));
         assert!(text.contains("references/competence.md"));
+        assert!(text.contains("Before a consequential approach, goal or checker choice"));
+        assert!(text.contains("a hash alone is not acquisition"));
+        assert!(text.contains("add a preflight to direct work"));
         let reference = path.parent().unwrap().join("references/competence.md");
         assert_eq!(
             fs::read(reference).unwrap(),

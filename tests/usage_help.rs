@@ -27,6 +27,29 @@ fn parent_usage_discovery_works_in_first_and_subsequent_fresh_processes() {
         let goal = help(&root, &["goal", "--help"]);
         assert!(goal.contains("goal usage --goal-id ID"), "{goal}");
         assert!(goal.contains("goal <child> --help"), "{goal}");
+        let incorporate = help(&root, &["goal", "incorporate", "--help"]);
+        assert!(
+            incorporate.contains("--expected-event-sha256 HASH"),
+            "{incorporate}"
+        );
+        assert!(
+            incorporate.contains("--disposition accepted --result-ref REF"),
+            "{incorporate}"
+        );
+        assert!(
+            incorporate.contains("atomically checks the current Goal, event and open decision"),
+            "{incorporate}"
+        );
+        let context = help(&root, &["project", "context", "--help"]);
+        assert!(
+            context.contains("lead-profile BINDING OFFSET --json"),
+            "{context}"
+        );
+        let project = help(&root, &["project", "--help"]);
+        assert!(
+            project.contains("lead-profile BINDING OFFSET --json"),
+            "{project}"
+        );
         let work = help(&root, &["work", "--help"]);
         assert!(work.contains("work usage WORK"), "{work}");
         assert!(work.contains("work <child> --help"), "{work}");

@@ -391,6 +391,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                     "scope",
                     "disposition",
                     "result-ref",
+                    "expected-event-sha256",
                     "consider",
                     "none-applicable",
                     "direct",
@@ -404,6 +405,9 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             let goal_id = option(a, "goal-id", "goal incorporate requires --goal-id")?;
             let goal = option(a, "goal", "goal incorporate requires --goal")?;
             let direct = a.flags.contains_key("direct");
+            if direct && a.options.contains_key("expected-event-sha256") {
+                return Err("--expected-event-sha256 cannot be used with --direct".into());
+            }
             let direct_items = [
                 ("obligations", a.options.get("obligation")),
                 ("findings", a.options.get("finding")),
@@ -430,7 +434,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                     },
                 )?
             } else {
-                crate::session_goal::incorporate(
+                crate::session_goal::incorporate_with_expected_event(
                     &scope.root,
                     l,
                     goal_id,
@@ -446,6 +450,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                     a.options.get("consider").map(String::as_str),
                     a.options.get("none-applicable").map(String::as_str),
                     scope.is_session(),
+                    a.options.get("expected-event-sha256").map(String::as_str),
                 )?
             };
             print_json(&value)

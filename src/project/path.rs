@@ -8,7 +8,7 @@ use std::path::{Component, Path, PathBuf};
 
 mod digest_observation;
 pub(crate) mod inputs;
-pub(crate) use digest_observation::secure_digest_observation;
+pub(crate) use digest_observation::{secure_digest_observation, secure_page_observation};
 
 pub fn file(root: &Path, requested: &str) -> Result<PathBuf, String> {
     if requested.contains('\0') || Path::new(requested).is_absolute() {

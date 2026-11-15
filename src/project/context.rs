@@ -34,18 +34,23 @@ pub(crate) fn snapshot_for_task(loaded: &Loaded, task: Option<&str>) -> Value {
     };
     let lead = loaded.lead().and_then(|id| {
         loaded.agent(id).map(|agent| {
-            let profile = path::secure_bytes_observation(
+            let profile_hash = path::secure_digest_observation(
                 &loaded.control_root,
                 &agent.profile,
                 "lead profile",
-            );
-            let profile_hash = match profile {
-                path::SecureBytesResult::Bytes(ref bytes) => Some(hash::bytes(bytes)),
-                _ => None,
-            };
+            )
+            .ok()
+            .flatten();
+            let access = profile_hash.as_deref().map(|digest| {
+                let binding = lead_profile_binding(loaded, id, &agent.profile, digest);
+                match lead_profile_route(loaded, &binding, 0) {
+                    Ok(command) => json!({"binding":binding, "command":command, "readOnly":true}),
+                    Err(reason) => json!({"available":false, "reason":reason}),
+                }
+            });
             json!({"agentId":id, "nativeName":agent.native_name(id),
             "displayName":agent.display_name.as_deref().unwrap_or(id), "purpose":agent.purpose,
-            "profilePath":agent.profile, "profileSha256":profile_hash})
+            "profilePath":agent.profile, "profileSha256":profile_hash, "profileAccess":access})
         })
     });
     let rules = RULES.iter().map(|name| {
@@ -99,6 +104,122 @@ pub(crate) fn snapshot_for_task(loaded: &Loaded, task: Option<&str>) -> Value {
         }
     }
     snapshot
+}
+
+const LEAD_PROFILE_PAGE_BYTES: usize = 4 * 1024;
+
+fn lead_profile_binding(loaded: &Loaded, agent: &str, profile: &str, digest: &str) -> String {
+    hash::value(&json!({"version":1, "configPath":loaded.path,
+        "configSha256":hash::text(&loaded.source), "controlRoot":loaded.control_root,
+        "productRoot":loaded.product_root, "stateRoot":loaded.state_root,
+        "projectId":loaded.project_id, "agent":agent, "profilePath":profile,
+        "profileSha256":digest}))
+}
+
+fn lead_profile_route(loaded: &Loaded, binding: &str, offset: u64) -> Result<Vec<String>, String> {
+    crate::emitted::Route::new([
+        "project",
+        "context",
+        "lead-profile",
+        binding,
+        &offset.to_string(),
+        "--json",
+    ])
+    .config(&loaded.path)
+    .full_argv()
+}
+
+/// Deliver the selected Lead's current profile as complete, bound UTF-8 pages.
+pub(crate) fn lead_profile_page(
+    loaded: &Loaded,
+    binding: &str,
+    offset: u64,
+) -> Result<Value, String> {
+    let refresh =
+        crate::emitted::command_line(&["project", "context", "--json"], Some(&loaded.path));
+    let stale = || {
+        format!("Lead profile or configuration changed or is unavailable; refresh with {refresh}")
+    };
+    let name = loaded.lead().ok_or_else(stale)?;
+    let agent = loaded.agent(name).ok_or_else(stale)?;
+    let page = path::secure_page_observation(
+        &loaded.control_root,
+        &agent.profile,
+        "lead profile",
+        offset,
+        LEAD_PROFILE_PAGE_BYTES,
+    )
+    .map_err(|reason| format!("{reason}; refresh with {refresh}"))?
+    .ok_or_else(stale)?;
+    if lead_profile_binding(loaded, name, &agent.profile, &page.sha256) != binding {
+        return Err(stale());
+    }
+    let config_path = loaded
+        .path
+        .to_str()
+        .ok_or("configuration path is not valid UTF-8")?;
+    let current = crate::config::load(Some(config_path)).map_err(|_| stale())?;
+    if current.source != loaded.source
+        || current.control_root != loaded.control_root
+        || current.product_root != loaded.product_root
+        || current.state_root != loaded.state_root
+        || current.project_id != loaded.project_id
+    {
+        return Err(stale());
+    }
+    if path::secure_digest_observation(&loaded.control_root, &agent.profile, "lead profile")
+        .map_err(|reason| format!("{reason}; refresh with {refresh}"))?
+        .as_deref()
+        != Some(page.sha256.as_str())
+    {
+        return Err(stale());
+    }
+    if offset > page.total_bytes || (offset == page.total_bytes && offset != 0) {
+        return Err(format!(
+            "Lead profile page offset is outside the current profile; refresh with {refresh}"
+        ));
+    }
+    let content = match std::str::from_utf8(&page.bytes) {
+        Ok(text) => text,
+        Err(error)
+            if error.error_len().is_none()
+                && offset + (page.bytes.len() as u64) < page.total_bytes =>
+        {
+            std::str::from_utf8(&page.bytes[..error.valid_up_to()]).expect("valid UTF-8 prefix")
+        }
+        Err(_) => {
+            return Err(format!(
+                "Lead profile is not complete UTF-8 at this offset; refresh with {refresh}"
+            ))
+        }
+    };
+    if content.is_empty() && offset < page.total_bytes {
+        return Err(format!(
+            "Lead profile page offset is not a UTF-8 boundary; refresh with {refresh}"
+        ));
+    }
+    let end = offset + content.len() as u64;
+    let next = if end < page.total_bytes {
+        json!({"command":lead_profile_route(loaded, binding, end)?, "readOnly":true})
+    } else {
+        Value::Null
+    };
+    let response = json!({"kind":"lead_profile_page", "binding":binding, "agent":name,
+        "profileSha256":page.sha256, "totalBytes":page.total_bytes, "offset":offset,
+        "bytes":content.len(), "content":content, "pageComplete":true,
+        "complete":offset == 0 && next.is_null(), "next":next,
+        "authority":"read-only content; no permission, review or acceptance"});
+    if serde_json::to_vec(&response)
+        .map_err(|error| error.to_string())?
+        .len()
+        + 1
+        > 64 * 1024
+    {
+        return Err(format!(
+            "Lead profile page metadata exceeds the readable bound; refresh with {refresh}"
+        ));
+    }
+    Ok(response)
 }
 
 /// Full current content is read only for an eligible reference and checked again.
@@ -208,6 +329,7 @@ pub(crate) fn session_required(loaded: &Loaded, facts: &Value) -> String {
             lead["nativeName"].as_str().unwrap_or("?"),
             lead["profileSha256"].as_str().unwrap_or("unavailable")
         ));
+        text.push_str("\nBefore a consequential choice, acquire the current Lead profile via project facts unless the host already supplied the same complete bytes.");
     }
     if facts["memory"]["state"] == "unavailable" {
         text.push_str("\nProject memory unavailable; do not assume earlier rules.");

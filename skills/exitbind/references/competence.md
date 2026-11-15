@@ -30,6 +30,21 @@ relevant dependencies still match. If a consequential premise is uncertain,
 choose a small permitted observation that distinguishes plausible alternatives
 before making dependent changes. Clear tasks can proceed directly.
 
+When a consequential approach is materially uncertain, costly, repeatedly
+failing or appears to require a compromise, consider a fresh native contribution
+if the host and current authority allow it. Supply the intended outcome,
+confirmed constraints and authority, current source and evidence references,
+settled decisions and their reconsideration conditions, without earlier
+conversational advocacy. Ask the contributor to search for actual reuse, test
+whether an apparent trade-off is necessary, identify a smaller discriminator,
+and name secondary costs. Use the host's real fresh-context option and record
+the delivery, launch and completion actually observed; shared instructions,
+files and memory access can still exist. If freshness is unavailable, label an
+ordinary contribution honestly. A useful finding or reasoned no-finding result
+is advisory; the Lead decides its disposition, and required independent result
+review remains separate. An active Work's existing challenge is optional when
+its two first passes fit; no fixed new gate is required.
+
 ## Divide work and place responsibility
 
 Choose direct work or a bounded delegation by coupling, uncertainty and actual

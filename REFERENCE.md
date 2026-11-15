@@ -100,6 +100,14 @@ this project's one open Goal from an earlier session. Run it as printed by
 `goal status`, the SessionStart hook or a Work view; see
 [native conversation Goal](docs/goal-requirements.md#native-conversation-goal-and-work-context).
 
+For an open decision associated with an external request, the owning Lead can
+use `goal incorporate --goal-id ID --goal TEXT --decision QUESTION --disposition
+accepted --result-ref REF --expected-event-sha256 HASH`. Under the Goal journal
+lock, this guarded form requires the exact current Goal identity, text and event
+hash and the same open decision. A mismatch appends nothing. It cannot be
+combined with `--direct` or other Goal items. Native response acceptance is a
+separate effect; a Goal record does not prove it.
+
 ## Native Goal recovery
 
 `goal recover` is an exceptional owner-context operation for reconnecting a
@@ -740,6 +748,14 @@ eligibility and source bytes again. `exitbind project context --json` reports
 the current project, focus, rule, memory, and optional resource observations.
 These are context, not a check, approval, or permission. A changed source or
 unavailable observation is reported as unavailable, not projected as current.
+
+When `project context --json` supplies `lead.profileAccess.command`, follow that
+emitted `project context lead-profile BINDING OFFSET --json` route and its `next`
+commands to acquire the configured Lead profile in complete, bound UTF-8 pages.
+Each page carries the profile hash, total byte count and offset. A changed or
+unavailable profile or configuration refuses the old binding and requires a new
+context observation. The route provides content, not permission or proof that a
+host has loaded or followed it.
 
 An optional `project.architectureContract` selection pins a project-relative
 JSON source, exact SHA256 and revision. `project architecture --json` reads the

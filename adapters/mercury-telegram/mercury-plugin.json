@@ -1,0 +1,18 @@
+{
+  "manifestVersion": 1,
+  "id": "exitbind-owner-bridge",
+  "name": "Exitbind owner bridge",
+  "version": "0.1.1",
+  "description": "Routes one bound Codex clarification through the selected Telegram owner conversation.",
+  "kind": "in-process",
+  "engines": { "mercury": ">=1.5.2 <2.0.0", "pluginApi": "^1.3.0" },
+  "entry": "index.mjs",
+  "contributes": { "tools": [], "commands": [] },
+  "permissions": { "network": [], "secrets": [], "telegramOwnerBridge": true },
+  "settings": {
+    "version": 1,
+    "fields": {
+      "bindingFile": { "type": "string", "description": "Absolute path of the private, Lead-prepared request binding.", "setup": true, "required": true }
+    }
+  }
+}

@@ -181,6 +181,10 @@ fn exitbind_skills_keep_current_step_and_parent_name_guidance_aligned() {
     ] {
         let compact = text.split_whitespace().collect::<Vec<_>>().join(" ");
         for contract in [
+            "Before a consequential approach, goal or checker choice",
+            "a hash alone is not acquisition",
+            "verify contiguous offsets, total bytes and profile SHA-256",
+            "This does not initialize a project or add a preflight to direct work",
             "current required instructions and evidence in `currentDelivery`",
             "`requiredContentComplete: true` describes the included required bytes",
             "same-actor content identity can be compared only with bytes already acquired",
@@ -195,6 +199,12 @@ fn exitbind_skills_keep_current_step_and_parent_name_guidance_aligned() {
                 "{path} lost contract: {contract}"
             );
         }
+    }
+
+    for name in ["references/roles/lead.md", "references/competence.md"] {
+        let source = fs::read(root.join("skills/exitbind").join(name)).unwrap();
+        let packaged = fs::read(root.join("plugins/exitbind/skills/exitbind").join(name)).unwrap();
+        assert_eq!(source, packaged, "packaged {name} must match its source");
     }
 }
 
