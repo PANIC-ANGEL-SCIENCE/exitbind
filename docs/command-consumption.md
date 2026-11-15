@@ -82,7 +82,10 @@ Compact `work next` and `work resume` retain their 8 KiB response bound. An
 ordinary mutation or readable detail can include a required actor body within
 the existing 256 KiB readable bound. The recorded-result regression also
 checks an independently verified actor body separately from the remaining
-metadata's 8 KiB in its fixture; that measurement is not a general 8 KiB
+metadata's 8 KiB in its fixture. Its structural measurement substitutes fixed
+fixture paths only for independently validated executable and configuration
+operands in known typed route argv; the actual response remains unchanged and
+its 256 KiB check counts every byte. That measurement is not a general 8 KiB
 guarantee for every mutation's metadata. Count every emitted byte, both streams,
 and any additional required acquisition when comparing a complete journey.
 

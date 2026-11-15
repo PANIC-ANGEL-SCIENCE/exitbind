@@ -357,7 +357,7 @@ pub(crate) fn session_required(loaded: &Loaded, facts: &Value) -> String {
             lead["nativeName"].as_str().unwrap_or("?"),
             lead["profileSha256"].as_str().unwrap_or("unavailable")
         ));
-        text.push_str("\nBefore a consequential choice, acquire the current Lead profile via project facts unless the host already supplied the same complete bytes.");
+        text.push_str("\nRead full current Lead profile for material choices.");
     }
     if facts["memory"]["state"] == "unavailable" {
         text.push_str("\nProject memory unavailable; do not assume earlier rules.");

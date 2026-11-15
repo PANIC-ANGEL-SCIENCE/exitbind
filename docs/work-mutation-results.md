@@ -30,8 +30,11 @@ with later memory drift warnings remains done and does not replay governance.
 
 `work check WORK`, `work permit WORK ASSIGNMENT --operation OPERATION`, and
 `work return WORK ASSIGNMENT --outcome OUTCOME` emit one compact JSON result by
-default. `work return` also accepts `--json` for scripts. The emitted JSON,
-including its newline, is at most 8 KiB.
+default. `work return` also accepts `--json` for scripts. Ordinary mutation
+responses and readable details have a 256 KiB bound, including every emitted
+actor byte and the JSON newline. Compact `work next` and `work resume` retain
+their 8 KiB bound. A separate regression fixture measures verified actor-excluded
+metadata against 8 KiB; that is not a general metadata limit.
 
 `effect` says whether this invocation recorded an event or held a worker
 result. `status` can additionally say `refused` when the recorded event is a

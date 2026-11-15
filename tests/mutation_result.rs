@@ -407,8 +407,226 @@ fn verified_fixture_actor(
     true
 }
 
+// Normalize only complete, fixture-bound routes. Unknown data stays in the
+// measurement, while an unrecognized or mismatched route is rejected.
+fn normalized_fixture_metadata(
+    fixture: &Fixture,
+    value: &Value,
+    full: &Value,
+    work: &str,
+    seen: &HashSet<String>,
+) -> Option<Value> {
+    let exe = env!("CARGO_BIN_EXE_exitbind");
+    let config = fixture.config.to_str()?;
+    let binding = full["binding"].as_str()?;
+    let assignment = full["recipient"]["assignment"].as_str();
+    let event =
+        full["sections"]["assignment"]["residual"]["snapshot"]["headEventSha256"].as_str()?;
+    if full["kind"] != "work_detail"
+        || full["complete"] != true
+        || full["valid"] != true
+        || full["work"] != work
+        || value["work"] != work
+        || value["current"]["work"] != work
+        || value["current"]["binding"] != binding
+        || value["current"]["recipient"] != full["recipient"]
+        || value["eventSha256"] != event
+    {
+        return None;
+    }
+    fn route_flags(route: &Value) -> bool {
+        ["sameExecutableRequired", "sameConfigRequired"]
+            .iter()
+            .all(|key| route.get(*key).map_or(true, |flag| flag == false))
+    }
+    fn route(argv: &mut Value, exe: &str, config: &str, tail: &[&str]) -> Option<()> {
+        let args = argv.as_array_mut()?;
+        let expected: Vec<&str> = std::iter::once(exe)
+            .chain(tail.iter().copied())
+            .chain(["--config", config])
+            .collect();
+        if args.len() != expected.len()
+            || !args
+                .iter()
+                .zip(&expected)
+                .all(|(arg, want)| arg.as_str() == Some(*want))
+        {
+            return None;
+        }
+        args[0] = Value::String("/fixture/bin/exitbind".into());
+        let last = args.len() - 1;
+        args[last] = Value::String("/fixture/project/exitbind.json".into());
+        Some(())
+    }
+    let mut metadata = value.clone();
+    if value
+        .get("currentDelivery")
+        .is_some_and(|actor| !actor.is_null())
+    {
+        if value["currentDelivery"]["kind"] != "work_actor_context"
+            || !verified_fixture_actor(value, full, seen)
+        {
+            return None;
+        }
+        metadata.as_object_mut()?.remove("currentDelivery");
+    }
+    if metadata["full"]["binding"] != binding
+        || metadata["full"]["readOnly"] != true
+        || !route_flags(&metadata["full"])
+        || metadata["continuation"]["readOnly"] != true
+        || !route_flags(&metadata["continuation"])
+        || metadata["nextAction"]["safe"] != true
+        || metadata["nextAction"]["type"] != "inspect"
+        || !route_flags(&metadata["nextAction"])
+    {
+        return None;
+    }
+    route(
+        &mut metadata["full"]["command"],
+        exe,
+        config,
+        &["work", "detail", work, "--json"],
+    )?;
+    route(
+        &mut metadata["continuation"]["command"],
+        exe,
+        config,
+        &["work", "next", work],
+    )?;
+    let ledger = fixture.ledger(work);
+    route(
+        &mut metadata["nextAction"]["command"],
+        exe,
+        config,
+        &["run", "inspect", &ledger, "--event", event, "--json"],
+    )?;
+
+    let action = &mut metadata["effectiveAction"];
+    if action["binding"] != binding
+        || (!action["work"].is_null() && action["work"] != work)
+        || (!action["assignment"].is_null() && action["assignment"].as_str() != assignment)
+        || (!action["actor"].is_null() && action["actor"] != full["recipient"]["actor"])
+    {
+        return None;
+    }
+    if !action["beforeEditing"].is_null() {
+        if !route_flags(&action["beforeEditing"]["command"]) {
+            return None;
+        }
+        let request = format!("permit-{binding}");
+        route(
+            &mut action["beforeEditing"]["command"]["argv"],
+            exe,
+            config,
+            &[
+                "work",
+                "permit",
+                work,
+                assignment?,
+                "--operation",
+                "<OPERATION>",
+                "--request-id",
+                &request,
+            ],
+        )?;
+    }
+    if !action["command"].is_null() {
+        if !route_flags(&action["command"]) {
+            return None;
+        }
+        route(
+            &mut action["command"]["argv"],
+            exe,
+            config,
+            &["work", "check", work],
+        )?;
+    }
+    let mut labels = HashSet::new();
+    let choices = match action.get_mut("choices") {
+        None | Some(Value::Null) => &mut [] as &mut [Value],
+        Some(Value::Array(choices)) => choices.as_mut_slice(),
+        _ => return None,
+    };
+    for choice in choices {
+        let label = choice["label"].as_str()?.to_owned();
+        if !labels.insert(label.clone()) || !route_flags(&choice["command"]) {
+            return None;
+        }
+        let expected = match label.as_str() {
+            "return" => vec![
+                "work",
+                "return",
+                work,
+                assignment?,
+                "--current-binding",
+                binding,
+                "--outcome",
+                "<OUTCOME>",
+                "--reason",
+                "<REASON>",
+            ],
+            "environmental" => vec![
+                "work",
+                "disposition",
+                work,
+                assignment?,
+                "--current-binding",
+                binding,
+                "--decision",
+                "environmental",
+                "--reason",
+                "<REASON>",
+            ],
+            "approved" | "rework" | "blocked" | "unavailable"
+                if full["recipient"]["actor"] == "reviewer" =>
+            {
+                vec![
+                    "work",
+                    "return",
+                    work,
+                    assignment?,
+                    "--current-binding",
+                    binding,
+                    "--outcome",
+                    label.as_str(),
+                    "--reason",
+                    "<REASON>",
+                ]
+            }
+            "preview replacement of an explicitly defective frozen check" => vec![
+                "work",
+                "replace-check",
+                work,
+                "--check-command",
+                "<NEW_CHECK_COMMAND>",
+                "--reason",
+                "<REASON>",
+                "--classification",
+                "defective-contract",
+                "--current-binding",
+                binding,
+            ],
+            _ => return None,
+        };
+        route(&mut choice["command"]["argv"], exe, config, &expected)?;
+    }
+    Some(metadata)
+}
+
+fn emitted_read(fixture: &Fixture, argv: &Value) -> Value {
+    let argv = argv.as_array().unwrap();
+    let output = support::git_topology::command(argv[0].as_str().unwrap())
+        .current_dir(&fixture.root)
+        .args(argv[1..].iter().map(|arg| arg.as_str().unwrap()))
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
 fn assert_fixture_step_budget(
     fixture: &Fixture,
+    work: &str,
     value: &Value,
     output: &Output,
     seen: &mut HashSet<String>,
@@ -420,11 +638,9 @@ fn assert_fixture_step_budget(
         output.stdout, exact_json,
         "fixture byte accounting requires the actual JSON bytes"
     );
-    let mut metadata = value.clone();
+    let (full, _) = fixture.call(&["work", "detail", work, "--json"]);
     let mut actor_bytes = 0;
     if value["currentDelivery"]["kind"] == "work_actor_context" {
-        let work = value["work"].as_str().unwrap();
-        let (full, _) = fixture.call(&["work", "detail", work, "--json"]);
         assert!(
             verified_fixture_actor(value, &full, seen),
             "current actor body was not independently verified"
@@ -438,15 +654,38 @@ fn assert_fixture_step_budget(
             );
         }
         actor_bytes = serde_json::to_vec(&value["currentDelivery"]).unwrap().len();
-        metadata.as_object_mut().unwrap().remove("currentDelivery");
     }
+    let mut raw_metadata = value.clone();
+    if actor_bytes > 0 {
+        raw_metadata
+            .as_object_mut()
+            .unwrap()
+            .remove("currentDelivery");
+    }
+    let actual_metadata = serde_json::to_vec(&raw_metadata).unwrap().len() + 1;
+    let metadata = normalized_fixture_metadata(fixture, value, &full, work, seen)
+        .expect("fixture route must match independently read current Work");
+    let ledger = fixture.root.join(fixture.ledger(work));
+    let ledger_before = fs::read(&ledger).unwrap();
+    let count = fixture.root.with_extension("count");
+    let count_before = fs::read(&count).ok();
+    let emitted_full = emitted_read(fixture, &value["full"]["command"]);
+    assert_eq!(emitted_full["work"], work);
+    assert_eq!(emitted_full["binding"], full["binding"]);
+    assert_eq!(emitted_full["complete"], true);
+    assert_eq!(emitted_full["valid"], true);
+    let inspected = emitted_read(fixture, &value["nextAction"]["command"]);
+    assert_eq!(inspected["eventSha256"], value["eventSha256"]);
+    assert_eq!(inspected["authorizesMutation"], false);
+    assert_eq!(fs::read(&ledger).unwrap(), ledger_before);
+    assert_eq!(fs::read(&count).ok(), count_before);
     let metadata_bytes = serde_json::to_vec(&metadata).unwrap().len() + 1;
     assert!(
         metadata_bytes <= 8 * 1024,
         "metadata={metadata_bytes}, total={}, actor={actor_bytes}",
         output.stdout.len()
     );
-    eprintln!("step_total_bytes={} verified_actor_value_bytes={actor_bytes} metadata_bytes={metadata_bytes}", output.stdout.len());
+    eprintln!("step_total_bytes={} verified_actor_value_bytes={actor_bytes} actual_metadata_bytes={actual_metadata} normalized_metadata_bytes={metadata_bytes}", output.stdout.len());
 }
 
 #[test]
@@ -491,13 +730,145 @@ fn recorded_result_survives_later_head_and_inspection_never_rechecks() {
         "scoped",
         "--json",
     ]);
-    assert_fixture_step_budget(&fixture, &scope, &scope_output, &mut read_recipients);
+    assert_fixture_step_budget(&fixture, work, &scope, &scope_output, &mut read_recipients);
     let (scope_full, _) = fixture.call(&["work", "detail", work, "--json"]);
     assert!(verified_fixture_actor(
         &scope,
         &scope_full,
         &read_recipients
     ));
+    for pointer in [
+        "/full/command/0", // executable
+        "/full/command/6", // configuration
+        "/full/command/3", // Work
+        "/full/binding",
+        "/nextAction/command/5",                         // recorded event
+        "/effectiveAction/choices/0/command/argv/4",     // assignment
+        "/effectiveAction/choices/0/command/argv/6",     // binding
+        "/effectiveAction/beforeEditing/command/argv/8", // bound request
+        "/effectiveAction/choices/0/label",              // unknown route
+    ] {
+        let mut forged = scope.clone();
+        *forged.pointer_mut(pointer).unwrap() = Value::String("forged".into());
+        assert!(
+            normalized_fixture_metadata(&fixture, &forged, &scope_full, work, &read_recipients)
+                .is_none(),
+            "accepted {pointer}"
+        );
+        eprintln!("normalizer_rejected={pointer}");
+    }
+    let mut forged_event = scope.clone();
+    forged_event["eventSha256"] = Value::String("forged".into());
+    forged_event["nextAction"]["command"][5] = Value::String("forged".into());
+    assert!(normalized_fixture_metadata(
+        &fixture,
+        &forged_event,
+        &scope_full,
+        work,
+        &read_recipients
+    )
+    .is_none());
+    eprintln!("normalizer_rejected=forged_event_and_route_against_independent_head");
+    for position in [0, 1] {
+        let mut duplicate = scope.clone();
+        let argv = duplicate["full"]["command"].as_array_mut().unwrap();
+        if position == 0 {
+            argv.insert(0, Value::String(env!("CARGO_BIN_EXE_exitbind").into()));
+        } else {
+            argv.push(Value::String("--config".into()));
+            argv.push(Value::String(fixture.config.to_str().unwrap().into()));
+        }
+        assert!(normalized_fixture_metadata(
+            &fixture,
+            &duplicate,
+            &scope_full,
+            work,
+            &read_recipients
+        )
+        .is_none());
+        eprintln!("normalizer_rejected=duplicate_executable_or_config_{position}");
+    }
+    for (pointer, values) in [
+        ("/full/command", vec![work.to_owned()]),
+        (
+            "/effectiveAction/choices/0/command/argv",
+            vec![
+                "--current-binding".into(),
+                scope_full["binding"].as_str().unwrap().into(),
+            ],
+        ),
+        (
+            "/nextAction/command",
+            vec![
+                "--event".into(),
+                scope["eventSha256"].as_str().unwrap().into(),
+            ],
+        ),
+    ] {
+        let mut duplicate = scope.clone();
+        duplicate
+            .pointer_mut(pointer)
+            .unwrap()
+            .as_array_mut()
+            .unwrap()
+            .extend(values.into_iter().map(Value::String));
+        assert!(normalized_fixture_metadata(
+            &fixture,
+            &duplicate,
+            &scope_full,
+            work,
+            &read_recipients
+        )
+        .is_none());
+        eprintln!("normalizer_rejected=duplicate_{pointer}");
+    }
+    let mut duplicate_choice = scope.clone();
+    let choices = duplicate_choice["effectiveAction"]["choices"]
+        .as_array_mut()
+        .unwrap();
+    choices.push(choices[0].clone());
+    assert!(normalized_fixture_metadata(
+        &fixture,
+        &duplicate_choice,
+        &scope_full,
+        work,
+        &read_recipients
+    )
+    .is_none());
+    eprintln!("normalizer_rejected=duplicate_choice");
+    let mut unknown_actor = scope.clone();
+    unknown_actor["currentDelivery"]["kind"] = Value::String("unknown_actor".into());
+    assert!(normalized_fixture_metadata(
+        &fixture,
+        &unknown_actor,
+        &scope_full,
+        work,
+        &read_recipients
+    )
+    .is_none());
+    eprintln!("normalizer_rejected=unknown_actor");
+    let mut malformed_route = scope.clone();
+    malformed_route["full"]["command"] = Value::String("not argv".into());
+    assert!(normalized_fixture_metadata(
+        &fixture,
+        &malformed_route,
+        &scope_full,
+        work,
+        &read_recipients
+    )
+    .is_none());
+    eprintln!("normalizer_rejected=malformed_route");
+    let mut unsafe_route = scope.clone();
+    unsafe_route["full"]["readOnly"] = Value::Bool(false);
+    assert!(normalized_fixture_metadata(
+        &fixture,
+        &unsafe_route,
+        &scope_full,
+        work,
+        &read_recipients
+    )
+    .is_none());
+    eprintln!("normalizer_rejected=non_readonly_route");
     for pointer in [
         "/kind",
         "/work",
@@ -517,6 +888,15 @@ fn recorded_result_survives_later_head_and_inspection_never_rechecks() {
             !verified_fixture_actor(&forged, &scope_full, &read_recipients),
             "accepted forged {pointer}"
         );
+        assert!(normalized_fixture_metadata(
+            &fixture,
+            &forged,
+            &scope_full,
+            work,
+            &read_recipients
+        )
+        .is_none());
+        eprintln!("normalizer_rejected=forged_actor{pointer}");
     }
     for pointer in ["/unknown", "/instructions/profile/unknown"] {
         let mut forged = scope.clone();
@@ -530,19 +910,35 @@ fn recorded_result_survives_later_head_and_inspection_never_rechecks() {
             !verified_fixture_actor(&forged, &scope_full, &read_recipients),
             "accepted unknown {pointer}"
         );
+        assert!(normalized_fixture_metadata(
+            &fixture,
+            &forged,
+            &scope_full,
+            work,
+            &read_recipients
+        )
+        .is_none());
+        eprintln!("normalizer_rejected=unknown_actor_field{pointer}");
     }
     let mut oversized_metadata = scope.clone();
-    oversized_metadata["unrecognizedMetadata"] = Value::String("x".repeat(8192));
+    let unknown = format!("{}{}", fixture.config.display(), "x".repeat(8192));
+    oversized_metadata["unrecognizedMetadata"] = Value::String(unknown.clone());
     assert!(verified_fixture_actor(
         &oversized_metadata,
         &scope_full,
         &read_recipients
     ));
-    oversized_metadata
-        .as_object_mut()
-        .unwrap()
-        .remove("currentDelivery");
+    let oversized_metadata = normalized_fixture_metadata(
+        &fixture,
+        &oversized_metadata,
+        &scope_full,
+        work,
+        &read_recipients,
+    )
+    .unwrap();
+    assert_eq!(oversized_metadata["unrecognizedMetadata"], unknown);
     assert!(serde_json::to_vec(&oversized_metadata).unwrap().len() + 1 > 8192);
+    eprintln!("normalizer_preserved_and_counted=unknown_metadata");
     eprintln!("scope_return_bytes={}", scope_output.stdout.len());
     assert_eq!(scope["effect"], "recorded");
     assert_eq!(scope["outcome"], "scoped");
@@ -556,12 +952,24 @@ fn recorded_result_survives_later_head_and_inspection_never_rechecks() {
         "--outcome",
         "completed",
     ]);
-    assert_fixture_step_budget(&fixture, &returned, &return_output, &mut read_recipients);
+    assert_fixture_step_budget(
+        &fixture,
+        work,
+        &returned,
+        &return_output,
+        &mut read_recipients,
+    );
     eprintln!("worker_return_bytes={}", return_output.stdout.len());
     assert_eq!(returned["outcome"], "completed");
     assert_eq!(returned["assignment"], worker["next"]["assignment"]);
     let (failed, failed_output) = fixture.recorded_failure(&["work", "check", work]);
-    assert_fixture_step_budget(&fixture, &failed, &failed_output, &mut read_recipients);
+    assert_fixture_step_budget(
+        &fixture,
+        work,
+        &failed,
+        &failed_output,
+        &mut read_recipients,
+    );
     eprintln!("failed_check_bytes={}", failed_output.stdout.len());
     assert_eq!(failed["effect"], "recorded");
     assert_eq!(failed["result"]["code"], 1);
@@ -569,7 +977,13 @@ fn recorded_result_survives_later_head_and_inspection_never_rechecks() {
     let ledger = fixture.ledger(work);
     fs::write(&marker, b"pass").unwrap();
     let (passed, passed_output) = fixture.call(&["work", "check", work, "--json"]);
-    assert_fixture_step_budget(&fixture, &passed, &passed_output, &mut read_recipients);
+    assert_fixture_step_budget(
+        &fixture,
+        work,
+        &passed,
+        &passed_output,
+        &mut read_recipients,
+    );
     eprintln!("passed_check_bytes={}", passed_output.stdout.len());
     assert_eq!(passed["result"]["code"], 0);
     assert_ne!(passed["eventSha256"], failed["eventSha256"]);

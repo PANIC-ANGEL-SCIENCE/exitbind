@@ -121,6 +121,34 @@ fn an_integration_begin_route_omits_the_journey_freeze_and_says_why() {
     assert!(argv.iter().any(|word| word == "integration"), "{argv:?}");
 }
 
+fn grouped_detail(project: &Project, view: &Value) -> Value {
+    let route = &view["details"]["grouped"];
+    assert_eq!(route["kind"], "work_detail", "{view}");
+    assert_eq!(route["readOnly"], true, "{view}");
+    assert_eq!(route["sameExecutableRequired"], false, "{view}");
+    assert_eq!(route["sameConfigRequired"], false, "{view}");
+    let binding = view["binding"].as_str().expect("current action binding");
+    let reference = format!("ref:work-detail:v1:{binding}");
+    assert_eq!(route["reference"], reference, "{view}");
+    let argv = route["command"]
+        .as_array()
+        .expect("complete grouped route")
+        .iter()
+        .map(|word| word.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    let output = project.call_exact_argv(&argv);
+    assert!(output.status.success(), "{output:?}");
+    let recovered = serde_json::from_slice::<Value>(&output.stdout).unwrap();
+    assert_eq!(recovered["kind"], "work_detail");
+    assert_eq!(recovered["valid"], true);
+    assert_eq!(recovered["complete"], true);
+    assert_eq!(recovered["work"], view["work"]);
+    assert_eq!(recovered["binding"], binding);
+    assert_eq!(recovered["reference"], reference);
+    assert!(recovered["actionForms"]["fillRoute"]["templatePrefix"].is_array());
+    recovered
+}
+
 fn fill_argv(
     project: &Project,
     view: &Value,
@@ -131,19 +159,7 @@ fn fill_argv(
     // Follow its emitted read-only route to the complete current detail.
     let recovered;
     let view = if !view["effectiveAction"]["fillRoute"]["templatePrefix"].is_array() {
-        let route = &view["details"]["grouped"];
-        assert_eq!(route["sameExecutableRequired"], false, "{view}");
-        assert_eq!(route["sameConfigRequired"], false, "{view}");
-        let argv = route["command"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|word| word.as_str().unwrap().to_owned())
-            .collect::<Vec<_>>();
-        let output = project.call_exact_argv(&argv);
-        assert!(output.status.success(), "{output:?}");
-        recovered = serde_json::from_slice::<Value>(&output.stdout).unwrap();
-        assert_eq!(recovered["complete"], true);
+        recovered = grouped_detail(project, view);
         &recovered
     } else {
         view
@@ -228,6 +244,7 @@ fn lead_and_worker_forms_run_through_the_fill_route_and_refusals_write_nothing()
     .unwrap();
     let artifact = artifact.to_str().unwrap();
 
+    let before = fs::read(&ledger).unwrap();
     let view = action_view(&project, &work);
     assert_eq!(
         view["effectiveAction"]["leadChoiceRequired"], true,
@@ -236,16 +253,39 @@ fn lead_and_worker_forms_run_through_the_fill_route_and_refusals_write_nothing()
     assert_eq!(view["effectiveAction"]["choiceActor"]["role"], "lead");
     assert_every_choice_fillable(&view);
     let text = project.call(&["work", "detail", &work, "--view", "action"], None);
+    assert!(text.status.success(), "{text:?}");
     let text = String::from_utf8(text.stdout).unwrap();
     assert!(
         text.contains("Lead choice: decided by lead agent 'lead'"),
         "{text}"
     );
-    assert!(text.contains("  fill route: "), "{text}");
+    if view["effectiveAction"]["commandsComplete"] == false {
+        assert!(text.contains("Commands unavailable:"), "{text}");
+        let printed = text
+            .lines()
+            .find_map(|line| line.strip_prefix("  grouped: "))
+            .unwrap_or_else(|| panic!("no printed grouped route: {text}"));
+        // Run the human line as printed, preserving its shell quoting.
+        let output = project.call_exact_argv(&["/bin/sh".into(), "-c".into(), printed.into()]);
+        assert!(output.status.success(), "{output:?}");
+        let printed_detail: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let typed_detail = grouped_detail(&project, &view);
+        for field in ["kind", "valid", "complete", "work", "binding", "reference"] {
+            assert_eq!(printed_detail[field], typed_detail[field], "{field}");
+        }
+        assert_eq!(
+            printed_detail["actionForms"]["fillRoute"],
+            typed_detail["actionForms"]["fillRoute"]
+        );
+        eprintln!("action-view fixture branch: grouped omission");
+    } else {
+        assert!(text.contains("  fill route: "), "{text}");
+        eprintln!("action-view fixture branch: direct fill route");
+    }
     assert!(!text.contains("<same config>"), "{text}");
+    assert_eq!(fs::read(&ledger).unwrap(), before);
 
     // Refusals happen before the bound command runs and leave the ledger.
-    let before = fs::read(&ledger).unwrap();
     let reason = ("--reason", "R1 is the first Work; the others follow.");
     for (options, expected) in [
         (

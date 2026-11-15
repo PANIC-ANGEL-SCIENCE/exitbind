@@ -55,8 +55,7 @@ fn selected_custom_profile_is_acquired_in_bound_complete_pages_before_work() {
     fs::write(path, &profile).unwrap();
     let context = session_hook(&root);
     assert!(context.len() <= 3072, "{}", context.len());
-    assert!(context.contains("Before a consequential choice"));
-    assert!(context.contains("unless the host already supplied the same complete bytes"));
+    assert!(context.contains("Read full current Lead profile for material choices."));
     assert!(context.contains("do not run Exitbind commands, initialize a project"));
 
     let facts = call(&root, &["project", "context", "--json"]);
