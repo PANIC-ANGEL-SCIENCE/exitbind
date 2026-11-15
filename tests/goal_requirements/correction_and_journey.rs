@@ -695,6 +695,101 @@ fn copied_journey_basis_markers_are_rejected_before_any_work_or_goal_mutation() 
 fn a_closed_predecessor_cannot_emit_terminal_after_a_new_session_goal_is_incorporated() {
     let p = Project::new("journey-successor-suppresses-old-room")
         .with_native_session("journey-successor-session");
+    let observe_status = |phase: &str| {
+        let before = p.native_store_snapshot();
+        let output = p.call(&["goal", "status", "--json"], None);
+        assert_eq!(
+            p.native_store_snapshot(),
+            before,
+            "canonical native Goal files changed (display/cache excluded)"
+        );
+        let status: Value = serde_json::from_slice(&output.stdout).expect("status must emit JSON");
+        let no_terminal_card = || {
+            let terminal_text = TERMINAL
+                .lines()
+                .nth(1)
+                .expect("terminal card has a content line")
+                .trim_matches('|')
+                .trim();
+            assert!(!terminal_text.is_empty());
+            for stream in [&output.stdout, &output.stderr] {
+                assert!(!String::from_utf8_lossy(stream).contains(terminal_text));
+            }
+        };
+        let outcome = if output.status.success() {
+            assert!(status.get("error").is_none());
+            let (goal_id, closed) = match phase {
+                "closed" => ("import", true),
+                "successor" => ("successor", false),
+                _ => panic!("unexpected status phase {phase}"),
+            };
+            assert_eq!(status["goalId"], goal_id);
+            assert!(status["goal"].is_string());
+            assert_eq!(status["closure"]["closed"], closed);
+            if status["currentReadiness"]["state"] == "unknown" {
+                let reason = "resume_deadline_exceeded";
+                assert_eq!(
+                    status["currentReadiness"],
+                    json!({"state":"unknown", "reason":reason})
+                );
+                assert_eq!(
+                    status["goalProgress"],
+                    json!({
+                        "overall":"unavailable",
+                        "goal":status.get("goal"),
+                        "decomposition":{"available":false, "reason":reason},
+                        "tasks":[],
+                        "resultReadiness":{"state":"unavailable", "reason":reason},
+                        "systemText":"Goal currentness and task progress are unavailable for this observation"
+                    })
+                );
+                if let Some(requirements) = status.get("requirements") {
+                    assert_eq!(
+                        requirements,
+                        &json!({"state":"unavailable", "reason":reason})
+                    );
+                }
+                assert_eq!(status["presentation"], json!({"terminal":null}));
+                assert!(status.get("completionEvent").is_none());
+                no_terminal_card();
+                "bounded-unavailable"
+            } else {
+                match phase {
+                    "closed" => {
+                        assert_eq!(status["currentReadiness"], json!({"state":"current"}));
+                        assert_eq!(status["presentation"]["terminal"], TERMINAL);
+                    }
+                    "successor" => {
+                        assert_eq!(
+                            status["currentReadiness"],
+                            json!({"state":"stale", "reason":"whole_goal_not_closed"})
+                        );
+                        assert!(status
+                            .pointer("/presentation/terminal")
+                            .is_some_and(Value::is_null));
+                        no_terminal_card();
+                    }
+                    _ => unreachable!(),
+                }
+                "available"
+            }
+        } else {
+            assert_eq!(output.status.code(), Some(1));
+            assert!(
+                output.stderr.is_empty(),
+                "bounded status error must be JSON-only"
+            );
+            assert_eq!(
+                status,
+                json!({"error":"goal status observation unavailable: native recovery Goal read exceeded its 750 ms cooperative budget"})
+            );
+            no_terminal_card();
+            "bounded-unavailable"
+        };
+        let diagnostic = format!("goal_status_fixture phase={phase} outcome={outcome}\n");
+        std::io::Write::write_all(&mut std::io::stdout().lock(), diagnostic.as_bytes())
+            .expect("write status observation diagnostic");
+    };
     p.setup();
     let work = p.begin("R1,R2,R3", "sh check.sh all");
     p.drive(&work, true);
@@ -726,7 +821,7 @@ fn a_closed_predecessor_cannot_emit_terminal_after_a_new_session_goal_is_incorpo
     );
     assert_eq!(closed["closure"]["closed"], true);
     assert_eq!(closed["presentation"]["terminal"], TERMINAL);
-    assert_eq!(p.status()["presentation"]["terminal"], TERMINAL);
+    observe_status("closed");
     let prior_next = p.value(&["work", "next", &work, "--json", "--full"], None);
     assert_eq!(prior_next["presentation"]["terminal"], TERMINAL);
 
@@ -743,13 +838,18 @@ fn a_closed_predecessor_cannot_emit_terminal_after_a_new_session_goal_is_incorpo
         ],
         None,
     );
+    assert_eq!(successor["goalId"], "successor");
+    assert_eq!(successor["closure"]["closed"], false);
+    assert_eq!(successor["successorOf"]["goalId"], "import");
     assert_eq!(successor["journeyMembers"].as_array().unwrap().len(), 1);
     assert_eq!(successor["journeyMembers"][0]["work"], work);
     assert_eq!(successor["journeyMembers"][0]["parentGoalId"], "import");
 
     let old_next = p.value(&["work", "next", &work, "--json", "--full"], None);
     let old_detail = p.value(&["work", "detail", &work, "--json"], None);
-    assert!(old_next["presentation"]["terminal"].is_null());
+    assert!(old_next
+        .pointer("/presentation/terminal")
+        .is_some_and(Value::is_null));
     assert_eq!(
         old_next["presentation"]["goalProgress"]["journeyCompletion"]["state"],
         "blocked"
@@ -761,6 +861,5 @@ fn a_closed_predecessor_cannot_emit_terminal_after_a_new_session_goal_is_incorpo
         "Import names safely and show a count"
     );
     assert_eq!(old_detail["sections"]["tasks"]["overall"], "in_progress");
-    assert_eq!(p.status()["goalId"], "successor");
-    assert!(p.status()["presentation"]["terminal"].is_null());
+    observe_status("successor");
 }
