@@ -43,8 +43,8 @@ pub(crate) fn snapshot_for_task(loaded: &Loaded, task: Option<&str>) -> Value {
             .flatten();
             let access = profile_hash.as_deref().map(|digest| {
                 let binding = lead_profile_binding(loaded, id, &agent.profile, digest);
-                match lead_profile_route(loaded, &binding, 0) {
-                    Ok(command) => json!({"binding":binding, "command":command, "readOnly":true}),
+                match lead_profile_access(loaded, &binding) {
+                    Ok(access) => access,
                     Err(reason) => json!({"available":false, "reason":reason}),
                 }
             });
@@ -108,6 +108,11 @@ pub(crate) fn snapshot_for_task(loaded: &Loaded, task: Option<&str>) -> Value {
 
 const LEAD_PROFILE_PAGE_BYTES: usize = 4 * 1024;
 
+fn lead_profile_access(loaded: &Loaded, binding: &str) -> Result<Value, String> {
+    Ok(json!({"binding":binding,
+        "command":lead_profile_route(loaded, binding, 0)?, "readOnly":true}))
+}
+
 fn lead_profile_binding(loaded: &Loaded, agent: &str, profile: &str, digest: &str) -> String {
     hash::value(&json!({"version":1, "configPath":loaded.path,
         "configSha256":hash::text(&loaded.source), "controlRoot":loaded.control_root,
@@ -137,11 +142,19 @@ pub(crate) fn lead_profile_page(
 ) -> Result<Value, String> {
     let refresh =
         crate::emitted::command_line(&["project", "context", "--json"], Some(&loaded.path));
-    let stale = || {
-        format!("Lead profile or configuration changed or is unavailable; refresh with {refresh}")
+    let stale = |current: Option<&str>| {
+        crate::drift::refusal(
+            crate::drift::Class::LeadProfileBinding,
+            binding,
+            current,
+            None,
+            crate::drift::Route::ProjectContext {
+                config: &loaded.path,
+            },
+        )
     };
-    let name = loaded.lead().ok_or_else(stale)?;
-    let agent = loaded.agent(name).ok_or_else(stale)?;
+    let name = loaded.lead().ok_or_else(|| stale(None))?;
+    let agent = loaded.agent(name).ok_or_else(|| stale(None))?;
     let page = path::secure_page_observation(
         &loaded.control_root,
         &agent.profile,
@@ -149,30 +162,45 @@ pub(crate) fn lead_profile_page(
         offset,
         LEAD_PROFILE_PAGE_BYTES,
     )
-    .map_err(|reason| format!("{reason}; refresh with {refresh}"))?
-    .ok_or_else(stale)?;
-    if lead_profile_binding(loaded, name, &agent.profile, &page.sha256) != binding {
-        return Err(stale());
+    .map_err(|reason| format!("{reason}; {}", stale(None)))?
+    .ok_or_else(|| stale(None))?;
+    let observed_binding = lead_profile_binding(loaded, name, &agent.profile, &page.sha256);
+    if observed_binding != binding {
+        return Err(stale(Some(&observed_binding)));
     }
     let config_path = loaded
         .path
         .to_str()
         .ok_or("configuration path is not valid UTF-8")?;
-    let current = crate::config::load(Some(config_path)).map_err(|_| stale())?;
+    let current = crate::config::load(Some(config_path)).map_err(|_| stale(None))?;
     if current.source != loaded.source
         || current.control_root != loaded.control_root
         || current.product_root != loaded.product_root
         || current.state_root != loaded.state_root
         || current.project_id != loaded.project_id
     {
-        return Err(stale());
+        let current_binding = current.lead().and_then(|id| {
+            current.agent(id).and_then(|current_agent| {
+                path::secure_digest_observation(
+                    &current.control_root,
+                    &current_agent.profile,
+                    "lead profile",
+                )
+                .ok()
+                .flatten()
+                .map(|digest| lead_profile_binding(&current, id, &current_agent.profile, &digest))
+            })
+        });
+        return Err(stale(current_binding.as_deref()));
     }
-    if path::secure_digest_observation(&loaded.control_root, &agent.profile, "lead profile")
-        .map_err(|reason| format!("{reason}; refresh with {refresh}"))?
-        .as_deref()
-        != Some(page.sha256.as_str())
-    {
-        return Err(stale());
+    let latest_digest =
+        path::secure_digest_observation(&loaded.control_root, &agent.profile, "lead profile")
+            .map_err(|reason| format!("{reason}; {}", stale(None)))?;
+    if latest_digest.as_deref() != Some(page.sha256.as_str()) {
+        let current_binding = latest_digest
+            .as_deref()
+            .map(|digest| lead_profile_binding(loaded, name, &agent.profile, digest));
+        return Err(stale(current_binding.as_deref()));
     }
     if offset > page.total_bytes || (offset == page.total_bytes && offset != 0) {
         return Err(format!(

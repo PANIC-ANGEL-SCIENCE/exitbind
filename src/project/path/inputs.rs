@@ -222,6 +222,7 @@ pub(crate) const NOT_PATHS: &[&str] = &[
     "confidence",
     "consider",
     "duration-ms",
+    "expected-event-sha256",
     "expected-sha256",
     "event",
     "external-scope",

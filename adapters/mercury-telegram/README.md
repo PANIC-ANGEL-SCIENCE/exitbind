@@ -15,7 +15,10 @@ The package is optional source in this repository. It is not included in the
 current Cargo source archive or installed binary. Node.js 22.18 or newer is
 needed for its tests and host integration. `mercury-sdk.patch` is an opt-in
 extension against Mercury source commit
-`62135a04d511995ac6c17af44d602eb6b1fc4b2a` (Mercury 1.5.2). It adds a declared
+`62135a04d511995ac6c17af44d602eb6b1fc4b2a`. Its exact version is recorded in
+the [pinned upstream package manifest](https://github.com/cosmicstack-labs/mercury-agent/blob/62135a04d511995ac6c17af44d602eb6b1fc4b2a/package.json);
+the plugin's [compatibility range](mercury-plugin.json) is declared separately.
+The extension adds a declared
 `telegramOwnerBridge` plugin permission, a narrow SDK boundary, and Telegram
 delivery/response hooks. It preserves the ordinary consumer for unrelated
 messages. Apply and build that source only in an explicitly selected Mercury

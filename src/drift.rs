@@ -21,6 +21,8 @@ pub(crate) const PREFIX: &str = "EXITBIND_CHANGED:";
 /// One registered member of the class.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Class {
+    /// A selected Lead profile page no longer matches its bound context.
+    LeadProfileBinding,
     /// Lesson events were stamped with a configuration other than the current one.
     MemoryConfiguration,
     /// A memory item's recorded source bytes differ from the file.
@@ -87,6 +89,12 @@ pub(crate) struct Member {
 
 /// Every agent-reachable refusal of the class.
 pub(crate) const MEMBERS: &[Member] = &[
+    Member {
+        class: Class::LeadProfileBinding,
+        classification: "lead_profile_binding_changed",
+        message: "Lead profile or configuration changed or is unavailable",
+        meaning: "refresh the selected Lead profile binding from the current project context",
+    },
     Member {
         class: Class::GoalOwnerSource,
         classification: "native_goal_owner_source_changed",
@@ -253,6 +261,8 @@ pub(crate) const MEMBERS: &[Member] = &[
 
 /// The command a refusal offers next.
 pub(crate) enum Route<'a> {
+    /// `project context`: acquire the current Lead profile binding.
+    ProjectContext { config: &'a std::path::Path },
     /// `memory revalidate`: review a configuration change for a lesson ledger.
     Revalidate {
         lead: &'a str,
@@ -298,6 +308,10 @@ impl Route<'_> {
     fn route(&self) -> (crate::emitted::Route, bool) {
         use crate::emitted::Route as Emitted;
         match self {
+            Route::ProjectContext { config } => (
+                Emitted::new(["project", "context", "--json"]).config(config),
+                true,
+            ),
             Route::Revalidate {
                 lead,
                 ledgers,
@@ -494,6 +508,7 @@ mod tests {
                 member.classification
             );
             for route in [
+                Route::ProjectContext { config },
                 Route::Revalidate {
                     lead: "lead",
                     ledgers: &ledgers,

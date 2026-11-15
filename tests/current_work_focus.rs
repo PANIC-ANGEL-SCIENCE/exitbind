@@ -74,10 +74,12 @@ fn full_history_and_candidate_routes_execute_with_long_portable_invocation_paths
     let mut root = base.join("project");
     loop {
         let config = root.join("exitbind.json");
-        if serde_json::to_vec(config.to_str().unwrap()).unwrap().len() > 1024 {
+        let encoded_len = serde_json::to_vec(config.to_str().unwrap()).unwrap().len();
+        if encoded_len > 1024 {
             break;
         }
-        root.push("\"".repeat(180));
+        let quotes_needed = (1024 - encoded_len) / 2 + 1;
+        root.push("\"".repeat(quotes_needed.min(180)));
     }
     assert!(root.as_os_str().len() + STATE_PATH_HEADROOM < MAC_PATH_LIMIT);
     fs::create_dir_all(&root).unwrap();

@@ -19,6 +19,22 @@ fn refusal(output: &Output) -> String {
     value["error"].as_str().unwrap().to_owned()
 }
 
+fn drift_refusal(output: &Output) -> Value {
+    assert!(!output.status.success(), "{output:?}");
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(value.get("content").is_none(), "{value}");
+    assert_eq!(value["classification"], "lead_profile_binding_changed");
+    assert_eq!(value["boundSha256"].as_str().unwrap().len(), 64);
+    assert_eq!(value["nextAction"]["readOnly"], true);
+    let command = value["nextAction"]["command"].as_array().unwrap();
+    assert_eq!(
+        &command[1..4],
+        &[json!("project"), json!("context"), json!("--json")]
+    );
+    assert_eq!(command[4], "--config");
+    value
+}
+
 fn configured_profile(root: &Path) -> std::path::PathBuf {
     let config_path = root.join("exitbind.json");
     let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
@@ -101,9 +117,18 @@ fn profile_or_configuration_change_refuses_old_pages_and_offers_refresh() {
     let first: Value = serde_json::from_slice(&first.stdout).unwrap();
     let next = first["next"]["command"].clone();
     fs::write(&path, "Changed Lead instruction\n").unwrap();
-    let error = refusal(&route(&root, &next));
-    assert!(error.contains("project context --json --config"), "{error}");
+    let error = drift_refusal(&route(&root, &next));
+    assert_eq!(
+        error["boundSha256"],
+        facts["lead"]["profileAccess"]["binding"]
+    );
     let refreshed = call(&root, &["project", "context", "--json"]);
+    assert_eq!(
+        error["currentSha256"],
+        refreshed["lead"]["profileAccess"]["binding"]
+    );
+    let refresh_output = route(&root, &error["nextAction"]["command"]);
+    assert!(refresh_output.status.success(), "{refresh_output:?}");
     let current = refreshed["lead"]["profileAccess"]["command"].clone();
     let page = route(&root, &current);
     assert!(page.status.success(), "{page:?}");
@@ -115,15 +140,15 @@ fn profile_or_configuration_change_refuses_old_pages_and_offers_refresh() {
     let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
     config["agents"]["captain"]["purpose"] = json!("Changed purpose");
     fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
-    let stale_config = refusal(&route(&root, &current));
-    assert!(stale_config.contains("project context --json --config"));
+    let stale_config = drift_refusal(&route(&root, &current));
+    assert!(stale_config["currentSha256"].is_string());
 
     let current =
         call(&root, &["project", "context", "--json"])["lead"]["profileAccess"]["command"].clone();
     config["orchestration"]["lead"] = json!("worker");
     fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
-    let wrong_lead = refusal(&route(&root, &current));
-    assert!(wrong_lead.contains("project context --json --config"));
+    let wrong_lead = drift_refusal(&route(&root, &current));
+    assert!(wrong_lead["currentSha256"].is_string());
 }
 
 #[test]
@@ -140,8 +165,13 @@ fn invalid_or_unavailable_profile_never_becomes_complete_delivery() {
     let outside = support::temp("lead-profile-outside");
     fs::write(outside.join("private.md"), "outside profile").unwrap();
     symlink(outside.join("private.md"), &path).unwrap();
-    let unavailable = refusal(&route(&root, &command));
-    assert!(!unavailable.contains("outside profile"));
+    let unavailable = drift_refusal(&route(&root, &command));
+    assert!(unavailable["currentSha256"].is_null());
+    assert!(unavailable["error"]
+        .as_str()
+        .unwrap()
+        .starts_with("lead profile: "));
+    assert!(!unavailable.to_string().contains("outside profile"));
 }
 
 #[test]
