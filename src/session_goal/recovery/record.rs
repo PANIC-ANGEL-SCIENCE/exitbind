@@ -16,7 +16,7 @@ fn valid_optional_text(value: &Option<String>, max: usize) -> bool {
     value.as_deref().map_or(true, |text| valid_text(text, max))
 }
 
-fn valid_hash(value: &str) -> bool {
+pub(super) fn valid_hash(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
@@ -127,14 +127,29 @@ pub(crate) fn validate_record(
         Some(state) => {
             let selection = super::retirement::selected(record, &state.active)
                 .map_err(|error| format!("invalid canonical session goal line {line}: {error}"))?;
+            let previous_selection = previous.and_then(|prior| prior.get(super::retirement::FIELD));
+            let current_selection = record.get(super::retirement::FIELD);
             if let Some(selection) = selection {
-                if previous.and_then(|prior| prior.get(super::retirement::FIELD)) != record.get(super::retirement::FIELD) {
+                if previous_selection != current_selection {
                     let prior = previous.map(validated_state).transpose()?.flatten()
                         .ok_or_else(|| format!("invalid canonical session goal line {line}: retirement has no prior recovery"))?;
                     if selection.prior_recovery_decision_sha256 != prior.active.decision_sha256 {
                         return Err(format!("invalid canonical session goal line {line}: retirement prior recovery binding changed"));
                     }
+                } else {
+                    // The journal reader already validated the preceding record.
+                    let prior = previous
+                        .and_then(|record| record.get(FIELD))
+                        .and_then(|recovery| recovery.get("active"))
+                        .and_then(|active| active.get("decisionSha256"))
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| format!("invalid canonical session goal line {line}: retirement has no prior recovery"))?;
+                    if prior != selection.recovery_decision_sha256.as_str() {
+                        return Err(format!("invalid canonical session goal line {line}: stale retirement selection cannot regain authority"));
+                    }
                 }
+            } else if current_selection.is_some() && current_selection != previous_selection {
+                return Err(format!("invalid canonical session goal line {line}: stale retirement selection was not carried from the previous record"));
             }
             Ok(())
         }

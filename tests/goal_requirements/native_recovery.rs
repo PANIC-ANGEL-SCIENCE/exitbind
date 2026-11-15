@@ -1337,7 +1337,7 @@ fn old_reader_and_old_writer_do_not_restore_retirement_authority() {
         None,
     );
     apply_recovery(&owner, &preview);
-    let _integration = accept_recovery_integration(&source, &config);
+    let integration = accept_recovery_integration(&source, &config);
     assert_eq!(
         owner.status()["goalProgress"]["journeyCompletion"]["state"],
         "current"
@@ -1369,6 +1369,153 @@ fn old_reader_and_old_writer_do_not_restore_retirement_authority() {
         old_view["goalProgress"]["journeyCompletion"]["state"],
         "current"
     );
+
+    // Old recover clones the complete raw Goal and changes the recovery
+    // decision without knowing that the carried retirement is now stale.
+    let before_old_recovery = owner.status();
+    let original_selection = before_old_recovery["nativeGoalRetirementSelection"].clone();
+    let original_members = before_old_recovery["journeyMembers"].clone();
+    let original_ledgers = [&replacement, &blocked, &integration]
+        .into_iter()
+        .map(|work| (work, fs::read(work_ledger(&source, work)).unwrap()))
+        .collect::<Vec<_>>();
+    let blocked_ledger = format!(".exitbind/runs/work-{}.jsonl", &blocked[4..]);
+    let before_run = source.value_with_config(
+        &["run", "inspect", &blocked_ledger, "--json"],
+        None,
+        &config,
+    );
+    for request_id in ["old-recovery-1", "old-recovery-2"] {
+        let before_preview = fs::read(native_journal(&owner)).unwrap();
+        let old_preview = vec![
+            old.clone(),
+            "goal".into(),
+            "recover".into(),
+            "--source-config".into(),
+            config.to_str().unwrap().into(),
+            "--request-id".into(),
+            request_id.into(),
+            "--reason".into(),
+            "Observe a recovery written by the previous producer".into(),
+            "--json".into(),
+            "--config".into(),
+            owner_config.clone(),
+        ];
+        let output = owner.call_exact_argv(&old_preview);
+        assert!(output.status.success(), "{output:?}");
+        let recovery: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(recovery["readOnly"], true);
+        assert_eq!(fs::read(native_journal(&owner)).unwrap(), before_preview);
+        let apply_argv = recovery["applyArgv"]
+            .as_array()
+            .expect("old preview emits its apply argv")
+            .iter()
+            .map(|part| part.as_str().expect("complete old argv").to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(apply_argv.first(), Some(&old));
+        assert!(apply_argv.iter().any(|part| part == "--apply"));
+        let output = owner.call_exact_argv(&apply_argv);
+        assert!(output.status.success(), "{output:?}");
+        let applied: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(applied["kind"], "native_goal_recovery_applied");
+        assert_eq!(
+            applied["event"]["nativeGoalRetirementSelection"],
+            original_selection
+        );
+        assert_ne!(
+            applied["event"]["nativeGoalRecovery"]["active"]["decisionSha256"],
+            original_selection["recoveryDecisionSha256"]
+        );
+        let after_apply = fs::read(native_journal(&owner)).unwrap();
+        assert!(
+            after_apply.starts_with(&before_preview) && after_apply.len() > before_preview.len()
+        );
+        let status = owner.status();
+        assert_eq!(fs::read(native_journal(&owner)).unwrap(), after_apply);
+        assert_eq!(status["nativeGoalRetirementSelection"], original_selection);
+        assert_eq!(status["journeyMembers"], original_members);
+        let completion = &status["goalProgress"]["journeyCompletion"];
+        assert_eq!(completion["state"], "blocked", "{completion}");
+        assert_eq!(
+            completion["members"]["retiredUncredited"]
+                .as_u64()
+                .unwrap_or(0),
+            0
+        );
+        for (work, bytes) in &original_ledgers {
+            assert_eq!(&fs::read(work_ledger(&source, work)).unwrap(), bytes);
+        }
+        let after_run = source.value_with_config(
+            &["run", "inspect", &blocked_ledger, "--json"],
+            None,
+            &config,
+        );
+        assert_eq!(after_run["governor"], before_run["governor"]);
+    }
+
+    let stale_journal = fs::read(native_journal(&owner)).unwrap();
+    let refused = owner.call(
+        &[
+            "goal",
+            "close",
+            "--goal-id",
+            "original-conversation",
+            "--result-ref",
+            &integration,
+            "--json",
+        ],
+        None,
+    );
+    assert_json_refusal(
+        &refused,
+        "journey_members_need_current_acceptance_or_checked_integration",
+    );
+    assert_eq!(fs::read(native_journal(&owner)).unwrap(), stale_journal);
+    let stale_replay = apply_recovery(&owner, &preview);
+    assert_eq!(stale_replay["kind"], "native_goal_recovery_replayed");
+    assert_eq!(stale_replay["historical"], true);
+    assert_eq!(fs::read(native_journal(&owner)).unwrap(), stale_journal);
+    assert_eq!(
+        owner.status()["goalProgress"]["journeyCompletion"]["state"],
+        "blocked"
+    );
+
+    // A fresh explicit selection is necessary, and its old integration is no
+    // substitute for a checked integration against the new decision.
+    let reselection = retirement_request(
+        &owner,
+        &config,
+        &blocked,
+        &replacement,
+        "old-reader-reselection",
+    );
+    assert!(reselection.status.success(), "{reselection:?}");
+    let reselection: Value = serde_json::from_slice(&reselection.stdout).unwrap();
+    apply_recovery(&owner, &reselection);
+    let selected_again = owner.status();
+    assert_eq!(selected_again["journeyMembers"], original_members);
+    assert_eq!(
+        selected_again["goalProgress"]["journeyCompletion"]["members"]["retiredUncredited"],
+        1
+    );
+    assert_eq!(
+        selected_again["goalProgress"]["journeyCompletion"]["state"],
+        "blocked"
+    );
+    let new_integration = accept_recovery_integration(&source, &config);
+    let integrated = owner.status();
+    assert_eq!(integrated["journeyMembers"], original_members);
+    assert_eq!(
+        integrated["goalProgress"]["journeyCompletion"]["integrationWork"],
+        new_integration
+    );
+    assert_eq!(
+        integrated["goalProgress"]["journeyCompletion"]["state"],
+        "current"
+    );
+    for (work, bytes) in &original_ledgers {
+        assert_eq!(&fs::read(work_ledger(&source, work)).unwrap(), bytes);
+    }
 
     let old_append = vec![
         old,

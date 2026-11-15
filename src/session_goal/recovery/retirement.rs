@@ -114,16 +114,16 @@ fn valid_sha(value: &str) -> bool {
             .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
 
-pub(super) fn validate(selection: &Selection, active: &ActiveDecision) -> Result<(), String> {
+fn validate_structure(selection: &Selection) -> Result<(), String> {
     if selection.version != VERSION
-        || selection.goal_id != active.goal_id
+        || !valid_text(&selection.goal_id, 128)
         || !valid_sha(&selection.goal_sha256)
-        || selection.recovery_decision_sha256 != active.decision_sha256
+        || !valid_sha(&selection.recovery_decision_sha256)
         || !valid_sha(&selection.prior_recovery_decision_sha256)
         || selection.prior_recovery_decision_sha256 == selection.recovery_decision_sha256
-        || selection.owner_identity_sha256 != active.owner_identity_sha256
-        || selection.session_key != active.session_key
-        || selection.source_config_sha256 != active.source_config.config_sha256
+        || !super::record::valid_hash(&selection.owner_identity_sha256)
+        || !super::record::valid_hash(&selection.session_key)
+        || !super::record::valid_hash(&selection.source_config_sha256)
         || !selection.source_writers_quiesced
         || selection.items.is_empty()
         || selection.items.len() > MAX_FIXTURES
@@ -136,7 +136,9 @@ pub(super) fn validate(selection: &Selection, active: &ActiveDecision) -> Result
     let mut previous: Option<&str> = None;
     for item in &selection.items {
         let work = item.member.work.as_str();
-        if previous.is_some_and(|prior| prior >= work)
+        if !crate::work::valid_work_handle(work)
+            || !crate::work::valid_work_handle(&item.replacement.member.work)
+            || previous.is_some_and(|prior| prior >= work)
             || !valid_text(&item.reason, 1024)
             || item.blocked.work != work
             || item.blocked.start_event_sha256 != item.member.start_event_sha256
@@ -146,14 +148,6 @@ pub(super) fn validate(selection: &Selection, active: &ActiveDecision) -> Result
             || !valid_sha(&item.blocked.governor_sha256)
             || !valid_sha(&item.replacement.accepted_endpoint_sha256)
             || item.replacement.member.work == work
-            || !active
-                .source_members
-                .iter()
-                .any(|source| source.member == item.member)
-            || !active
-                .source_members
-                .iter()
-                .any(|source| source.member == item.replacement.member)
         {
             return Err(
                 "native Goal retirement member or accepted replacement binding is invalid".into(),
@@ -172,6 +166,36 @@ pub(super) fn validate(selection: &Selection, active: &ActiveDecision) -> Result
     Ok(())
 }
 
+pub(super) fn validate(selection: &Selection, active: &ActiveDecision) -> Result<(), String> {
+    validate_structure(selection)?;
+    if selection.goal_id != active.goal_id
+        || selection.recovery_decision_sha256 != active.decision_sha256
+        || selection.owner_identity_sha256 != active.owner_identity_sha256
+        || selection.session_key != active.session_key
+        || selection.source_config_sha256 != active.source_config.config_sha256
+    {
+        return Err(
+            "native Goal retirement selection is invalid or has a different owner or recovery"
+                .into(),
+        );
+    }
+    if selection.items.iter().any(|item| {
+        !active
+            .source_members
+            .iter()
+            .any(|source| source.member == item.member)
+            || !active
+                .source_members
+                .iter()
+                .any(|source| source.member == item.replacement.member)
+    }) {
+        return Err(
+            "native Goal retirement member or accepted replacement binding is invalid".into(),
+        );
+    }
+    Ok(())
+}
+
 pub(super) fn selected(
     record: &Value,
     active: &ActiveDecision,
@@ -181,6 +205,22 @@ pub(super) fn selected(
     };
     let selection: Selection = serde_json::from_value(value.clone())
         .map_err(|_| "native Goal retirement selection is malformed or has unknown fields")?;
+    if selection.recovery_decision_sha256 != active.decision_sha256 {
+        validate_structure(&selection)?;
+        // A previous owner choice remains raw history, not authority for a
+        // different recovery. Journal validation checks that it was carried.
+        let journey = journey::state(record)?
+            .ok_or("native Goal retirement selection requires the original journey")?;
+        if selection.items.iter().any(|item| {
+            !journey.members.contains(&item.member)
+                || !journey.members.contains(&item.replacement.member)
+        }) {
+            return Err(
+                "native Goal retirement member or accepted replacement binding is invalid".into(),
+            );
+        }
+        return Ok(None);
+    }
     validate(&selection, active)?;
     let goal = record["goal"]
         .as_str()

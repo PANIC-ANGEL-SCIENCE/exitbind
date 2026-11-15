@@ -229,9 +229,95 @@ fn retirement_selection_binds_prior_recovery_and_latest_absence_wins() {
     let mut previous = json!({"goalId":"goal", "goal":"original Goal text"});
     previous[FIELD] = serde_json::to_value(state(prior)).unwrap();
     let mut selected = json!({"goalId":"goal", "goal":"original Goal text"});
-    selected[FIELD] = serde_json::to_value(state(active)).unwrap();
+    selected[FIELD] = serde_json::to_value(state(active.clone())).unwrap();
     selected[retirement::FIELD] = serde_json::to_value(&selection).unwrap();
+    selected["journeyMembershipProtocol"] = json!(1);
+    selected["journeyMembers"] = json!([
+        selection.items[0].member.clone(),
+        selection.items[0].replacement.member.clone()
+    ]);
+    selected["journeyIntegrations"] = json!([]);
     super::record::validate_record(&selected, Some(&previous), 2).unwrap();
+    assert_eq!(
+        retirement::selected(&selected, &active).unwrap(),
+        Some(selection.clone())
+    );
+
+    // An old recovery carries the exact raw selection into a new decision.
+    // It remains structurally checked history but supplies no authority.
+    let mut later_active = active.clone();
+    later_active.applied_from_revision = 3;
+    later_active.applied_from_event_sha256 = hash('b');
+    later_active.decision_sha256 = decision_digest(&later_active).unwrap();
+    let mut stale = selected.clone();
+    stale[FIELD] = serde_json::to_value(state(later_active.clone())).unwrap();
+    super::record::validate_record(&stale, Some(&selected), 3).unwrap();
+    assert_eq!(stale[retirement::FIELD], selected[retirement::FIELD]);
+    assert_eq!(retirement::selected(&stale, &later_active).unwrap(), None);
+    assert_eq!(super::retirement_binding(Some(&stale)).unwrap(), None);
+    assert_eq!(
+        retirement::integration_digest(&later_active, None),
+        later_active.decision_sha256
+    );
+
+    let mut malformed = stale.clone();
+    malformed[retirement::FIELD]["unknown"] = json!(true);
+    assert!(retirement::selected(&malformed, &later_active).is_err());
+    assert!(super::record::validate_record(&malformed, Some(&stale), 4).is_err());
+    let mut unsupported = stale.clone();
+    unsupported[retirement::FIELD]["version"] = json!(99);
+    assert!(retirement::selected(&unsupported, &later_active).is_err());
+    assert!(super::record::validate_record(&unsupported, Some(&stale), 4).is_err());
+    let mut malformed_hash = stale.clone();
+    malformed_hash[retirement::FIELD]["recoveryDecisionSha256"] = json!("not-a-digest");
+    assert!(retirement::selected(&malformed_hash, &later_active).is_err());
+    assert!(super::record::validate_record(&malformed_hash, Some(&stale), 4).is_err());
+    let mut unconfirmed = stale.clone();
+    unconfirmed[retirement::FIELD]["sourceWritersQuiesced"] = json!(false);
+    assert!(retirement::selected(&unconfirmed, &later_active).is_err());
+    let mut stale_foreign = stale.clone();
+    stale_foreign[retirement::FIELD]["items"][0]["replacement"]["member"]["work"] =
+        json!(format!("smw_{}", hash('a')));
+    assert!(retirement::selected(&stale_foreign, &later_active).is_err());
+    let mut injected = stale.clone();
+    injected[retirement::FIELD]["items"][0]["reason"] = json!("an injected old choice");
+    assert!(super::record::validate_record(&injected, Some(&stale), 4).is_err());
+
+    let mut next_active = later_active.clone();
+    next_active.applied_from_revision = 4;
+    next_active.applied_from_event_sha256 = hash('c');
+    next_active.decision_sha256 = decision_digest(&next_active).unwrap();
+    let mut carried = stale.clone();
+    carried[FIELD] = serde_json::to_value(state(next_active.clone())).unwrap();
+    super::record::validate_record(&carried, Some(&stale), 4).unwrap();
+    assert_eq!(retirement::selected(&carried, &next_active).unwrap(), None);
+    let mut resurrected = carried.clone();
+    resurrected[FIELD] = serde_json::to_value(state(active.clone())).unwrap();
+    assert!(super::record::validate_record(&resurrected, Some(&carried), 5).is_err());
+
+    let mut fresh_active = next_active.clone();
+    fresh_active.applied_from_revision = 5;
+    fresh_active.applied_from_event_sha256 = hash('d');
+    fresh_active.decision_sha256 = decision_digest(&fresh_active).unwrap();
+    let mut fresh_selection = selection.clone();
+    fresh_selection.prior_recovery_decision_sha256 = next_active.decision_sha256.clone();
+    fresh_selection.recovery_decision_sha256 = fresh_active.decision_sha256.clone();
+    let mut reselected = carried.clone();
+    reselected[FIELD] = serde_json::to_value(state(fresh_active.clone())).unwrap();
+    reselected[retirement::FIELD] = serde_json::to_value(&fresh_selection).unwrap();
+    super::record::validate_record(&reselected, Some(&carried), 5).unwrap();
+    assert_eq!(
+        retirement::selected(&reselected, &fresh_active).unwrap(),
+        Some(fresh_selection)
+    );
+
+    let mut foreign_owner = selected.clone();
+    foreign_owner[retirement::FIELD]["ownerIdentitySha256"] = json!(hash('3'));
+    assert!(super::retirement_binding(Some(&foreign_owner)).is_err());
+    let mut foreign_member = selected.clone();
+    foreign_member[retirement::FIELD]["items"][0]["replacement"]["member"]["work"] =
+        json!(format!("smw_{}", hash('a')));
+    assert!(super::retirement_binding(Some(&foreign_member)).is_err());
     let mut same_goal = json!({"goalId":"goal", "goal":"original Goal text"});
     super::record::preserve_same_goal(&selected, &mut same_goal);
     assert_eq!(same_goal[retirement::FIELD], selected[retirement::FIELD]);

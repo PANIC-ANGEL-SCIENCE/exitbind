@@ -187,6 +187,10 @@ closed display is not a current readiness decision. If an old writer removes
 the optional field, the latest absence wins: a later reader requires a fresh
 selection rather than restoring authority from an older event. With no
 selection, the earlier recovery request and integration digests are unchanged.
+If an older recovery writer carries the same well-formed selection into a
+different recovery decision, the raw field remains history but is ineffective:
+it supplies no retirement or accepted credit. To use that route for closure,
+the owner must make a fresh current selection and complete a checked integration.
 The selection also binds the Goal text; an update that changes that text drops
 the selection and requires a new explicit owner decision, even if the Goal ID
 is unchanged. Same-Goal category updates preserve it.
