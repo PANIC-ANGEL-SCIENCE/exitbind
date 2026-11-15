@@ -9,9 +9,11 @@ use std::os::unix::process::CommandExt;
 /// The checker records its own owned group, then waits (bounded) until the
 /// fixture releases it. The group survives the deadline because the fixture
 /// joins a helper to it from outside the capsule's child inventory.
+/// Publish the complete group identifier with a same-directory rename.
 const OWNED_GROUP_SCRIPT: &str = "\
 if [ -f .exitbind/rerun ]; then printf 'ok\\n'; exit 0; fi
-printf '%s' $$ > .exitbind/owned-group
+printf '%s' $$ > .exitbind/owned-group.tmp || exit 1
+mv .exitbind/owned-group.tmp .exitbind/owned-group || exit 1
 i=0
 while [ ! -f .exitbind/release ] && [ \"$i\" -lt 160 ]; do sleep 0.05; i=$((i + 1)); done
 exit 0
