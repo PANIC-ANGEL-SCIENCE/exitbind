@@ -201,6 +201,180 @@ fn legacy_exact_delivery_remains_eligible_after_its_matching_permit() {
 #[cfg(target_os = "linux")]
 pub(super) struct BlockedStart(Option<std::process::Child>);
 
+// File observations are best effort: unsupported NOWAIT reads remain unknown.
+// In particular, a lock's recorded PID is not proof that it is still held.
+#[cfg(target_os = "linux")]
+fn read_nowait(path: &std::path::Path) -> Result<Vec<u8>, i32> {
+    use std::os::unix::{fs::OpenOptionsExt, io::AsRawFd};
+
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(path)
+        .map_err(|error| error.raw_os_error().unwrap_or(-1))?;
+    let mut bytes = vec![0u8; 1025];
+    let iov = libc::iovec {
+        iov_base: bytes.as_mut_ptr().cast(),
+        iov_len: bytes.len(),
+    };
+    let offset: libc::c_ulong = 0;
+    let count = unsafe {
+        libc::syscall(
+            libc::SYS_preadv2,
+            file.as_raw_fd(),
+            &iov as *const libc::iovec,
+            1_i32,
+            offset,
+            offset,
+            libc::RWF_NOWAIT,
+        )
+    };
+    if count < 0 {
+        return Err(std::io::Error::last_os_error().raw_os_error().unwrap_or(-1));
+    }
+    if count as usize > 1024 {
+        return Err(libc::EOVERFLOW);
+    }
+    bytes.truncate(count as usize);
+    Ok(bytes)
+}
+
+#[cfg(target_os = "linux")]
+fn lock_record(bytes: &[u8]) -> Value {
+    match serde_json::from_slice::<Value>(bytes) {
+        Ok(value) if value["pid"].as_u64().is_some() => {
+            json!({"state":"recorded", "pid":value["pid"]})
+        }
+        _ => json!({"state":"unknown", "reason":"invalid_lock"}),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn recorded_lock(path: &std::path::Path) -> Value {
+    match read_nowait(path) {
+        Ok(bytes) => lock_record(&bytes),
+        Err(errno) => json!({"state":"unknown", "errno":errno}),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn child_state(child: &mut std::process::Child) -> Value {
+    use std::os::unix::process::ExitStatusExt;
+
+    match child.try_wait() {
+        Ok(None) => json!({"state":"running"}),
+        Ok(Some(status)) => {
+            json!({"state":"exited", "code":status.code(), "signal":status.signal()})
+        }
+        Err(error) => json!({"state":"unknown", "errno":error.raw_os_error()}),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn bounded_stderr(bytes: &[u8]) -> Value {
+    use std::fmt::Write;
+
+    let retained = &bytes[..bytes.len().min(1024)];
+    let mut hex = String::with_capacity(retained.len() * 2);
+    for byte in retained {
+        let _ = write!(hex, "{byte:02x}");
+    }
+    // One nonblocking read cannot prove that the rest of the pipe is empty.
+    let truncated = (bytes.len() > 1024).then_some(true);
+    json!({"state":"captured", "bytes":retained.len(), "truncated":truncated,
+        "hex":hex, "text":String::from_utf8_lossy(retained)})
+}
+
+#[cfg(target_os = "linux")]
+fn nonblocking_stderr(child: &mut std::process::Child) -> Value {
+    use std::os::unix::io::AsRawFd;
+
+    let Some(stderr) = child.stderr.as_ref() else {
+        return json!({"state":"unknown", "reason":"stderr_unavailable"});
+    };
+    let fd = stderr.as_raw_fd();
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+    if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
+        return json!({"state":"unknown", "errno":std::io::Error::last_os_error().raw_os_error()});
+    }
+    let mut bytes = [0u8; 1025];
+    let count = unsafe { libc::read(fd, bytes.as_mut_ptr().cast(), bytes.len()) };
+    if count < 0 {
+        return json!({"state":"unknown", "errno":std::io::Error::last_os_error().raw_os_error()});
+    }
+    if count == 0 {
+        return json!({"state":"eof"});
+    }
+    bounded_stderr(&bytes[..count as usize])
+}
+
+#[cfg(target_os = "linux")]
+fn proc_start(pid: u32) -> Option<String> {
+    let bytes = read_nowait(&std::path::PathBuf::from(format!("/proc/{pid}/stat"))).ok()?;
+    let text = std::str::from_utf8(&bytes).ok()?;
+    text.rsplit_once(')')?
+        .1
+        .split_whitespace()
+        .nth(19)
+        .map(str::to_owned)
+}
+
+#[cfg(target_os = "linux")]
+fn timeout_diagnostics(
+    child: &mut std::process::Child,
+    product: &std::path::Path,
+    work: &str,
+    elapsed: std::time::Duration,
+) -> Value {
+    let pid = child.id();
+    let before = child_state(child);
+    let stderr = nonblocking_stderr(child);
+    let intent_lock = recorded_lock(&product.join(".exitbind/child-intents.json.lock"));
+    let work_lock = work.strip_prefix("smw_").map_or_else(
+        || json!({"state":"unknown", "reason":"invalid_work"}),
+        |token| {
+            let relative = format!(".exitbind/runs/work-{token}.jsonl");
+            let name = format!("run-v1-{}.lock", super::sha(relative.as_bytes()));
+            recorded_lock(&product.join(".exitbind/locks").join(name))
+        },
+    );
+    let (first_start, channel, second_start) = if before["state"] == "running" {
+        let first = proc_start(pid);
+        let channel = read_nowait(&std::path::PathBuf::from(format!("/proc/{pid}/wchan"))).ok();
+        (first, channel, proc_start(pid))
+    } else {
+        (None, None, None)
+    };
+    let after = child_state(child);
+    let wait = match (first_start, channel, second_start) {
+        (Some(first), Some(channel), Some(second))
+            if before["state"] == "running" && after["state"] == "running" && first == second =>
+        {
+            json!({"state":"observed", "startTicks":first,
+                "wchan":String::from_utf8_lossy(&channel).trim()})
+        }
+        _ => json!({"state":"unknown"}),
+    };
+    json!({"childPid":pid, "elapsedMillis":elapsed.as_millis(), "tryWaitBefore":before,
+        "tryWaitAfter":after, "stderr":stderr, "linuxWait":wait,
+        "recordedIntentLock":intent_lock, "recordedWorkLock":work_lock})
+}
+
+#[cfg(target_os = "linux")]
+fn assert_blocked_poll(
+    result: libc::c_int,
+    child: &mut std::process::Child,
+    product: &std::path::Path,
+    work: &str,
+    elapsed: std::time::Duration,
+    report: impl FnOnce(&Value),
+) {
+    if result == 0 {
+        report(&timeout_diagnostics(child, product, work, elapsed));
+    }
+    assert_eq!(result, 1);
+}
+
 #[cfg(target_os = "linux")]
 impl BlockedStart {
     fn new(fixture: &Fixture) -> Self {
@@ -259,7 +433,18 @@ impl BlockedStart {
             events: libc::POLLIN,
             revents: 0,
         };
-        assert_eq!(unsafe { libc::poll(&mut poll, 1, 15_000) }, 1);
+        let started = std::time::Instant::now();
+        let result = unsafe { libc::poll(&mut poll, 1, 15_000) };
+        assert_blocked_poll(
+            result,
+            child,
+            &fixture.product,
+            &fixture.work,
+            started.elapsed(),
+            |facts| {
+                eprintln!("BlockedStart timeout diagnostics: {facts}");
+            },
+        );
         let mut queued: libc::c_int = 0;
         assert_eq!(unsafe { libc::ioctl(fd, libc::FIONREAD, &mut queued) }, 0);
         assert_eq!(
@@ -282,6 +467,119 @@ impl Drop for BlockedStart {
             let _ = child.wait();
         }
     }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn blocked_start_timeout_diagnostics_preserve_failure_and_reap_owned_child() {
+    use std::{os::unix::io::AsRawFd, process::Stdio, time::Instant};
+
+    let root = super::super::support::temp("blocked-start-timeout-diagnostic");
+    let product = root.path().join("product");
+    fs::create_dir_all(product.join(".exitbind/locks")).unwrap();
+    let work = format!("smw_{}", "a".repeat(64));
+    let relative = format!(".exitbind/runs/work-{}.jsonl", &work[4..]);
+    let work_lock = product
+        .join(".exitbind/locks")
+        .join(format!("run-v1-{}.lock", super::sha(relative.as_bytes())));
+    let mut child_pid = None;
+    let mut facts = None;
+    let failed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mut command = super::super::support::git_topology::command("sh");
+        command
+            .args([
+                "-c",
+                "printf '%s' \"$BLOCKED_START_TEST_STDERR\" >&2; IFS= read -r line",
+            ])
+            .env("BLOCKED_START_TEST_STDERR", "x".repeat(2048))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        // Keep the guard inside the unwinding scope, as in the constructor.
+        let mut owned = BlockedStart(Some(command.spawn().unwrap()));
+        let child = owned.0.as_mut().unwrap();
+        child_pid = Some(child.id());
+        let lock = json!({"pid":child.id()}).to_string();
+        assert_eq!(lock_record(lock.as_bytes())["pid"], child.id());
+        assert_eq!(
+            lock_record(br#"{"pid":"not-a-number"}"#)["state"],
+            "unknown"
+        );
+        fs::write(product.join(".exitbind/child-intents.json.lock"), &lock).unwrap();
+        fs::write(&work_lock, &lock).unwrap();
+        let mut stdout = libc::pollfd {
+            fd: child.stdout.as_ref().unwrap().as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        let started = Instant::now();
+        let result = unsafe { libc::poll(&mut stdout, 1, 0) };
+        assert_eq!(result, 0);
+        assert_blocked_poll(result, child, &product, &work, started.elapsed(), |value| {
+            facts = Some(value.clone());
+        });
+    }));
+    assert!(
+        failed.is_err(),
+        "the original poll assertion must still fail"
+    );
+    let facts = facts.expect("the timeout path reported diagnostics before unwinding");
+    let pid = child_pid.expect("the controlled child was spawned");
+    assert_eq!(facts["childPid"], pid);
+    assert_eq!(facts["tryWaitBefore"]["state"], "running");
+    assert_eq!(facts["tryWaitAfter"]["state"], "running");
+    assert!(facts["elapsedMillis"].is_number());
+    if facts["stderr"]["state"] == "captured" {
+        assert!(facts["stderr"]["bytes"]
+            .as_u64()
+            .is_some_and(|n| n > 0 && n <= 1024));
+    } else {
+        assert_eq!(facts["stderr"]["state"], "unknown");
+    }
+    for lock in [&facts["recordedIntentLock"], &facts["recordedWorkLock"]] {
+        if lock["state"] == "recorded" {
+            assert_eq!(lock["pid"], pid);
+        } else {
+            assert_eq!(lock["state"], "unknown");
+        }
+    }
+    let mut status = 0;
+    assert_eq!(
+        unsafe { libc::waitpid(pid as libc::pid_t, &mut status, libc::WNOHANG) },
+        -1
+    );
+    assert_eq!(
+        std::io::Error::last_os_error().raw_os_error(),
+        Some(libc::ECHILD)
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn blocked_start_stderr_diagnostics_are_bounded_after_child_exit() {
+    use std::process::Stdio;
+
+    let root = super::super::support::temp("blocked-start-exited-diagnostic");
+    let mut command = super::super::support::git_topology::command("sh");
+    command
+        .args(["-c", "printf '%s' \"$BLOCKED_START_TEST_STDERR\" >&2"])
+        .env("BLOCKED_START_TEST_STDERR", "x".repeat(2048))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    let mut owned = BlockedStart(Some(command.spawn().unwrap()));
+    let child = owned.0.as_mut().unwrap();
+    assert!(child.wait().unwrap().success());
+    let facts = timeout_diagnostics(child, root.path(), "smw_fixture", std::time::Duration::ZERO);
+    assert_eq!(facts["tryWaitBefore"]["state"], "exited");
+    assert_eq!(facts["tryWaitAfter"]["state"], "exited");
+    assert_eq!(facts["linuxWait"]["state"], "unknown");
+    let stderr = &facts["stderr"];
+    assert_eq!(stderr["state"], "captured");
+    assert_eq!(stderr["bytes"], 1024);
+    assert_eq!(stderr["truncated"], true);
+    assert_eq!(stderr["text"].as_str().unwrap().len(), 1024);
+    assert_eq!(stderr["hex"].as_str().unwrap(), "78".repeat(1024));
 }
 
 #[cfg(target_os = "linux")]
