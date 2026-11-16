@@ -127,6 +127,25 @@ impl Case {
         reported: bool,
         native_goal: bool,
     ) -> Self {
+        Self::build_with_feature_mode(
+            distinct,
+            descendant,
+            verification_command,
+            preparation,
+            reported,
+            native_goal,
+            false,
+        )
+    }
+    fn build_with_feature_mode(
+        distinct: bool,
+        descendant: bool,
+        verification_command: &str,
+        preparation: bool,
+        reported: bool,
+        native_goal: bool,
+        standalone_feature: bool,
+    ) -> Self {
         assert!(native_goal || (!distinct && !descendant));
         // Verification preparation freezes checker sources at Work start. A
         // marker file lets the same unchanged checker fail differently on the
@@ -296,20 +315,21 @@ impl Case {
             old_bytes: bytes,
         };
         fs::write(case.f.root.join("fail-checker.sh"), "exit 7\n").unwrap();
-        let begin = case.config_call(
-            &[
-                "work",
-                "begin",
-                "change",
-                "--goal",
-                "Review the separate immutable verification plan",
-                "--check-command",
-                "exec true",
-                "--review-policy",
-                "required",
-            ],
-            b"",
-        );
+        let mut begin_args = vec![
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "Review the separate immutable verification plan",
+            "--check-command",
+            "exec true",
+            "--review-policy",
+            "required",
+        ];
+        if standalone_feature {
+            begin_args.push("--standalone");
+        }
+        let begin = case.config_call(&begin_args, b"");
         assert!(begin.status.success(), "{begin:?}");
         let started = value(&begin);
         case.feature = started["work"].as_str().unwrap().into();
@@ -366,6 +386,64 @@ impl Case {
         assert!(output.status.success(), "{output:?}");
         value(&output)
     }
+}
+
+#[test]
+#[ignore = "requires an independently pinned pre-group recovery executable"]
+fn old_goal_bound_quarantine_cannot_reserve_against_v2_recovery() {
+    let old_binary =
+        std::env::var("EXITBIND_TEST_PREVIOUS_EXECUTABLE").expect("set the previous executable");
+    let expected = std::env::var("EXITBIND_TEST_PREVIOUS_SHA256").expect("set its verified digest");
+    assert_eq!(digest(&fs::read(&old_binary).unwrap()), expected);
+    let case = Case::new();
+    case.accept_feature();
+    let source_config = case.f.root.join("exitbind.json");
+    let recovery = case.owner_ok(&[
+        "goal",
+        "recover",
+        "--source-config",
+        source_config.to_str().unwrap(),
+        "--upsert-group",
+        "--request-id",
+        "old-quarantine-group",
+        "--reason",
+        "Keep the exact original source group",
+        "--json",
+    ]);
+    let applied = case.f.emitted(&json!({"argv": recovery["applyArgv"]}), b"");
+    assert!(applied.status.success(), "{applied:?}");
+    let preview = case.preview(REQUEST);
+    assert!(preview.status.success(), "{preview:?}");
+    let preview = value(&preview);
+    let apply = if preview["applyArgv"].is_array() {
+        &preview["applyArgv"]
+    } else {
+        &preview["apply"]
+    };
+    let mut argv = apply.as_array().expect("exact apply argv").clone();
+    argv[0] = json!(old_binary);
+    let goals = case.f.root.join(".exitbind/native-goals");
+    let session = fs::read_dir(goals)
+        .unwrap()
+        .map(|item| item.unwrap().path())
+        .find(|path| path.join(".exitbind/session-goal.jsonl").is_file())
+        .unwrap();
+    let journal = session.join(".exitbind/session-goal.jsonl");
+    let before_goal = fs::read(&journal).unwrap();
+    let before_old = case.f.events(&case.old);
+    let reservation = case.f.root.join(format!(
+        ".exitbind/runs/quarantine-{}.intent.json",
+        &case.old[4..]
+    ));
+    assert!(!reservation.exists());
+    let output = case.f.emitted(&json!({"argv": argv}), b"");
+    assert!(
+        !output.status.success(),
+        "an old producer must not reserve Goal-bound verification through v2 recovery"
+    );
+    assert!(!reservation.exists());
+    assert_eq!(fs::read(journal).unwrap(), before_goal);
+    assert_eq!(case.f.events(&case.old), before_old);
 }
 
 fn legacy_successor(f: &Fixture) -> String {
@@ -700,6 +778,281 @@ fn quarantine_refuses_overlong_plan_operation_before_start() {
 fn quarantine_starts_once_preserves_old_unknown_and_requires_fresh_observed_review() {
     exercise_quarantine_lifecycle(Case::new());
     exercise_quarantine_lifecycle(Case::with_options(true, true));
+}
+
+#[test]
+fn goal_quarantine_preserves_unknown_after_explicit_group_recovery() {
+    let c = Case::new();
+    let source_config = c.f.root.join("exitbind.json");
+    let recovery = c.owner_ok(&[
+        "goal",
+        "recover",
+        "--source-config",
+        source_config.to_str().unwrap(),
+        "--upsert-group",
+        "--request-id",
+        "quarantine-group",
+        "--reason",
+        "Keep the original source Work and its unknown observation",
+        "--json",
+    ]);
+    let applied = c.f.emitted(&json!({"argv": recovery["applyArgv"]}), b"");
+    assert!(applied.status.success(), "{applied:?}");
+    exercise_quarantine_lifecycle(c);
+}
+
+fn group_fixture_call(c: &Case, config: &std::path::Path, args: &[&str], body: &[u8]) -> Value {
+    let output = call_config(&c.f, config, args, body);
+    assert!(output.status.success(), "{args:?}: {output:?}");
+    value(&output)
+}
+
+fn group_fixture_return(
+    c: &Case,
+    config: &std::path::Path,
+    work: &str,
+    next: &Value,
+    outcome: &str,
+) -> Value {
+    group_fixture_call(
+        c,
+        config,
+        &[
+            "work",
+            "return",
+            work,
+            next["assignment"].as_str().unwrap(),
+            "--outcome",
+            outcome,
+        ],
+        b"Independent fixture evidence",
+    )
+}
+
+fn group_fixture_accept(c: &Case, config: &std::path::Path, work: &str) {
+    let next = group_fixture_call(c, config, &["work", "next", work, "--full"], b"");
+    let worker = group_fixture_return(c, config, work, &next["next"], "scoped");
+    group_fixture_return(c, config, work, &worker["next"], "completed");
+    group_fixture_call(
+        c,
+        config,
+        &["work", "check", work, "--timeout-ms", "2000"],
+        b"",
+    );
+    let reviewer = group_fixture_call(c, config, &["work", "next", work, "--full"], b"");
+    assert_eq!(reviewer["next"]["role"], "reviewer");
+    let lead = group_fixture_return(c, config, work, &reviewer["next"], "approved");
+    group_fixture_return(c, config, work, &lead["next"], "accepted");
+}
+
+fn group_fixture_begin(
+    c: &Case,
+    config: &std::path::Path,
+    goal: &str,
+    integration: bool,
+) -> String {
+    let mut args = vec![
+        "work",
+        "begin",
+        "change",
+        "--goal",
+        goal,
+        "--check-command",
+        "exec sh checker.sh",
+        "--review-policy",
+        "required",
+    ];
+    if integration {
+        args.extend(["--artifact", "checker.sh", "--journey-integration"]);
+    }
+    group_fixture_call(c, config, &args, b"")["work"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+fn group_fixture_select(c: &Case, config: &std::path::Path, request: &str) {
+    let preview = c.owner_ok(&[
+        "goal",
+        "recover",
+        "--source-config",
+        config.to_str().unwrap(),
+        "--upsert-group",
+        "--request-id",
+        request,
+        "--reason",
+        "Keep this exact foreign project and its members",
+        "--json",
+    ]);
+    let applied = c.f.emitted(&json!({"argv":preview["applyArgv"]}), b"");
+    assert!(applied.status.success(), "{applied:?}");
+}
+
+#[test]
+fn two_integrated_foreign_groups_and_goal_quarantine_preserve_the_unknown() {
+    let c =
+        Case::build_with_feature_mode(true, false, "exec sh checker.sh", false, false, true, true);
+    let ci = Fixture::new("exit 0\n");
+    let host = Fixture::new("exit 0\n");
+    let ci_config = ci.root.join("exitbind.json");
+    let host_config = host.root.join("exitbind.json");
+    let source_config = c.f.root.join("exitbind.json");
+    let ci_work = group_fixture_begin(&c, &ci_config, "Accept CI evidence", false);
+    group_fixture_accept(&c, &ci_config, &ci_work);
+    let host_goal = "Accept the exact same-Goal Host successor";
+    let original = group_fixture_begin(&c, &host_config, host_goal, false);
+    let lead = group_fixture_call(
+        &c,
+        &host_config,
+        &["work", "next", &original, "--full"],
+        b"",
+    );
+    let worker = group_fixture_return(&c, &host_config, &original, &lead["next"], "scoped");
+    group_fixture_return(&c, &host_config, &original, &worker["next"], "blocked");
+    let original_ledger = host
+        .root
+        .join(format!(".exitbind/runs/work-{}.jsonl", &original[4..]));
+    let original_bytes = fs::read(&original_ledger).unwrap();
+    let successor_ledger = format!(".exitbind/runs/work-{}.jsonl", "d".repeat(64));
+    let successor = group_fixture_call(
+        &c,
+        &host_config,
+        &[
+            "run",
+            "supersede",
+            &format!(".exitbind/runs/work-{}.jsonl", &original[4..]),
+            "--workflow",
+            "change",
+            "--goal",
+            host_goal,
+            "--ledger",
+            &successor_ledger,
+            "--check-command",
+            "exec sh checker.sh",
+            "--review-policy",
+            "required",
+            "--json",
+        ],
+        b"",
+    )["work"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    group_fixture_accept(&c, &host_config, &successor);
+    c.accept_feature();
+    group_fixture_select(&c, &ci_config, "compose-ci");
+    group_fixture_select(&c, &host_config, "compose-host");
+    group_fixture_select(&c, &source_config, "compose-unknown-source");
+    for (config, label) in [
+        (&ci_config, "Integrate CI"),
+        (&host_config, "Integrate Host"),
+    ] {
+        let integration = group_fixture_begin(&c, config, label, true);
+        group_fixture_accept(&c, config, &integration);
+    }
+    let before = c.owner_ok(&["goal", "status", "--json"]);
+    let completion = &before["goalProgress"]["journeyCompletion"];
+    let unresolved = completion["unresolved"].as_array().unwrap();
+    assert_eq!(completion["state"], "blocked", "{completion}");
+    assert!(
+        unresolved.iter().any(|item| item["work"] == c.old),
+        "{completion}"
+    );
+    assert!(
+        !unresolved
+            .iter()
+            .any(|item| item["work"] == ci_work || item["work"] == original),
+        "{completion}"
+    );
+    let close = call_config(
+        &c.f,
+        &c.owner_config,
+        &[
+            "goal",
+            "close",
+            "--direct",
+            "--goal-id",
+            "original-quarantine-goal",
+            "--json",
+        ],
+        b"",
+    );
+    assert!(
+        !close.status.success(),
+        "unknown Source must block direct close"
+    );
+
+    let preview = c.preview(REQUEST);
+    assert!(preview.status.success(), "{preview:?}");
+    let admitted = c.apply(&value(&preview));
+    assert!(admitted.status.success(), "{admitted:?}");
+    let verification = value(&admitted)["work"].as_str().unwrap().to_owned();
+    c.return_frozen(&verification);
+    c.f.ok(
+        &["work", "check", &verification, "--timeout-ms", "2000"],
+        b"",
+    );
+    let reviewer = c.f.next(&verification);
+    let lead = c.f.give(&verification, &reviewer, "approved")["next"].clone();
+    c.f.give(&verification, &lead, "accepted");
+    // Admission creates a genuine new member. Refresh the Source selection and
+    // both integrations against that shared membership before using them.
+    group_fixture_select(&c, &source_config, "compose-source-after-verification");
+    let mut ci_integration = String::new();
+    for (config, label) in [(&ci_config, "Refresh CI"), (&host_config, "Refresh Host")] {
+        let integration = group_fixture_begin(&c, config, label, true);
+        group_fixture_accept(&c, config, &integration);
+        if config == &ci_config {
+            ci_integration = integration;
+        }
+    }
+    let goal = c.owner_ok(&[
+        "goal",
+        "quarantine",
+        &c.old,
+        "--source-config",
+        source_config.to_str().unwrap(),
+        "--verification-work",
+        &verification,
+        "--request-id",
+        REQUEST,
+        "--reason",
+        REASON,
+        "--json",
+    ]);
+    let recorded = c.apply(&goal);
+    assert!(recorded.status.success(), "{recorded:?}");
+    assert_eq!(value(&recorded)["residual"], "quarantined_uncredited");
+    let status = c.owner_ok(&["goal", "status", "--json"]);
+    let completion = &status["goalProgress"]["journeyCompletion"];
+    assert_eq!(completion["state"], "current", "{completion}");
+    assert_eq!(
+        completion["members"]["quarantinedUncredited"], 1,
+        "{completion}"
+    );
+    assert_eq!(
+        status["nativeGoalRecovery"]["groups"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    let members = status["journeyMembers"].as_array().unwrap();
+    assert!(members.iter().any(|item| item["work"] == original));
+    assert!(!members.iter().any(|item| item["work"] == successor));
+    assert_eq!(fs::read(&original_ledger).unwrap(), original_bytes);
+    assert_eq!(fs::read(c.f.ledger(&c.old)).unwrap(), c.old_bytes);
+    let closed = c.owner_ok(&[
+        "goal",
+        "close",
+        "--goal-id",
+        "original-quarantine-goal",
+        "--result-ref",
+        &ci_integration,
+        "--json",
+    ]);
+    assert_eq!(closed["closure"]["closed"], true, "{closed}");
+    assert_eq!(fs::read(c.f.ledger(&c.old)).unwrap(), c.old_bytes);
 }
 
 #[cfg(target_os = "linux")]

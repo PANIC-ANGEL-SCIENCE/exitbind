@@ -126,6 +126,34 @@ apply reply is lost, repeat the same
 request ID, arguments, and original binding to recover the saved event; status
 is recomputed separately.
 
+For several distinct source project/state/local identities, explicitly pass
+`--upsert-group` and the exact canonical absolute `--source-config` path on
+each preview and its emitted apply. The selected group is
+added or replaced while the others remain recorded; aliases do not create a
+second group. Each group needs its own exact current, checked, reviewed and
+accepted journey integration. A group change does not alone invalidate an
+unmodified group's binding, while changed shared Goal or journey membership
+invalidates affected integrations. Version 2 also binds the current owner
+configuration; a later change requires a fresh selection and affected
+integrations. A version-1 integration has no retroactive owner-configuration
+stamp: its shared inputs are checked from its recorded Goal event, and the
+owner configuration is bound from the explicit version-2 transition onward.
+Source quarantine and other Goal closure
+requirements remain separate. The complete Goal head is still the apply
+concurrency guard. The existing retirement selection remains bound to its
+original group; a different group cannot replace it. With multiple groups,
+an upsert preserves the already recorded historical dispositions and cannot
+remove a group.
+
+The explicit first group upsert writes the version-2 recovery extension.
+Version-1 records remain readable without a rewrite, and their earlier request
+history is retained. A reader lacking version-2 support must not be used for
+recovery, readiness, integration or closure against that journal. In particular,
+an older Stop hook can silently allow an unreadable Goal: select and verify a
+compatible hook for the same session before enabling version-2 records. Keep a
+compatible reader for the history even after closure; replacing it with an old
+reader or restoring an old snapshot is not a safe rollback.
+
 `work quarantine OLD_WORK` is a distinct, Lead-owned route for one separately
 reviewed verification while preserving a current durably failed unknown
 observation or a configured-Lead lost-caller report, including on a blocked Work.

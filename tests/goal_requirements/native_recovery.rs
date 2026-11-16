@@ -116,6 +116,23 @@ fn recovery_preview(owner: &Project, source: &Project, historical: &str, request
     )
 }
 
+fn group_preview(owner: &Project, source: &Project, request: &str) -> Value {
+    owner.value(
+        &[
+            "goal",
+            "recover",
+            "--source-config",
+            source.root.join("exitbind.json").to_str().unwrap(),
+            "--upsert-group",
+            "--request-id",
+            request,
+            "--reason",
+            "Preserve this exact selected source group",
+        ],
+        None,
+    )
+}
+
 fn apply_recovery(owner: &Project, preview: &Value) -> Value {
     let argv = preview["applyArgv"]
         .as_array()
@@ -280,6 +297,723 @@ fn accept_recovery_integration(source: &Project, config: &Path) -> String {
     );
     source.drive_with_config(&integration, true, config);
     integration
+}
+
+fn integration_header(source: &Project, config: &Path, work: &str) -> Value {
+    let ledger = format!(".exitbind/runs/work-{}.jsonl", &work[4..]);
+    let inspection = source.value_with_config(&["run", "inspect", &ledger, "--json"], None, config);
+    let constraints = inspection["events"][0]["basis"]["constraints"]
+        .as_array()
+        .unwrap();
+    let marker = constraints
+        .iter()
+        .filter_map(Value::as_str)
+        .find_map(|item| item.strip_prefix("exitbind.session-journey-integration.v1.header:"))
+        .expect("integration has its frozen header");
+    serde_json::from_str(marker).unwrap()
+}
+
+#[test]
+fn explicit_group_upserts_keep_independent_integrations_and_block_a_pending_member() {
+    let (owner, first) = owner_and_source("native-recovery-multiple-groups");
+    let first_work = source_member(&first);
+    let mut second = Project::new("native-recovery-multiple-second");
+    second.native_session = owner.native_session.clone();
+    second.file("check.sh", "set -eu\ntest -f source-input.txt\n");
+    second.file("source-input.txt", "second source evidence\n");
+    let second_work = source_member(&second);
+    let mut pending = Project::new("native-recovery-multiple-pending");
+    pending.native_session = owner.native_session.clone();
+    pending.file("check.sh", "set -eu\ntrue\n");
+    let pending_config = pending.root.join("exitbind.json");
+    let pending_work = begin_in(
+        &pending,
+        &pending_config,
+        "Pending source",
+        "sh check.sh",
+        &[],
+    );
+
+    let first_preview = group_preview(&owner, &first, "first-group");
+    let first_apply = first_preview["applyArgv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    let first_event = apply_recovery(&owner, &first_preview)["event"].clone();
+    assert_eq!(first_event["nativeGoalRecovery"]["version"], 2);
+    let first_binding = first_event["nativeGoalRecovery"]["active"]["decisionSha256"].clone();
+    let before_integration = owner.status();
+    assert_eq!(
+        before_integration["goalProgress"]["journeyCompletion"]["state"],
+        "blocked"
+    );
+    let first_integration = accept_recovery_integration(&first, &first.root.join("exitbind.json"));
+    let header = integration_header(
+        &first,
+        &first.root.join("exitbind.json"),
+        &first_integration,
+    );
+    assert_eq!(header["v"], 3);
+    assert_eq!(header["r"], first_binding);
+    assert_eq!(header["g"].as_str().unwrap().len(), 64);
+
+    let second_preview = group_preview(&owner, &second, "second-group");
+    assert_eq!(second_preview["mode"], "group-upsert");
+    assert_eq!(
+        second_preview["preservedGroups"][0]["decisionSha256"],
+        first_binding
+    );
+    assert!(second_preview["ownerConfig"]["configSha256"].is_string());
+    let second_event = apply_recovery(&owner, &second_preview)["event"].clone();
+    assert_eq!(
+        second_event["nativeGoalRecovery"]["active"]["decisionSha256"],
+        first_binding
+    );
+    assert_eq!(
+        second_event["nativeGoalRecovery"]["groups"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let after_second = owner.status();
+    let journey = &after_second["goalProgress"]["journeyCompletion"];
+    let unresolved = journey["unresolved"].as_array().unwrap();
+    assert!(
+        !unresolved.iter().any(|item| item["work"] == first_work),
+        "{journey}"
+    );
+    assert!(
+        unresolved.iter().any(|item| item["work"] == second_work),
+        "{journey}"
+    );
+    assert!(
+        unresolved.iter().any(|item| item["work"] == pending_work),
+        "{journey}"
+    );
+
+    let before_replay = fs::read(native_journal(&owner)).unwrap();
+    let replay = owner.call_exact_argv(&first_apply);
+    assert!(replay.status.success(), "{replay:?}");
+    let replay: Value = serde_json::from_slice(&replay.stdout).unwrap();
+    assert_eq!(replay["kind"], "native_goal_recovery_replayed");
+    assert_eq!(replay["event"], first_event);
+    assert_eq!(fs::read(native_journal(&owner)).unwrap(), before_replay);
+
+    let second_integration =
+        accept_recovery_integration(&second, &second.root.join("exitbind.json"));
+    let current = owner.status();
+    let journey = &current["goalProgress"]["journeyCompletion"];
+    let unresolved = journey["unresolved"].as_array().unwrap();
+    assert!(
+        !unresolved
+            .iter()
+            .any(|item| item["work"] == first_work || item["work"] == second_work),
+        "{journey}"
+    );
+    assert!(
+        unresolved.iter().any(|item| item["work"] == pending_work),
+        "{journey}"
+    );
+    assert_eq!(journey["state"], "blocked");
+    let close = owner.call(
+        &[
+            "goal",
+            "close",
+            "--goal-id",
+            "original-conversation",
+            "--result-ref",
+            &second_integration,
+        ],
+        None,
+    );
+    assert!(
+        !close.status.success(),
+        "pending Source must still block closure"
+    );
+    assert_ne!(first_integration, second_integration);
+
+    let second_reselection = group_preview(&owner, &second, "second-group-reselected");
+    apply_recovery(&owner, &second_reselection);
+    let reselected = owner.status();
+    let unresolved = reselected["goalProgress"]["journeyCompletion"]["unresolved"]
+        .as_array()
+        .unwrap();
+    assert!(
+        !unresolved.iter().any(|item| item["work"] == first_work),
+        "{reselected}"
+    );
+    assert!(
+        unresolved.iter().any(|item| item["work"] == second_work),
+        "{reselected}"
+    );
+    accept_recovery_integration(&second, &second.root.join("exitbind.json"));
+
+    let mut changed_request = first_apply.clone();
+    let reason = changed_request
+        .iter()
+        .position(|item| item == "--reason")
+        .unwrap();
+    changed_request[reason + 1] = "A different selection under the same request".into();
+    let before_conflict = fs::read(native_journal(&owner)).unwrap();
+    assert!(!owner.call_exact_argv(&changed_request).status.success());
+    assert_eq!(fs::read(native_journal(&owner)).unwrap(), before_conflict);
+
+    let alias = second.root.join("group-alias.json");
+    fs::copy(second.root.join("exitbind.json"), &alias).unwrap();
+    let before_alias = fs::read(native_journal(&owner)).unwrap();
+    let alias_result = owner.call(
+        &[
+            "goal",
+            "recover",
+            "--source-config",
+            alias.to_str().unwrap(),
+            "--upsert-group",
+            "--request-id",
+            "alias",
+            "--reason",
+            "Refuse a duplicate identity",
+        ],
+        None,
+    );
+    assert!(!alias_result.status.success());
+    assert_eq!(fs::read(native_journal(&owner)).unwrap(), before_alias);
+    fs::remove_file(alias).unwrap();
+    let after_alias = owner.status();
+    let unresolved = after_alias["goalProgress"]["journeyCompletion"]["unresolved"]
+        .as_array()
+        .unwrap();
+    assert!(
+        !unresolved
+            .iter()
+            .any(|item| item["work"] == first_work || item["work"] == second_work),
+        "{after_alias}"
+    );
+
+    let second_config = second.root.join("exitbind.json");
+    let original_config = fs::read(&second_config).unwrap();
+    let mut changed_config = original_config.clone();
+    changed_config.push(b'\n');
+    fs::write(&second_config, changed_config).unwrap();
+    let stale_config = owner.status();
+    let unresolved = stale_config["goalProgress"]["journeyCompletion"]["unresolved"]
+        .as_array()
+        .unwrap();
+    assert!(
+        !unresolved.iter().any(|item| item["work"] == first_work),
+        "{stale_config}"
+    );
+    assert!(
+        unresolved.iter().any(|item| item["work"] == second_work),
+        "{stale_config}"
+    );
+    fs::write(&second_config, original_config).unwrap();
+    let restored = owner.status();
+    let unresolved = restored["goalProgress"]["journeyCompletion"]["unresolved"]
+        .as_array()
+        .unwrap();
+    assert!(
+        !unresolved
+            .iter()
+            .any(|item| item["work"] == first_work || item["work"] == second_work),
+        "{restored}"
+    );
+
+    let owner_config = owner.root.join("exitbind.json");
+    let original_owner = fs::read(&owner_config).unwrap();
+    let owner_preview = group_preview(&owner, &second, "owner-config-race");
+    let mut changed_owner = original_owner.clone();
+    changed_owner.push(b'\n');
+    fs::write(&owner_config, changed_owner).unwrap();
+    let changed = owner.status();
+    let unresolved = changed["goalProgress"]["journeyCompletion"]["unresolved"]
+        .as_array()
+        .unwrap();
+    assert!(
+        unresolved.iter().any(|item| item["work"] == first_work),
+        "{changed}"
+    );
+    assert!(
+        unresolved.iter().any(|item| item["work"] == second_work),
+        "{changed}"
+    );
+    let before_owner_race = fs::read(native_journal(&owner)).unwrap();
+    let owner_args = owner_preview["applyArgv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    assert!(!owner.call_exact_argv(&owner_args).status.success());
+    assert_eq!(fs::read(native_journal(&owner)).unwrap(), before_owner_race);
+    fs::write(owner_config, original_owner).unwrap();
+
+    let stale_preview = group_preview(&owner, &second, "stale-group");
+    let mut later = Project::new("native-recovery-multiple-later");
+    later.native_session = owner.native_session.clone();
+    later.file("check.sh", "set -eu\ntrue\n");
+    let later_config = later.root.join("exitbind.json");
+    begin_in(
+        &later,
+        &later_config,
+        "A changed shared journey",
+        "sh check.sh",
+        &[],
+    );
+    let before_stale = fs::read(native_journal(&owner)).unwrap();
+    let stale_args = stale_preview["applyArgv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    assert!(!owner.call_exact_argv(&stale_args).status.success());
+    assert_eq!(fs::read(native_journal(&owner)).unwrap(), before_stale);
+    let changed = owner.status();
+    let unresolved = changed["goalProgress"]["journeyCompletion"]["unresolved"]
+        .as_array()
+        .unwrap();
+    assert!(
+        unresolved.iter().any(|item| item["work"] == first_work),
+        "{changed}"
+    );
+    assert!(
+        unresolved.iter().any(|item| item["work"] == second_work),
+        "{changed}"
+    );
+}
+
+#[test]
+fn explicit_v2_migration_keeps_a_current_v1_group_integration() {
+    let (owner, first) = owner_and_source("native-recovery-v1-to-v2");
+    let first_work = source_member(&first);
+    let mut second = Project::new("native-recovery-v1-to-v2-second");
+    second.native_session = owner.native_session.clone();
+    second.file("check.sh", "set -eu\ntest -f source-input.txt\n");
+    second.file("source-input.txt", "second source evidence\n");
+    let second_work = source_member(&second);
+    let legacy = recovery_preview(&owner, &first, "", "legacy-first");
+    let legacy_event = apply_recovery(&owner, &legacy)["event"].clone();
+    assert_eq!(legacy_event["nativeGoalRecovery"]["version"], 1);
+    let integration = accept_recovery_integration(&first, &first.root.join("exitbind.json"));
+    let header = integration_header(&first, &first.root.join("exitbind.json"), &integration);
+    assert_eq!(header["v"], 2);
+    assert!(header.get("g").is_none());
+    let before = owner.status();
+    assert!(
+        !before["goalProgress"]["journeyCompletion"]["unresolved"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["work"] == first_work),
+        "{before}"
+    );
+    let migration = group_preview(&owner, &second, "add-second");
+    let applied = apply_recovery(&owner, &migration)["event"].clone();
+    assert_eq!(applied["nativeGoalRecovery"]["version"], 2);
+    assert_eq!(
+        applied["nativeGoalRecovery"]["active"],
+        legacy_event["nativeGoalRecovery"]["active"]
+    );
+    let current = owner.status();
+    let completion = &current["goalProgress"]["journeyCompletion"];
+    assert!(
+        !completion["unresolved"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["work"] == first_work),
+        "{completion}"
+    );
+    assert!(
+        completion["unresolved"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["work"] == second_work),
+        "{completion}"
+    );
+    assert_eq!(completion["integrationWork"], integration);
+}
+
+#[test]
+fn concurrent_group_applies_share_the_goal_head_guard() {
+    let (owner, first) = owner_and_source("native-recovery-group-race");
+    source_member(&first);
+    let mut second = Project::new("native-recovery-group-race-second");
+    second.native_session = owner.native_session.clone();
+    second.file("check.sh", "set -eu\ntest -f source-input.txt\n");
+    second.file("source-input.txt", "second source evidence\n");
+    source_member(&second);
+    let before = owner.status();
+    let previews = [
+        group_preview(&owner, &first, "race-first"),
+        group_preview(&owner, &second, "race-second"),
+    ];
+    let args = previews.map(|preview| {
+        preview["applyArgv"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item.as_str().unwrap().to_owned())
+            .collect::<Vec<_>>()
+    });
+    let outcomes = std::thread::scope(|scope| {
+        let first = scope.spawn(|| owner.call_exact_argv(&args[0]));
+        let second = scope.spawn(|| owner.call_exact_argv(&args[1]));
+        [first.join().unwrap(), second.join().unwrap()]
+    });
+    assert_eq!(
+        outcomes
+            .iter()
+            .filter(|outcome| outcome.status.success())
+            .count(),
+        1,
+        "{outcomes:?}"
+    );
+    let after = owner.status();
+    assert_eq!(
+        after["revision"].as_u64(),
+        Some(before["revision"].as_u64().unwrap() + 1)
+    );
+    assert_eq!(after["nativeGoalRecovery"]["version"], 2);
+    assert!(after["nativeGoalRecovery"].get("groups").is_none());
+    assert_eq!(
+        after["nativeGoalRecovery"]["requests"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn group_upsert_refuses_foreign_owner_and_wrong_endpoint_without_writes() {
+    let (owner, source) = owner_and_source("native-recovery-group-refusals");
+    let work = source_member(&source);
+    let journal = native_journal(&owner);
+    let before = fs::read(&journal).unwrap();
+    let source_config = source.root.join("exitbind.json");
+    let owner_config = owner.root.join("exitbind.json");
+    let mut foreign = Project::new("native-recovery-group-foreign");
+    foreign.native_session = owner.native_session.clone();
+    let refused = foreign.call(
+        &[
+            "goal",
+            "recover",
+            "--source-config",
+            source_config.to_str().unwrap(),
+            "--upsert-group",
+            "--request-id",
+            "foreign",
+            "--reason",
+            "Preserve the fixed owner",
+        ],
+        None,
+    );
+    assert!(!refused.status.success());
+    assert_eq!(fs::read(&journal).unwrap(), before);
+    let symlink = source.root.join("source-alias.json");
+    std::os::unix::fs::symlink(&source_config, &symlink).unwrap();
+    let refused = owner.call(
+        &[
+            "goal",
+            "recover",
+            "--source-config",
+            symlink.to_str().unwrap(),
+            "--upsert-group",
+            "--request-id",
+            "path-alias",
+            "--reason",
+            "Use the exact source path",
+        ],
+        None,
+    );
+    assert!(!refused.status.success());
+    assert_eq!(fs::read(&journal).unwrap(), before);
+    fs::remove_file(symlink).unwrap();
+    let mut selection = serde_json::Map::new();
+    selection.insert(work, json!(owner_config.to_str().unwrap()));
+    let selection = Value::Object(selection).to_string();
+    let refused = owner.call(
+        &[
+            "goal",
+            "recover",
+            "--source-config",
+            source_config.to_str().unwrap(),
+            "--endpoint-configs",
+            &selection,
+            "--upsert-group",
+            "--request-id",
+            "wrong-endpoint",
+            "--reason",
+            "Preserve the exact endpoint",
+        ],
+        None,
+    );
+    assert!(!refused.status.success());
+    assert_eq!(fs::read(&journal).unwrap(), before);
+    let refused = owner.call(
+        &[
+            "goal",
+            "recover",
+            "--source-config",
+            owner_config.to_str().unwrap(),
+            "--upsert-group",
+            "--request-id",
+            "owner-as-source",
+            "--reason",
+            "Refuse owner substitution",
+        ],
+        None,
+    );
+    assert!(!refused.status.success());
+    assert_eq!(fs::read(journal).unwrap(), before);
+}
+
+#[test]
+#[ignore = "requires an independently pinned pre-group recovery executable"]
+fn old_producer_cannot_drop_v2_groups_or_claim_goal_readiness() {
+    let old =
+        std::env::var("EXITBIND_TEST_PREVIOUS_EXECUTABLE").expect("set the previous executable");
+    let expected = std::env::var("EXITBIND_TEST_PREVIOUS_SHA256").expect("set its verified digest");
+    assert_eq!(
+        format!("{:x}", Sha256::digest(fs::read(&old).unwrap())),
+        expected
+    );
+    let (owner, source) = owner_and_source("native-recovery-old-group-reader");
+    let source_work = source_member(&source);
+    let mut second = Project::new("native-recovery-old-group-second");
+    second.native_session = owner.native_session.clone();
+    second.file("check.sh", "set -eu\ntest -f source-input.txt\n");
+    second.file("source-input.txt", "second source evidence\n");
+    source_member(&second);
+    let first = group_preview(&owner, &source, "old-group-first");
+    apply_recovery(&owner, &first);
+    let next = group_preview(&owner, &second, "old-group-second");
+    apply_recovery(&owner, &next);
+    let owner_config = owner.root.join("exitbind.json");
+    let source_config = source.root.join("exitbind.json");
+    let journal = native_journal(&owner);
+    let before = fs::read(&journal).unwrap();
+    let (session, store) = owner.native_session.as_ref().unwrap();
+    let hook_payload = json!({"hook_event_name":"Stop", "cwd":owner.root,
+        "session_id":session, "stop_hook_active":false, "last_assistant_message":"Done."})
+    .to_string();
+    let run_hook = |executable: &str| {
+        let mut command = support::git_topology::command(executable);
+        command
+            .current_dir(&owner.root)
+            .args(["hook-run", "--host", "codex"])
+            .env("EXITBIND_NO_UPDATE_CHECK", "1")
+            .env_remove("CODEX_SESSION_ID")
+            .env_remove("CLAUDE_CODE_SESSION_ID")
+            .env_remove("EXITBIND_NATIVE_SESSION_ID")
+            .env_remove("CLAUDE_ENV_FILE")
+            .env("CODEX_THREAD_ID", session)
+            .env("EXITBIND_SESSION_GOALS_DIR", store)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut child = command.spawn().unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(hook_payload.as_bytes())
+            .unwrap();
+        child.wait_with_output().unwrap()
+    };
+    let old_stop = run_hook(&old);
+    assert!(old_stop.status.success());
+    assert!(
+        old_stop.stdout.is_empty(),
+        "the previous hook's known fail-open must remain visible"
+    );
+    let compatible_stop = run_hook(env!("CARGO_BIN_EXE_exitbind"));
+    assert!(compatible_stop.status.success());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&compatible_stop.stdout).unwrap()["decision"],
+        "block"
+    );
+    assert_eq!(fs::read(&journal).unwrap(), before);
+    let old_call = |args: &[&str], config: &Path| {
+        let mut argv = vec![old.clone()];
+        argv.extend(args.iter().map(|item| (*item).to_owned()));
+        argv.extend(["--config".into(), config.to_str().unwrap().into()]);
+        owner.call_exact_argv(&argv)
+    };
+    let status = old_call(&["goal", "status", "--json"], &owner_config);
+    if status.status.success() {
+        let value: Value = serde_json::from_slice(&status.stdout).unwrap();
+        assert_ne!(
+            value["goalProgress"]["journeyCompletion"]["state"],
+            "current"
+        );
+        assert_ne!(value["closure"]["closed"], true);
+    }
+    for args in [
+        vec![
+            "goal",
+            "recover",
+            "--source-config",
+            source_config.to_str().unwrap(),
+            "--request-id",
+            "old-recover",
+            "--reason",
+            "Old recovery must not replace groups",
+        ],
+        vec![
+            "goal",
+            "close",
+            "--goal-id",
+            "original-conversation",
+            "--direct",
+        ],
+        vec![
+            "goal",
+            "close",
+            "--goal-id",
+            "original-conversation",
+            "--result-ref",
+            &source_work,
+        ],
+    ] {
+        let output = old_call(&args, &owner_config);
+        assert!(
+            !output.status.success(),
+            "old protected action unexpectedly succeeded: {args:?}"
+        );
+        assert_eq!(fs::read(&journal).unwrap(), before);
+    }
+    let runs = source.root.join(".exitbind/runs");
+    let work_files = || {
+        let mut paths = fs::read_dir(&runs)
+            .unwrap()
+            .map(|item| item.unwrap().file_name())
+            .filter(|name| name.to_string_lossy().starts_with("work-"))
+            .collect::<Vec<_>>();
+        paths.sort();
+        paths
+    };
+    let before_works = work_files();
+    let old_begin = old_call(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "Old integration",
+            "--check-command",
+            "sh check.sh",
+            "--review-policy",
+            "required",
+            "--artifact",
+            "check.sh",
+            "--journey-integration",
+        ],
+        &source_config,
+    );
+    assert!(!old_begin.status.success());
+    assert_eq!(work_files(), before_works);
+    assert_eq!(fs::read(&journal).unwrap(), before);
+}
+
+#[test]
+#[ignore = "requires an independently pinned pre-group recovery executable"]
+fn old_integration_return_cannot_create_accepted_group_authority() {
+    let old =
+        std::env::var("EXITBIND_TEST_PREVIOUS_EXECUTABLE").expect("set the previous executable");
+    let expected = std::env::var("EXITBIND_TEST_PREVIOUS_SHA256").expect("set its verified digest");
+    assert_eq!(
+        format!("{:x}", Sha256::digest(fs::read(&old).unwrap())),
+        expected
+    );
+    let (owner, source) = owner_and_source("native-recovery-old-group-return");
+    source_member(&source);
+    let preview = group_preview(&owner, &source, "old-return-group");
+    apply_recovery(&owner, &preview);
+    let config = source.root.join("exitbind.json");
+    let integration = begin_in(
+        &source,
+        &config,
+        "Integrate current source",
+        "sh check.sh",
+        &["--artifact", "check.sh", "--journey-integration"],
+    );
+    let lead = source.value_with_config(
+        &["work", "next", &integration, "--json", "--full"],
+        None,
+        &config,
+    );
+    source.return_stage_with_config(&integration, &lead["next"], "scoped", &config);
+    let worker = source.value_with_config(
+        &["work", "next", &integration, "--json", "--full"],
+        None,
+        &config,
+    );
+    assert_eq!(worker["next"]["role"], "worker");
+    let assignment = worker["next"]["assignment"].as_str().unwrap();
+    source.value_with_config(
+        &[
+            "work",
+            "permit",
+            &integration,
+            assignment,
+            "--operation",
+            "Return fixture evidence",
+        ],
+        None,
+        &config,
+    );
+    let before_goal = fs::read(native_journal(&owner)).unwrap();
+    let (session, store) = source.native_session.as_ref().unwrap();
+    let mut command = support::git_topology::command(&old);
+    command
+        .current_dir(&source.root)
+        .args([
+            "work",
+            "return",
+            &integration,
+            assignment,
+            "--outcome",
+            "completed",
+            "--config",
+        ])
+        .arg(&config)
+        .env("EXITBIND_NO_UPDATE_CHECK", "1")
+        .env_remove("CODEX_SESSION_ID")
+        .env_remove("CLAUDE_CODE_SESSION_ID")
+        .env_remove("EXITBIND_NATIVE_SESSION_ID")
+        .env_remove("CLAUDE_ENV_FILE")
+        .env("CODEX_THREAD_ID", session)
+        .env("EXITBIND_SESSION_GOALS_DIR", store)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command.spawn().unwrap();
+    if let Err(error) = child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"Old worker result fixture\n")
+    {
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
+    }
+    let _old_return = child.wait_with_output().unwrap();
+    assert_eq!(fs::read(native_journal(&owner)).unwrap(), before_goal);
+    let ledger = format!(".exitbind/runs/work-{}.jsonl", &integration[4..]);
+    let state = source.value_with_config(&["run", "inspect", &ledger, "--json"], None, &config);
+    assert_ne!(
+        state["status"], "accepted",
+        "a worker return cannot supply check/review/Lead acceptance"
+    );
+    assert_ne!(
+        owner.status()["goalProgress"]["journeyCompletion"]["state"],
+        "current"
+    );
 }
 
 #[test]
@@ -2268,6 +3002,38 @@ fn native_recovery_follows_the_exact_accepted_source_successor_under_selected_en
         integration
     );
     assert_eq!(status["journeyMembers"][0], original_member);
+
+    // Keep the actual blocked predecessor and accepted same-Goal successor
+    // while adding a second source group. The successor is never a new member.
+    let original_bytes = fs::read(work_ledger(&source, &original)).unwrap();
+    let mut other = Project::new("native-recovery-successor-other-group");
+    other.native_session = owner.native_session.clone();
+    other.file("check.sh", "set -eu\ntest -f source-input.txt\n");
+    other.file("source-input.txt", "other accepted source\n");
+    let other_work = source_member(&other);
+    let group = group_preview(&owner, &other, "successor-other-group");
+    apply_recovery(&owner, &group);
+    let stale = owner.status();
+    assert_eq!(
+        stale["goalProgress"]["journeyCompletion"]["state"],
+        "blocked"
+    );
+    let fresh_first = accept_recovery_integration(&source, &endpoint_config);
+    let fresh_other = accept_recovery_integration(&other, &other.root.join("exitbind.json"));
+    let current = owner.status();
+    assert_eq!(
+        current["goalProgress"]["journeyCompletion"]["state"], "current",
+        "{current}"
+    );
+    let members = current["journeyMembers"].as_array().unwrap();
+    assert!(members.iter().any(|member| member["work"] == original));
+    assert!(members.iter().any(|member| member["work"] == other_work));
+    assert!(!members.iter().any(|member| member["work"] == successor));
+    assert_ne!(fresh_first, fresh_other);
+    assert_eq!(
+        fs::read(work_ledger(&source, &original)).unwrap(),
+        original_bytes
+    );
 }
 
 #[test]

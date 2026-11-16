@@ -48,7 +48,7 @@ pub(crate) fn append_work(
         {
             return Err("journey integration belongs to another native session or owner".into());
         }
-        let expected = covered_snapshot(loaded, record, &journey.members, &contract.header)?;
+        let expected = covered_snapshot(loaded, record, &journey.members, &contract.header, false)?;
         if expected != contract.members {
             return Err(
                 "journey integration snapshot changed before its Work start was linked".into(),
@@ -93,10 +93,17 @@ fn validate_header_for_loaded(loaded: &Loaded, header: &Header) -> Result<(), St
         .owner
         .ok_or("journey integration requires the fixed native session owner")?;
     let local = super::super::native::owner_for(loaded)?;
-    if !matches!(header.protocol, PROTOCOL | RECOVERY_INTEGRATION_PROTOCOL)
-        || (header.protocol == PROTOCOL && header.recovery_sha256.is_some())
+    if !matches!(
+        header.protocol,
+        PROTOCOL | RECOVERY_INTEGRATION_PROTOCOL | GROUP_INTEGRATION_PROTOCOL
+    ) || (header.protocol == PROTOCOL
+        && (header.recovery_sha256.is_some() || header.shared_sha256.is_some()))
         || (header.protocol == RECOVERY_INTEGRATION_PROTOCOL
-            && !header.recovery_sha256.as_deref().is_some_and(valid_sha))
+            && (!header.recovery_sha256.as_deref().is_some_and(valid_sha)
+                || header.shared_sha256.is_some()))
+        || (header.protocol == GROUP_INTEGRATION_PROTOCOL
+            && (!header.recovery_sha256.as_deref().is_some_and(valid_sha)
+                || !header.shared_sha256.as_deref().is_some_and(valid_sha)))
         || !matches!(header.host.as_str(), "codex" | "claude")
         || !valid_sha(&header.session_key)
         || !valid_sha(&header.owner_identity_sha256)
@@ -304,20 +311,25 @@ fn prepare_for_record(
     let local_identity_sha256 = super::super::native::owner_for(loaded)?.identity_sha256;
     let config_binding_sha256 = config_binding(loaded)?;
     let checker = super::super::requirements::checker_input(loaded, checker, command)?;
-    let recovery = super::super::recovery::context(loaded, record)?;
+    let recovery = super::super::recovery::context_for_source(loaded, record)?;
     let recovered_context = recovery.as_ref().filter(|context| {
         context.active.source_config.project_identity_sha256 == project_identity_sha256
     });
+    let grouped = recovered_context.is_some_and(|context| context.grouped);
+    let protocol = if grouped {
+        GROUP_INTEGRATION_PROTOCOL
+    } else if recovered_context.is_some() {
+        RECOVERY_INTEGRATION_PROTOCOL
+    } else {
+        PROTOCOL
+    };
+    let shared_sha256 = grouped.then(|| super::super::recovery::shared_inputs(record));
     let mut covered = covered_snapshot(
         loaded,
         record,
         &journey.members,
         &Header {
-            protocol: if recovered_context.is_some() {
-                RECOVERY_INTEGRATION_PROTOCOL
-            } else {
-                PROTOCOL
-            },
+            protocol,
             host: session.host.to_owned(),
             session_key: session.key.clone(),
             owner_identity_sha256: owner.identity_sha256.clone(),
@@ -328,8 +340,10 @@ fn prepare_for_record(
             recovery_sha256: recovered_context
                 .as_ref()
                 .map(|value| value.integration_sha256.clone()),
+            shared_sha256: shared_sha256.clone(),
             checker: checker.clone(),
         },
+        false,
     )?;
     covered.sort_by(|a, b| a.work.cmp(&b.work));
     if covered.is_empty() {
@@ -337,11 +351,7 @@ fn prepare_for_record(
     }
     let contract = Contract {
         header: Header {
-            protocol: if recovered_context.is_some() {
-                RECOVERY_INTEGRATION_PROTOCOL
-            } else {
-                PROTOCOL
-            },
+            protocol,
             host: session.host.to_owned(),
             session_key: session.key,
             owner_identity_sha256: owner.identity_sha256,
@@ -352,6 +362,7 @@ fn prepare_for_record(
             recovery_sha256: recovered_context
                 .as_ref()
                 .map(|value| value.integration_sha256.clone()),
+            shared_sha256,
             checker,
         },
         members: covered,
@@ -409,10 +420,11 @@ fn covered_snapshot(
     record: &Value,
     members: &[Member],
     header: &Header,
+    allow_linked_legacy: bool,
 ) -> Result<Vec<CoveredMember>, String> {
     let mut covered = Vec::new();
     let project_identity = super::super::requirements::identity(loaded)?;
-    let recovery = super::super::recovery::context(loaded, record)?;
+    let recovery = super::super::recovery::context_for_source(loaded, record)?;
     let is_recovered_source = recovery.as_ref().is_some_and(|context| {
         context.active.source_config.project_identity_sha256 == project_identity
     });
@@ -420,17 +432,32 @@ fn covered_snapshot(
         .as_ref()
         .filter(|_| is_recovered_source)
         .map(|value| value.integration_sha256.as_str());
-    if expected_recovery != header.recovery_sha256.as_deref()
-        || (is_recovered_source && header.protocol != RECOVERY_INTEGRATION_PROTOCOL)
-        || (!is_recovered_source && header.protocol != PROTOCOL)
-    {
+    let grouped = recovery.as_ref().is_some_and(|context| context.grouped);
+    let valid_protocol = if is_recovered_source && grouped {
+        (header.protocol == GROUP_INTEGRATION_PROTOCOL
+            && header.shared_sha256.as_deref()
+                == Some(super::super::recovery::shared_inputs(record).as_str()))
+            || (allow_linked_legacy
+                && header.protocol == RECOVERY_INTEGRATION_PROTOCOL
+                && header.shared_sha256.is_none())
+    } else if is_recovered_source {
+        header.protocol == RECOVERY_INTEGRATION_PROTOCOL && header.shared_sha256.is_none()
+    } else {
+        header.protocol == PROTOCOL && header.shared_sha256.is_none()
+    };
+    if expected_recovery != header.recovery_sha256.as_deref() || !valid_protocol {
         return Err(
             "journey integration recovery context changed; prepare a fresh integration".into(),
         );
     }
     let project_members = members
         .iter()
-        .filter(|member| member.project_identity_sha256 == project_identity)
+        .filter(|member| {
+            recovery.as_ref().map_or(
+                member.project_identity_sha256 == project_identity,
+                |context| context.endpoints.contains_key(&member.work),
+            )
+        })
         .collect::<Vec<_>>();
     for member in &project_members {
         if recovery
@@ -493,19 +520,32 @@ pub(super) fn current_integration_for_project(
     members: &[Member],
     project_identity: &str,
 ) -> Result<Option<String>, String> {
-    let recovery = super::super::recovery::context(loaded, record)?;
+    let recovery = super::super::recovery::context_for_source(loaded, record)?;
     let project_members = members
         .iter()
-        .filter(|member| member.project_identity_sha256 == project_identity)
+        .filter(|member| {
+            recovery.as_ref().map_or(
+                member.project_identity_sha256 == project_identity,
+                |context| context.endpoints.contains_key(&member.work),
+            )
+        })
         .collect::<Vec<_>>();
     if project_members.is_empty() {
         return Ok(None);
     }
-    for entry in state
-        .integrations
-        .iter()
-        .filter(|entry| entry.member.project_identity_sha256 == project_identity)
-    {
+    for entry in state.integrations.iter().filter(|entry| {
+        recovery.as_ref().map_or(
+            entry.member.project_identity_sha256 == project_identity,
+            |context| {
+                entry.member.project_identity_sha256
+                    == context.active.source_config.project_identity_sha256
+                    && entry.member.local_identity_sha256
+                        == context.active.source_config.local_identity_sha256
+                    && entry.member.product_root == context.active.source_config.product_root
+                    && entry.member.state_root == context.active.source_config.state_root
+            },
+        )
+    }) {
         let member = &entry.member;
         let recovered_context = recovery.as_ref().filter(|context| {
             context.active.source_config.project_identity_sha256 == project_identity
@@ -526,6 +566,7 @@ pub(super) fn current_integration_for_project(
             recovery_sha256: recovered_context
                 .as_ref()
                 .map(|value| value.integration_sha256.clone()),
+            shared_sha256: None,
             checker: super::super::requirements::CheckerInput {
                 path: String::new(),
                 sha256: String::new(),
@@ -549,7 +590,7 @@ pub(super) fn current_integration_for_project(
         if contract_sha256(&contract) != entry.contract_sha256 {
             continue;
         }
-        match covered_snapshot(loaded, record, members, &contract.header) {
+        match covered_snapshot(loaded, record, members, &contract.header, true) {
             Ok(expected) if expected == contract.members => {}
             Ok(_) => continue,
             Err(error)
@@ -559,6 +600,14 @@ pub(super) fn current_integration_for_project(
                 continue
             }
             Err(error) => return Err(error),
+        }
+        if contract.header.protocol == RECOVERY_INTEGRATION_PROTOCOL
+            && recovered_context
+                .as_ref()
+                .is_some_and(|context| context.grouped)
+            && !super::super::recovery::shared_inputs_current(loaded, record, member)?
+        {
+            continue;
         }
         let evidence = super::super::requirements::current_checker_evidence(
             loaded,
@@ -643,6 +692,7 @@ fn member_loaded(loaded: &Loaded, member: &Member) -> Result<Option<Loaded>, Str
             local_identity_sha256: member.local_identity_sha256.clone(),
             config_binding_sha256: config_binding(&original)?,
             recovery_sha256: None,
+            shared_sha256: None,
             checker: super::super::requirements::CheckerInput {
                 path: String::new(),
                 sha256: String::new(),

@@ -155,6 +155,7 @@ const BOOLEAN_OPTIONS: &[&str] = &[
     "abort",
     "old-writers-quiesced",
     "source-writers-quiesced",
+    "upsert-group",
     "json",
     "full",
     "detail",

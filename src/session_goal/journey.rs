@@ -18,6 +18,7 @@ use std::{
 /// Frozen integration-marker protocol used inside Work start bases.
 pub(crate) const PROTOCOL: u64 = 1;
 pub(crate) const RECOVERY_INTEGRATION_PROTOCOL: u64 = 2;
+pub(crate) const GROUP_INTEGRATION_PROTOCOL: u64 = 3;
 /// Membership v2 adds pre-start admissions. Old readers that understand v1
 /// therefore refuse an in-flight admission instead of treating it as ready.
 const MEMBERSHIP_PROTOCOL: u64 = 2;
@@ -132,6 +133,8 @@ struct Header {
     config_binding_sha256: String,
     #[serde(rename = "r", default, skip_serializing_if = "Option::is_none")]
     recovery_sha256: Option<String>,
+    #[serde(rename = "g", default, skip_serializing_if = "Option::is_none")]
+    shared_sha256: Option<String>,
     #[serde(rename = "k")]
     checker: super::requirements::CheckerInput,
 }
@@ -576,6 +579,7 @@ pub(crate) fn validate_member_for_session(
         local_identity_sha256: member.local_identity_sha256.clone(),
         config_binding_sha256: config_binding(&original)?,
         recovery_sha256: None,
+        shared_sha256: None,
         checker: super::requirements::CheckerInput {
             path: String::new(),
             sha256: String::new(),
@@ -680,6 +684,7 @@ pub(super) fn validate_recovery_endpoint_with_access(
             local_identity_sha256: member.local_identity_sha256.clone(),
             config_binding_sha256: config_binding(&original)?,
             recovery_sha256: None,
+            shared_sha256: None,
             checker: super::requirements::CheckerInput {
                 path: String::new(),
                 sha256: String::new(),
@@ -717,13 +722,18 @@ pub(super) fn accepted_identity_for_retirement(
 pub(super) fn current_recovery_integration(
     loaded: &Loaded,
     record: &Value,
+    member: &Member,
 ) -> Result<Option<(String, Loaded)>, String> {
-    let Some(context) = super::recovery::context(loaded, record)? else {
+    let Some(context) = super::recovery::context_for_member(loaded, record, member)? else {
         return Ok(None);
     };
     let journey = state(record)?.ok_or("native Goal journey membership is unavailable")?;
     for entry in journey.integrations.iter().filter(|entry| {
         entry.member.project_identity_sha256 == context.active.source_config.project_identity_sha256
+            && entry.member.local_identity_sha256
+                == context.active.source_config.local_identity_sha256
+            && entry.member.product_root == context.active.source_config.product_root
+            && entry.member.state_root == context.active.source_config.state_root
     }) {
         let selected = crate::config::load(Some(&entry.member.config_path)).map_err(|error| {
             format!("current integration configuration is unavailable; inspect the accepted integration: {error}")

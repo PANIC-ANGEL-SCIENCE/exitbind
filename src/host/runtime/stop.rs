@@ -9,23 +9,54 @@ use super::project::{self, Resolution, Source};
 use crate::session_goal::native;
 use serde_json::{Map, Value};
 
-pub(super) fn should_block(host: Option<&str>, payload: &Map<String, Value>) -> bool {
+pub(super) fn block_reason(
+    host: Option<&str>,
+    payload: &Map<String, Value>,
+) -> Option<&'static str> {
     if payload.get("stop_hook_active") != Some(&Value::Bool(false))
         || payload.get("agent_id").is_some_and(|id| !id.is_null())
     {
-        return false;
+        return None;
     }
     let Some(reported) = payload.get("session_id").and_then(Value::as_str) else {
-        return false;
+        return None;
     };
     let Some(host) = host else {
-        return false;
+        return None;
     };
     let Ok(Some(session)) = native::host_session_readonly(host, reported) else {
-        return false;
+        return None;
     };
-    let Ok(Some(snapshot)) = session.recovery_snapshot(native::Access::ReadExisting) else {
-        return false;
+    let snapshot = match session.recovery_snapshot(native::Access::ReadExisting) {
+        Ok(Some(snapshot)) => snapshot,
+        Ok(None) => return None,
+        Err(_) => {
+            if session.corrected_journal_for_stop().unwrap_or(false) {
+                return Some("The session Goal is unreadable. Inspect its owner and journal with a compatible Exitbind reader before continuing.");
+            }
+            let Ok(Some(owner)) = session.legacy_owner_with_journal() else {
+                return None;
+            };
+            // This candidate carries no Goal state or currentness. It lets the
+            // existing resolver check the independently validated envelope
+            // against the actual owner configuration before refusing Stop.
+            let candidate = native::RecoverySnapshot {
+                owner,
+                latest: None,
+                owner_config: None,
+            };
+            let Resolution::Project {
+                loaded,
+                source: Source::GoalOwner,
+                ..
+            } = project::resolve_for_session_readonly(payload, &session, &candidate)
+            else {
+                return None;
+            };
+            return crate::host::session_recovery::is_owner(&loaded, &candidate.owner).then_some(
+                "The session Goal is unreadable. Inspect its owner and journal with a compatible Exitbind reader before continuing.",
+            );
+        }
     };
     let Resolution::Project {
         loaded,
@@ -33,15 +64,16 @@ pub(super) fn should_block(host: Option<&str>, payload: &Map<String, Value>) -> 
         ..
     } = project::resolve_for_session_readonly(payload, &session, &snapshot)
     else {
-        return false;
+        return None;
     };
     if !crate::host::session_recovery::is_owner(&loaded, &snapshot.owner) {
-        return false;
+        return None;
     }
     let Some(goal) = snapshot.latest else {
-        return false;
+        return None;
     };
-    goal["closure"]["closed"] == false && !declared_wait(&goal, payload)
+    (goal["closure"]["closed"] == false && !declared_wait(&goal, payload))
+        .then_some("The session Goal is open. Continue the authorized work.")
 }
 
 /// The Lead declares a genuine owner-only wait by recording its exact text as

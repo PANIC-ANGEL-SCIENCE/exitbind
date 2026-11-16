@@ -103,6 +103,51 @@ pub(crate) struct Scope {
     pub(crate) owner_matches: bool,
 }
 
+/// Recognition for a Stop refusal is deliberately weaker than a Goal read:
+/// require an intact initial Goal envelope and digest, but do not assign
+/// authority to any extension that the current reader cannot validate.
+fn recognizable_initial_goal(bytes: &[u8]) -> bool {
+    let Some(line) = bytes
+        .split(|byte| *byte == b'\n')
+        .next()
+        .filter(|line| !line.is_empty())
+    else {
+        return false;
+    };
+    let Ok(mut record) = serde_json::from_slice::<Value>(line) else {
+        return false;
+    };
+    if record["kind"] != "lead_session_goal"
+        || record["revision"] != 1
+        || record.get("previousEventSha256") != Some(&Value::Null)
+        || record.get("predecessor") != Some(&Value::Null)
+        || record.get("successorOf") != Some(&Value::Null)
+        || !record["goalId"]
+            .as_str()
+            .is_some_and(|id| !id.trim().is_empty())
+        || !record["goal"]
+            .as_str()
+            .is_some_and(|goal| !goal.trim().is_empty())
+    {
+        return false;
+    }
+    let Some(expected) = record
+        .get("eventSha256")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+    else {
+        return false;
+    };
+    if !valid_hash(&expected) {
+        return false;
+    }
+    record
+        .as_object_mut()
+        .expect("Goal envelope is an object")
+        .remove("eventSha256");
+    hash::value(&record) == expected
+}
+
 impl Scope {
     pub(crate) fn is_session(&self) -> bool {
         self.session.is_some()
@@ -377,6 +422,71 @@ impl Session {
         access: Access,
     ) -> Result<Option<RecoverySnapshot>, String> {
         super::owner_correction::recovery_snapshot(self, access)
+    }
+
+    fn recognized_goal_for_stop(&self) -> Result<bool, String> {
+        let started = std::time::Instant::now();
+        let Some(bytes) = super::recovery_bytes(&self.root)? else {
+            return Ok(false);
+        };
+        super::recovery_time(started)?;
+        if !recognizable_initial_goal(&bytes) {
+            return Ok(false);
+        }
+        let fingerprint = (bytes.len(), hash::bytes(&bytes));
+        drop(bytes);
+        let after = super::recovery_bytes(&self.root)?;
+        super::recovery_time(started)?;
+        if after
+            .as_ref()
+            .map(|bytes| (bytes.len(), hash::bytes(bytes)))
+            != Some(fingerprint)
+        {
+            return Err("native Goal journal changed during Stop observation".into());
+        }
+        super::recovery_time(started)?;
+        Ok(true)
+    }
+
+    /// Identify a legacy owner envelope and an existing nonempty journal for
+    /// a bounded Stop refusal only. This does not establish current Goal state
+    /// or resolve a corrected owner from an unreadable correction history.
+    pub(crate) fn legacy_owner_with_journal(&self) -> Result<Option<Owner>, String> {
+        let Some(value) = self.validated_owner_value(Access::ReadExisting)? else {
+            return Ok(None);
+        };
+        if value["protocol"] != 1 || !self.recognized_goal_for_stop()? {
+            return Ok(None);
+        }
+        if self.validated_owner_value(Access::ReadExisting)?.as_ref() != Some(&value) {
+            return Err("native Goal owner changed during Stop observation".into());
+        }
+        Ok(Some(Owner {
+            project_id: value["ownerProjectId"].as_str().map(str::to_owned),
+            identity_sha256: value["ownerIdentitySha256"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned(),
+        }))
+    }
+
+    /// A corrected owner marker is not owner authority without the complete
+    /// history. A validated marker and sealed initial Goal envelope can,
+    /// however, identify this host/session's unreadable Goal for Stop only.
+    pub(crate) fn corrected_journal_for_stop(&self) -> Result<bool, String> {
+        let Some(value) = self.validated_owner_value(Access::ReadExisting)? else {
+            return Ok(false);
+        };
+        if value["protocol"] != 2 {
+            return Ok(false);
+        }
+        if !self.recognized_goal_for_stop()? {
+            return Ok(false);
+        }
+        if self.validated_owner_value(Access::ReadExisting)?.as_ref() != Some(&value) {
+            return Err("native Goal owner changed during Stop observation".into());
+        }
+        Ok(true)
     }
 
     /// Validate the owner envelope without deriving authority from the journal.

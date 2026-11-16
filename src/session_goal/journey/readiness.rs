@@ -11,7 +11,7 @@ fn member_currentness(
     access: super::super::native::Access,
 ) -> Result<(&'static str, Option<String>), String> {
     let recovery = record
-        .map(|record| super::super::recovery::context(loaded, record))
+        .map(|record| super::super::recovery::context_for_member(loaded, record, member))
         .transpose()?
         .flatten();
     if recovery.is_some() {
@@ -81,6 +81,7 @@ fn member_currentness(
             recovery_sha256: recovery
                 .as_ref()
                 .map(|value| value.integration_sha256.clone()),
+            shared_sha256: None,
             checker: super::super::requirements::CheckerInput {
                 path: String::new(),
                 sha256: String::new(),
@@ -124,6 +125,7 @@ fn member_currentness(
                 let integration = super::super::journey::current_recovery_integration(
                     loaded,
                     record.ok_or("native Goal recovery record is unavailable")?,
+                    member,
                 )?;
                 let Some((work, _)) = integration else {
                     return Ok(("unresolved", None));
@@ -138,6 +140,7 @@ fn member_currentness(
                 super::super::journey::current_recovery_integration(
                     loaded,
                     record.ok_or("native Goal recovery record is unavailable")?,
+                    member,
                 )?
                 .map(|(work, _)| work)
             } else {
@@ -296,20 +299,26 @@ pub(super) fn readiness_for_state_inner(
     } else {
         ReadinessState::Blocked
     };
-    let historical_details = record
-        .and_then(|record| {
-            super::super::recovery::context(loaded, record)
-                .ok()
-                .flatten()
-        })
-        .map_or_else(Vec::new, |context| context.historical_items);
-    let retired_details = record
-        .and_then(|record| {
-            super::super::recovery::context(loaded, record)
-                .ok()
-                .flatten()
-        })
-        .map_or_else(Vec::new, |context| context.retired_items);
+    let mut historical_details = Vec::new();
+    let mut retired_details = Vec::new();
+    if let Some(record) = record {
+        for member in &state.members {
+            if let Ok(Some(context)) =
+                super::super::recovery::context_for_member(loaded, record, member)
+            {
+                for item in context.historical_items {
+                    if !historical_details.contains(&item) {
+                        historical_details.push(item);
+                    }
+                }
+                for item in context.retired_items {
+                    if !retired_details.contains(&item) {
+                        retired_details.push(item);
+                    }
+                }
+            }
+        }
+    }
     Readiness {
         protocol: state.protocol,
         state: state_name,
@@ -571,31 +580,29 @@ pub(crate) fn result_ref_current_or_supported(
     let Some(journey) = state(record)? else {
         return Ok(false);
     };
-    let recovery = super::super::recovery::context(loaded, record)?;
     let mut recovered_matches = Vec::new();
-    if let Some(context) = &recovery {
-        for member in &journey.members {
+    for member in &journey.members {
+        if let Some(context) = super::super::recovery::context_for_member(loaded, record, member)? {
             if let Some(endpoint_loaded) = context.endpoints.get(&member.work) {
                 if super::super::journey::accepted_endpoint_for_recovery(endpoint_loaded, member)?
                     .as_deref()
                     == Some(reference)
                 {
-                    recovered_matches.push(member);
+                    recovered_matches.push((member, context));
                 }
             }
         }
     }
-    let recovered_member = if recovered_matches.len() == 1 {
-        recovered_matches.first().copied()
+    let recovered = if recovered_matches.len() == 1 {
+        recovered_matches.pop()
     } else {
         None
     };
-    let selected = match (recovery.as_ref(), recovered_member) {
-        (Some(context), Some(_)) => &context.source,
-        _ => loaded,
-    };
-    let matched = if let Some(member) = recovered_member {
-        vec![member]
+    let selected = recovered
+        .as_ref()
+        .map_or(loaded, |(_, context)| &context.source);
+    let matched = if let Some((member, _)) = &recovered {
+        vec![*member]
     } else {
         journey
             .members
@@ -608,10 +615,9 @@ pub(crate) fn result_ref_current_or_supported(
     }
     let member = matched[0];
     let project = project_loaded(selected, member)?;
-    let endpoint_loaded = recovery
+    let endpoint_loaded = recovered
         .as_ref()
-        .filter(|_| recovered_member.is_some())
-        .and_then(|context| context.endpoints.get(&member.work))
+        .and_then(|(_, context)| context.endpoints.get(&member.work))
         .unwrap_or(super::config_stamp::evidence_under(
             selected, &project, member,
         ));
@@ -626,8 +632,8 @@ pub(crate) fn result_ref_current_or_supported(
     {
         return Ok(false);
     }
-    let has_integration = if recovered_member.is_some() {
-        super::super::journey::current_recovery_integration(loaded, record)?.is_some()
+    let has_integration = if recovered.is_some() {
+        super::super::journey::current_recovery_integration(loaded, record, member)?.is_some()
     } else {
         current_integration_for_project(
             selected,

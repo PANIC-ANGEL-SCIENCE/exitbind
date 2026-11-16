@@ -59,11 +59,11 @@ pub fn run(host: Option<&str>, slot: Option<usize>) -> Result<(), String> {
         return Ok(());
     }
     if event == "Stop" {
-        if crate::producer::exitbind_surface() && stop::should_block(host, object) {
-            println!(
-                "{}",
-                json!({"decision":"block","reason":"The session Goal is open. Continue the authorized work."})
-            );
+        if let Some(reason) = crate::producer::exitbind_surface()
+            .then(|| stop::block_reason(host, object))
+            .flatten()
+        {
+            println!("{}", json!({"decision":"block","reason":reason}));
         }
         return Ok(());
     }

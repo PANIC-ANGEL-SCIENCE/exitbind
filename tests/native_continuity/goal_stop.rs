@@ -312,3 +312,147 @@ fn stop_can_observe_existing_private_read_only_goal_state() {
     assert_eq!(response.unwrap()["decision"], "block");
     assert_eq!(files_under(&fixture.store), before);
 }
+
+#[test]
+fn stop_refuses_an_unreadable_owned_goal_without_treating_an_owner_alone_as_a_goal() {
+    use sha2::{Digest, Sha256};
+
+    for host in ["codex", "claude"] {
+        let fixture = Fixture::new(host, &format!("stop-unreadable-{host}"));
+        fixture.goal(&[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "unreadable",
+            "--goal",
+            "Keep working",
+        ]);
+        let journal = files_under(&fixture.store)
+            .into_iter()
+            .find(|(path, _)| {
+                path.file_name()
+                    .is_some_and(|name| name == "session-goal.jsonl")
+            })
+            .expect("fixture Goal journal")
+            .0;
+        let original = fs::read(&journal).unwrap();
+        let mut record = super::support::goal_journal::latest(&journal);
+        for broken in [
+            json!({"version":99,"active":{},"requests":[]}),
+            json!("malformed"),
+        ] {
+            record["nativeGoalRecovery"] = broken;
+            record.as_object_mut().unwrap().remove("eventSha256");
+            let digest = format!("{:x}", Sha256::digest(serde_json::to_vec(&record).unwrap()));
+            record["eventSha256"] = json!(digest);
+            super::support::goal_journal::write(&journal, &[record.clone()]);
+            let before = files_under(&fixture.store);
+            let response = fixture
+                .hook(host, SESSION, &fixture.product, fixture.stop("Done."))
+                .unwrap();
+            assert_eq!(response["decision"], "block");
+            assert!(response["reason"].as_str().unwrap().contains("unreadable"));
+            assert_eq!(
+                files_under(&fixture.store),
+                before,
+                "Stop must not change Goal state"
+            );
+            fs::write(&journal, &original).unwrap();
+        }
+        let mut truncated = original.clone();
+        truncated.extend_from_slice(b"{\"revision\":");
+        fs::write(&journal, truncated).unwrap();
+        let before = files_under(&fixture.store);
+        assert_eq!(
+            fixture
+                .hook(host, SESSION, &fixture.product, fixture.stop("Done."))
+                .unwrap()["decision"],
+            "block"
+        );
+        assert_eq!(files_under(&fixture.store), before);
+
+        fs::write(&journal, b"{broken\n").unwrap();
+        let before = files_under(&fixture.store);
+        assert_eq!(
+            fixture.hook(host, SESSION, &fixture.product, fixture.stop("Done.")),
+            None,
+            "an owner with no recognizable Goal envelope is not enough"
+        );
+        assert_eq!(files_under(&fixture.store), before);
+        fs::remove_file(&journal).unwrap();
+        let before = files_under(&fixture.store);
+        assert_eq!(
+            fixture.hook(host, SESSION, &fixture.product, fixture.stop("Done.")),
+            None,
+            "an owner envelope without a Goal journal does not identify an open Goal"
+        );
+        assert_eq!(files_under(&fixture.store), before);
+    }
+}
+
+#[test]
+fn stop_uses_canonical_session_evidence_without_trusting_a_corrected_owner_marker() {
+    use sha2::{Digest, Sha256};
+
+    let fixture = Fixture::new("codex", "stop-unreadable-corrected-owner");
+    fixture.goal(&[
+        "goal",
+        "incorporate",
+        "--goal-id",
+        "corrected",
+        "--goal",
+        "Keep working",
+    ]);
+    let files = files_under(&fixture.store);
+    let owner = files
+        .iter()
+        .find(|(path, _)| path.file_name().is_some_and(|name| name == "owner.json"))
+        .unwrap()
+        .0
+        .clone();
+    let journal = files
+        .iter()
+        .find(|(path, _)| {
+            path.file_name()
+                .is_some_and(|name| name == "session-goal.jsonl")
+        })
+        .unwrap()
+        .0
+        .clone();
+    let original_owner: Value = serde_json::from_slice(&fs::read(&owner).unwrap()).unwrap();
+    let mut marker = json!({"kind":"native_session_goal_owner", "protocol":2,
+        "host":original_owner["host"], "sessionKey":original_owner["sessionKey"],
+        "original":original_owner, "previousOwnerRecordSha256":original_owner["sha256"],
+        "baseDecisionSha256":null, "pending":null, "request":null});
+    marker["sha256"] = json!(format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&marker).unwrap())
+    ));
+    fs::write(&owner, marker.to_string()).unwrap();
+    let original_journal = fs::read(&journal).unwrap();
+    let mut unreadable = original_journal.clone();
+    unreadable.extend_from_slice(b"{\"revision\":");
+    fs::write(&journal, unreadable).unwrap();
+    let before = files_under(&fixture.store);
+    let blocked = fixture
+        .hook("codex", SESSION, &fixture.product, fixture.stop("Done."))
+        .unwrap();
+    assert_eq!(blocked["decision"], "block");
+    assert!(blocked["reason"].as_str().unwrap().contains("unreadable"));
+    let mut foreign = fixture.stop("Done.");
+    foreign["session_id"] = json!("a-different-session");
+    assert_eq!(
+        fixture.hook("codex", SESSION, &fixture.product, foreign),
+        None
+    );
+    assert_eq!(files_under(&fixture.store), before);
+
+    fs::write(&journal, b"{broken\n").unwrap();
+    let before = files_under(&fixture.store);
+    assert_eq!(
+        fixture.hook("codex", SESSION, &fixture.product, fixture.stop("Done.")),
+        None,
+        "a marker without a sealed initial Goal envelope is not enough"
+    );
+    assert_eq!(files_under(&fixture.store), before);
+}

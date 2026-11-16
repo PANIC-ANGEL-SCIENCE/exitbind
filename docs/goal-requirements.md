@@ -17,6 +17,12 @@ repeat flag bounds re-entry, and missing or unverifiable native ownership is
 silent. Registration, native hook trust and observed execution are distinct;
 Codex users review exact definitions with `/hooks`. Continuation grants no new
 permission and does not prove the model understood or completed the task.
+When a verified legacy owner and its existing journal are identifiable but the
+journal cannot be read, the compatible Stop hook refuses with a bounded request
+to inspect the owner and journal. For a corrected owner marker it requires a
+validated host/session marker and a sealed initial Goal envelope; this is a
+stop-only precaution, not a determination of effective ownership. A marker
+alone or a session with no identifiable Goal is insufficient.
 
 When recording an answer to a decision bound to an earlier external request,
 the owning Lead can pass `--expected-event-sha256 HASH` with the exact Goal,

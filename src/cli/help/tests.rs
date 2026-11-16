@@ -21,6 +21,10 @@ fn goal_help_explains_explicit_legacy_project_selection() {
     let help = scoped_help("goal", &["incorporate".to_owned()]).unwrap();
     assert!(help.contains("--project"));
     assert!(help.contains("conversation Goal"));
+    let recover = scoped_help("goal", &["recover".to_owned()]).unwrap();
+    assert!(recover.contains("--upsert-group"));
+    assert!(recover.contains("preserves other selected source groups"));
+    assert!(recover.contains("own current checked and reviewed integration"));
 }
 
 #[test]

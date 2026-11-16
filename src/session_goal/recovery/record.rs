@@ -3,7 +3,9 @@
 //! The persisted `nativeGoalRecovery` extension of a canonical Goal record:
 //! its field, request and fixture bounds, decision digest, and carrying the
 //! extension forward across a same-Goal rewrite.
-use super::{ActiveDecision, RecoveryState, FIELD, MAX_FIXTURES, MAX_REQUESTS, VERSION};
+use super::{
+    ActiveDecision, RecoveryState, FIELD, GROUP_VERSION, MAX_FIXTURES, MAX_REQUESTS, VERSION,
+};
 use crate::evidence::hash;
 use serde_json::Value;
 use std::collections::BTreeSet;
@@ -24,6 +26,15 @@ pub(super) fn validated_state(record: &Value) -> Result<Option<RecoveryState>, S
     let Some(value) = record.get(FIELD) else {
         return Ok(None);
     };
+    if value["version"] == VERSION
+        && (value.get("groups").is_some()
+            || value.get("ownerConfig").is_some()
+            || value["requests"].as_array().is_some_and(|requests| {
+                requests.iter().any(|request| request.get("mode").is_some())
+            }))
+    {
+        return Err("native Goal recovery v1 has unsupported group fields".into());
+    }
     let state: RecoveryState = serde_json::from_value(value.clone())
         .map_err(|_| "native Goal recovery extension is malformed or has unknown fields")?;
     validate_state(&state)?;
@@ -31,11 +42,99 @@ pub(super) fn validated_state(record: &Value) -> Result<Option<RecoveryState>, S
 }
 
 pub(super) fn validate_state(state: &RecoveryState) -> Result<(), String> {
-    let decision = &state.active;
-    if state.version != VERSION
+    if !matches!(state.version, VERSION | GROUP_VERSION)
+        || (state.version == VERSION && !state.groups.is_empty())
+        || (state.version == VERSION && state.owner_config.is_some())
+        || (state.version == GROUP_VERSION && state.owner_config.is_none())
+        || state.groups.len() >= 32
         || state.requests.is_empty()
         || state.requests.len() > MAX_REQUESTS
-        || decision.source_members.is_empty()
+        || (state.version == GROUP_VERSION
+            && !state
+                .requests
+                .iter()
+                .any(|request| request.mode.as_deref() == Some("group-upsert")))
+    {
+        return Err("native Goal recovery extension is invalid or unsupported".into());
+    }
+    if let Some(owner) = &state.owner_config {
+        if !valid_text(&owner.path, 4096)
+            || !valid_text(&owner.product_root, 4096)
+            || !valid_text(&owner.state_root, 4096)
+            || !valid_optional_text(&owner.project_id, 128)
+            || !valid_hash(&owner.config_sha256)
+            || !valid_hash(&owner.project_identity_sha256)
+            || !valid_hash(&owner.local_identity_sha256)
+            || owner.local_identity_sha256 != state.active.owner_identity_sha256
+            || owner.project_id != state.active.owner_project_id
+        {
+            return Err("native Goal recovery owner configuration is invalid".into());
+        }
+    }
+    let mut all_members = BTreeSet::new();
+    let mut decisions = Vec::new();
+    for decision in state.decisions() {
+        validate_decision(decision)?;
+        if state.version == GROUP_VERSION {
+            if state
+                .owner_config
+                .as_ref()
+                .is_some_and(|owner| super::same_group(owner, &decision.source_config))
+                || decisions.iter().any(|prior: &&ActiveDecision| {
+                    super::same_group(&prior.source_config, &decision.source_config)
+                })
+                || decision.goal_id != state.active.goal_id
+                || decision.host != state.active.host
+                || decision.session_key != state.active.session_key
+                || decision.owner_identity_sha256 != state.active.owner_identity_sha256
+                || decision.owner_project_id != state.active.owner_project_id
+                || decision.historical_fixtures != state.active.historical_fixtures
+                || decision.source_members.iter().any(|item| {
+                    item.member.local_identity_sha256
+                        != decision.source_config.local_identity_sha256
+                        || item.member.host != decision.host
+                        || item.member.session_key != decision.session_key
+                        || item.member.owner_identity_sha256 != decision.owner_identity_sha256
+                        || item.member.owner_project_id != decision.owner_project_id
+                        || !all_members.insert(item.member.work.clone())
+                })
+            {
+                return Err(
+                    "native Goal recovery groups overlap or have different identities".into(),
+                );
+            }
+        }
+        decisions.push(decision);
+    }
+    if state.version == GROUP_VERSION
+        && (all_members.len() > 32
+            || state
+                .active
+                .historical_fixtures
+                .iter()
+                .any(|item| all_members.contains(&item.work)))
+    {
+        return Err(
+            "native Goal recovery membership bound or historical overlap is invalid".into(),
+        );
+    }
+    let mut requests = BTreeSet::new();
+    for request in &state.requests {
+        if !valid_text(&request.request_id, 128)
+            || !valid_hash(&request.request_sha256)
+            || !valid_hash(&request.preview_sha256)
+            || !matches!(request.mode.as_deref(), None | Some("group-upsert"))
+            || (state.version == VERSION && request.mode.is_some())
+            || !requests.insert(request.request_id.clone())
+        {
+            return Err("native Goal recovery request history is invalid".into());
+        }
+    }
+    Ok(())
+}
+
+fn validate_decision(decision: &ActiveDecision) -> Result<(), String> {
+    if decision.source_members.is_empty()
         || decision.source_members.len() > 32
         || decision.historical_fixtures.len() > MAX_FIXTURES
         || !valid_text(&decision.goal_id, 128)
@@ -90,16 +189,6 @@ pub(super) fn validate_state(state: &RecoveryState) -> Result<(), String> {
             return Err("native Goal recovery historical disposition is invalid".into());
         }
     }
-    let mut requests = BTreeSet::new();
-    for request in &state.requests {
-        if !valid_text(&request.request_id, 128)
-            || !valid_hash(&request.request_sha256)
-            || !valid_hash(&request.preview_sha256)
-            || !requests.insert(request.request_id.clone())
-        {
-            return Err("native Goal recovery request history is invalid".into());
-        }
-    }
     let actual = decision_digest(decision)?;
     if actual != decision.decision_sha256 {
         return Err("native Goal recovery decision digest mismatch".into());
@@ -123,6 +212,11 @@ pub(crate) fn validate_record(
 ) -> Result<(), String> {
     let state = validated_state(record)
         .map_err(|error| format!("invalid canonical session goal line {line}: {error}"))?;
+    if let Some(previous) = previous.filter(|prior| prior["goalId"] == record["goalId"]) {
+        let prior = validated_state(previous)?;
+        validate_transition(prior.as_ref(), state.as_ref())
+            .map_err(|error| format!("invalid canonical session goal line {line}: {error}"))?;
+    }
     match state {
         Some(state) => {
             let selection = super::retirement::selected(record, &state.active)
@@ -158,6 +252,76 @@ pub(crate) fn validate_record(
         )),
         None => Ok(()),
     }
+}
+
+fn validate_transition(
+    prior: Option<&RecoveryState>,
+    next: Option<&RecoveryState>,
+) -> Result<(), String> {
+    let Some(prior) = prior else {
+        if next.is_some_and(|state| {
+            state.version == GROUP_VERSION
+                && state
+                    .requests
+                    .last()
+                    .and_then(|request| request.mode.as_deref())
+                    != Some("group-upsert")
+        }) {
+            return Err("native Goal recovery v2 requires an explicit group upsert".into());
+        }
+        return Ok(());
+    };
+    if prior.version != GROUP_VERSION && !next.is_some_and(|state| state.version == GROUP_VERSION) {
+        return Ok(());
+    }
+    let next = next.ok_or("native Goal recovery groups cannot be dropped")?;
+    if next.version != GROUP_VERSION {
+        return Err("native Goal recovery v2 cannot be downgraded".into());
+    }
+    if prior == next {
+        return Ok(());
+    }
+    if prior
+        .owner_config
+        .as_ref()
+        .zip(next.owner_config.as_ref())
+        .is_some_and(|(old, new)| old.path != new.path)
+    {
+        return Err("native Goal recovery owner configuration alias changed".into());
+    }
+    if next.requests.len() != prior.requests.len() + 1
+        || !next.requests.starts_with(&prior.requests)
+        || next
+            .requests
+            .last()
+            .and_then(|request| request.mode.as_deref())
+            != Some("group-upsert")
+    {
+        return Err("native Goal recovery group change requires one explicit upsert".into());
+    }
+    let mut changed = 0;
+    for old in prior.decisions() {
+        let new = next
+            .decisions()
+            .find(|item| super::same_group(&old.source_config, &item.source_config))
+            .ok_or("native Goal recovery group cannot be removed")?;
+        if old.source_config.path != new.source_config.path {
+            return Err("native Goal recovery group configuration alias changed".into());
+        }
+        changed += usize::from(old != new);
+    }
+    changed += next
+        .decisions()
+        .filter(|item| {
+            !prior
+                .decisions()
+                .any(|old| super::same_group(&old.source_config, &item.source_config))
+        })
+        .count();
+    if changed > 1 {
+        return Err("native Goal recovery upsert can change only one group".into());
+    }
+    Ok(())
 }
 
 pub(crate) fn preserve_same_goal(previous: &Value, next: &mut Value) {

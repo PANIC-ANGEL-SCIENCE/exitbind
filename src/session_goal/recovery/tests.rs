@@ -58,14 +58,129 @@ fn validate_state_rejects_endpoint_state_root_mismatch_before_digest_only_checks
     let mut state = RecoveryState {
         version: VERSION,
         active,
+        groups: Vec::new(),
+        owner_config: None,
         requests: vec![AppliedRequest {
             request_id: "unit-state-root-binding".into(),
             request_sha256: hash('a'),
             preview_sha256: hash('b'),
+            mode: None,
         }],
     };
 
     assert!(validate_state(&state).is_ok(), "the control state is valid");
+    let old_wire = serde_json::to_value(&state).unwrap();
+    assert!(old_wire.get("groups").is_none());
+    assert!(old_wire["requests"][0].get("mode").is_none());
+    for key in ["groups", "ownerConfig"] {
+        let mut disguised = old_wire.clone();
+        disguised[key] = if key == "groups" {
+            json!([])
+        } else {
+            Value::Null
+        };
+        assert!(validated_state(&json!({"nativeGoalRecovery":disguised})).is_err());
+    }
+    let mut disguised = old_wire.clone();
+    disguised["requests"][0]["mode"] = Value::Null;
+    assert!(validated_state(&json!({"nativeGoalRecovery":disguised})).is_err());
+
+    let mut first = state.active.clone();
+    first.host = first.source_members[0].member.host.clone();
+    first.session_key = first.source_members[0].member.session_key.clone();
+    first.owner_identity_sha256 = first.source_members[0].member.owner_identity_sha256.clone();
+    first.decision_sha256 = decision_digest(&first).unwrap();
+    let mut second = first.clone();
+    second.source_config.path = "/other/exitbind.json".into();
+    second.source_config.product_root = "/other".into();
+    second.source_config.state_root = "/other/.exitbind".into();
+    second.source_config.project_identity_sha256 = hash('1');
+    second.source_config.local_identity_sha256 = hash('2');
+    second.source_members[0].member.work = format!("smw_{}", hash('3'));
+    second.source_members[0].member.project_identity_sha256 = hash('1');
+    second.source_members[0].member.local_identity_sha256 = hash('2');
+    second.source_members[0].member.product_root = "/other".into();
+    second.source_members[0].member.state_root = "/other/.exitbind".into();
+    second.source_members[0].member.config_path = "/other/exitbind.json".into();
+    second.source_members[0].member_sha256 =
+        super::super::journey::member_identity(&second.source_members[0].member);
+    second.source_members[0].endpoint_config = second.source_config.clone();
+    second.decision_sha256 = decision_digest(&second).unwrap();
+    let mut grouped = state.clone();
+    grouped.version = GROUP_VERSION;
+    grouped.active = first.clone();
+    grouped.groups = vec![second.clone()];
+    grouped.owner_config = Some(ConfigBinding {
+        path: "/owner/exitbind.json".into(),
+        config_sha256: hash('5'),
+        product_root: "/owner".into(),
+        state_root: "/owner/.exitbind".into(),
+        project_id: first.owner_project_id.clone(),
+        project_identity_sha256: hash('6'),
+        local_identity_sha256: first.owner_identity_sha256.clone(),
+    });
+    grouped.requests[0].mode = Some("group-upsert".into());
+    assert!(validate_state(&grouped).is_ok());
+    let mut previous = state.clone();
+    previous.active = first.clone();
+    let mut transition = grouped.clone();
+    transition.requests[0].mode = None;
+    transition.requests.push(AppliedRequest {
+        request_id: "second-group".into(),
+        request_sha256: hash('a'),
+        preview_sha256: hash('b'),
+        mode: Some("group-upsert".into()),
+    });
+    let previous_record = json!({"goalId":"original-goal", "nativeGoalRecovery": previous});
+    let next_record = json!({"goalId":"original-goal", "nativeGoalRecovery": transition});
+    super::record::validate_record(&next_record, Some(&previous_record), 2).unwrap();
+    let mut removed = next_record.clone();
+    removed[FIELD]["groups"] = json!([]);
+    assert!(super::record::validate_record(&removed, Some(&next_record), 3).is_err());
+    let mut downgraded = next_record.clone();
+    downgraded[FIELD]["version"] = json!(1);
+    assert!(super::record::validate_record(&downgraded, Some(&next_record), 3).is_err());
+    let mut duplicate_group = grouped.clone();
+    duplicate_group.groups[0] = first.clone();
+    duplicate_group.groups[0].source_config.path = "/source/alias.json".into();
+    duplicate_group.groups[0].decision_sha256 =
+        decision_digest(&duplicate_group.groups[0]).unwrap();
+    assert!(validate_state(&duplicate_group).is_err());
+    let mut overlap = grouped.clone();
+    overlap.groups[0].source_members[0].member.work = first.source_members[0].member.work.clone();
+    overlap.groups[0].source_members[0].member_sha256 =
+        super::super::journey::member_identity(&overlap.groups[0].source_members[0].member);
+    overlap.groups[0].decision_sha256 = decision_digest(&overlap.groups[0]).unwrap();
+    assert!(validate_state(&overlap).is_err());
+    let mut foreign = grouped.clone();
+    foreign.groups[0].session_key = hash('4');
+    foreign.groups[0].decision_sha256 = decision_digest(&foreign.groups[0]).unwrap();
+    assert!(validate_state(&foreign).is_err());
+    let mut foreign_owner = grouped.clone();
+    foreign_owner
+        .owner_config
+        .as_mut()
+        .unwrap()
+        .local_identity_sha256 = hash('7');
+    assert!(validate_state(&foreign_owner).is_err());
+    let mut duplicate_request = grouped.clone();
+    duplicate_request
+        .requests
+        .push(duplicate_request.requests[0].clone());
+    assert!(validate_state(&duplicate_request).is_err());
+    let mut missing_upsert = grouped.clone();
+    missing_upsert.requests[0].mode = None;
+    assert!(validate_state(&missing_upsert).is_err());
+    let mut unknown_field = serde_json::to_value(&grouped).unwrap();
+    unknown_field["groups"][0]["unexpected"] = json!(true);
+    assert!(validated_state(&json!({"nativeGoalRecovery":unknown_field})).is_err());
+    let mut unsupported = grouped.clone();
+    unsupported.version = 3;
+    assert!(validate_state(&unsupported).is_err());
+    let mut disguised_v1 = grouped;
+    disguised_v1.version = VERSION;
+    assert!(validate_state(&disguised_v1).is_err());
+
     state.active.source_members[0].endpoint_config.state_root = "/source/other-state".into();
     state.active.decision_sha256 = decision_digest(&state.active).unwrap();
     assert_eq!(
@@ -82,6 +197,7 @@ fn no_retirement_keeps_the_existing_request_and_preview_digests() {
         endpoint_configs: None,
         retirements: None,
         source_writers_quiesced: false,
+        upsert_group: false,
         request_id: "unchanged",
         reason: "Preserve the original recovery request",
         apply: false,
@@ -92,6 +208,29 @@ fn no_retirement_keeps_the_existing_request_and_preview_digests() {
         "reason":request.reason}));
     assert_eq!(request_digest(&request).unwrap(), legacy);
     assert_eq!(retirement_preview(&hash('d'), None), hash('d'));
+}
+
+#[test]
+fn shared_binding_ignores_only_the_quarantine_protocol_marker_not_membership() {
+    let original = json!({"goalId":"g", "goal":"Keep the Goal", "continuation":null,
+        "journeyMembershipProtocol":2, "journeyMembers":[{"work":"one"}]});
+    let mut residual = original.clone();
+    residual["journeyMembershipProtocol"] = json!(3);
+    assert_eq!(shared_inputs(&original), shared_inputs(&residual));
+    residual["journeyMembers"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"work":"two"}));
+    assert_ne!(shared_inputs(&original), shared_inputs(&residual));
+    let mut old_protocol = original.clone();
+    old_protocol["journeyMembershipProtocol"] = json!(1);
+    assert_ne!(shared_inputs(&original), shared_inputs(&old_protocol));
+    let mut changed_goal = original.clone();
+    changed_goal["goal"] = json!("A different Goal");
+    assert_ne!(shared_inputs(&original), shared_inputs(&changed_goal));
+    let mut changed_owner = original.clone();
+    changed_owner["nativeGoalRecovery"] = json!({"ownerConfig":{"configSha256":hash('a')}});
+    assert_ne!(shared_inputs(&original), shared_inputs(&changed_owner));
 }
 
 #[test]
@@ -220,10 +359,13 @@ fn retirement_selection_binds_prior_recovery_and_latest_absence_wins() {
     let state = |active| RecoveryState {
         version: VERSION,
         active,
+        groups: Vec::new(),
+        owner_config: None,
         requests: vec![AppliedRequest {
             request_id: "fixture".into(),
             request_sha256: hash('b'),
             preview_sha256: hash('c'),
+            mode: None,
         }],
     };
     let mut previous = json!({"goalId":"goal", "goal":"original Goal text"});

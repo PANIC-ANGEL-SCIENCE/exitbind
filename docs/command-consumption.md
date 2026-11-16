@@ -184,6 +184,22 @@ Work's unaccepted ledger and accounting remain unchanged. The replacement's
 recorded acceptance is a selection basis, not credit for the old Work, and a
 current checked and reviewed integration is still required.
 
+For a Goal with several explicitly selected foreign source groups, add
+`--upsert-group` and the exact canonical absolute `--source-config` path to
+the read-only preview and repeat the emitted apply route.
+The exact source project, state, roots and local identity select one group;
+an alias cannot establish a separate group. The complete Goal head binds the
+preview and apply, and same-request replay retains its original binding. Each
+group's current integration binds that group's selected decision and shared
+Goal/journey inputs and the current owner configuration, independently of
+additions to the group collection. Existing v1 integrations have no prior
+owner-configuration stamp; their version-2 binding starts at migration.
+Other groups and original Work/accounting history are preserved. An existing
+retirement selection remains bound to its original group. Version-1 recovery
+records read unchanged; the first explicit group upsert writes version 2, so
+the same session needs a verified compatible reader and Stop hook before any
+such record is activated. See [native Goal recovery](../REFERENCE.md#native-goal-recovery).
+
 The selection is an optional top-level Goal record field. Older readers retain
 their known fields, but cannot validate a new subset integration; a historical
 closed display is not a current readiness decision. If an old writer removes
