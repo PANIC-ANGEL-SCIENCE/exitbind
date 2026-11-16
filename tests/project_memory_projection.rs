@@ -130,10 +130,16 @@ fn accepted(root: &Path) -> BTreeMap<String, String> {
         .collect()
 }
 
-/// The session context lists `item`, or names the exact project-context
-/// route for its omitted references and that route lists `item`. With long
-/// executable and configuration paths the 3072-byte context fits fewer item
-/// lines; the omitted ones stay one printed command away.
+/// Read only a count attached to the full project-facts route.
+fn omitted_references(context: &str) -> Option<usize> {
+    let (_, tail) = context.split_once("Current project facts: `")?;
+    let (_, tail) = tail.split_once("`.")?;
+    let tail = tail.strip_prefix(" +")?;
+    let (count, _) = tail.split_once(" references via this.")?;
+    count.parse().ok()
+}
+
+/// An omitted item remains reachable through the printed project-facts route.
 fn reaches(root: &Path, context: &str, item: &str) -> bool {
     if context.contains(item) {
         return true;
@@ -143,7 +149,7 @@ fn reaches(root: &Path, context: &str, item: &str) -> bool {
         env!("CARGO_BIN_EXE_exitbind")
     );
     context.contains(&route)
-        && context.contains(" more references; run the current project facts route above.")
+        && omitted_references(context).is_some()
         && ok(root, &["project", "context", "--json"])["memory"]["references"]
             .as_array()
             .unwrap()
@@ -421,10 +427,53 @@ fn many_accepted_items_never_drop_the_session_context() {
     assert!(context.contains(&format!("`{exe} work resume --json --config ")));
     assert!(context.contains("only for an initialized same-Work cross-host handoff"));
     assert!(context.len() <= 3072);
+    let facts = ok(&root, &["project", "context", "--json"]);
+    let rules = facts["rules"].as_array().unwrap();
+    let references = facts["memory"]["references"].as_array().unwrap();
+    let omitted_rules = rules
+        .iter()
+        .filter(|rule| rule["state"] == "current")
+        .filter(|rule| {
+            !context.contains(&format!(
+                "\nProject rule: {} ",
+                rule["path"].as_str().unwrap()
+            ))
+        })
+        .count();
+    let omitted_memory = references
+        .iter()
+        .filter(|reference| {
+            !context.contains(&format!(
+                "\nProject memory: {} [",
+                reference["itemId"].as_str().unwrap()
+            ))
+        })
+        .count();
+    assert!(omitted_rules + omitted_memory >= 10);
+    assert_eq!(
+        omitted_references(&context),
+        Some(omitted_rules + omitted_memory)
+    );
+    let route = context
+        .split_once("Current project facts: `")
+        .and_then(|(_, tail)| tail.split_once('`'))
+        .map(|(route, _)| route)
+        .unwrap();
+    let output = support::git_topology::command("/bin/sh")
+        .args(["-c", route])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let routed: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        routed["memory"]["references"],
+        facts["memory"]["references"]
+    );
     assert!(
         context.contains(&format!(
             "Current project facts: `{exe} project context --json --config "
-        )) && context.contains("more references; run the current project facts route above."),
+        )) && omitted_references(&context).is_some(),
         "{context}"
     );
     fs::remove_dir_all(&root).unwrap();

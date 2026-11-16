@@ -347,26 +347,32 @@ pub(crate) fn memory_content_for_recipient(
 
 /// Facts whose absence would conceal role provenance or unavailable memory.
 pub(crate) fn session_required(loaded: &Loaded, facts: &Value) -> String {
+    session_required_parts(loaded, facts).0
+}
+
+// Keep the insertion point from the constructed route itself: quoted paths
+// may contain newlines, so a rendered command cannot be split by lines.
+fn session_required_parts(loaded: &Loaded, facts: &Value) -> (String, usize) {
     let context_route =
         crate::emitted::command_line(&["project", "context", "--json"], Some(&loaded.path));
     let mut text = format!("\nCurrent project facts: `{context_route}`.");
+    let facts_end = text.len();
     if let Some(lead) = facts["lead"].as_object() {
         text.push_str(&format!(
-            "\nLead profile: {} -> {} (sha256 {}).",
+            "\nLead profile: {} -> {} (sha256 {}). Read fully before material choices.",
             lead["agentId"].as_str().unwrap_or("?"),
             lead["nativeName"].as_str().unwrap_or("?"),
             lead["profileSha256"].as_str().unwrap_or("unavailable")
         ));
-        text.push_str("\nRead full current Lead profile for material choices.");
     }
     if facts["memory"]["state"] == "unavailable" {
         text.push_str("\nProject memory unavailable; do not assume earlier rules.");
     }
-    text
+    (text, facts_end)
 }
 
 fn omitted_line(count: usize) -> String {
-    format!("\n{count} more references; run the current project facts route above.")
+    format!(" +{count} references via this.")
 }
 
 /// Reserve the complete pointer before adding optional reference details.
@@ -387,7 +393,7 @@ pub(crate) fn session_reference_reserve(facts: &Value) -> usize {
 
 /// Fit complete references only; the host hook never cuts an instruction mid-byte.
 pub(crate) fn session_addendum(loaded: &Loaded, facts: &Value, budget: usize) -> String {
-    let mut text = session_required(loaded, facts);
+    let (mut text, facts_end) = session_required_parts(loaded, facts);
     let reserve = session_reference_reserve(facts);
     let add = |text: &mut String, line: &str| {
         if text.len() + line.len() + reserve <= budget {
@@ -448,9 +454,8 @@ pub(crate) fn session_addendum(loaded: &Loaded, facts: &Value, budget: usize) ->
         .as_array()
         .cloned()
         .unwrap_or_default();
-    // The pointer to the omitted references always fits: memory lines spend
-    // only what is left after reserving it. It names the facts route the
-    // first line already prints in full.
+    // The pointer to omitted references is reserved before optional lines
+    // spend the remaining budget and is attached to the complete facts route.
     let mut read_route_added = false;
     for reference in &references {
         if !read_route_added {
@@ -483,7 +488,7 @@ pub(crate) fn session_addendum(loaded: &Loaded, facts: &Value, budget: usize) ->
     if omitted > 0 {
         let line = omitted_line(omitted);
         if text.len() + line.len() <= budget {
-            text.push_str(&line);
+            text.insert_str(facts_end, &line);
         }
     }
     text

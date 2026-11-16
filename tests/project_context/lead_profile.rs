@@ -55,8 +55,13 @@ fn selected_custom_profile_is_acquired_in_bound_complete_pages_before_work() {
     fs::write(path, &profile).unwrap();
     let context = session_hook(&root);
     assert!(context.len() <= 3072, "{}", context.len());
-    assert!(context.contains("Read full current Lead profile for material choices."));
+    assert!(context.contains("Read fully before material choices."));
     assert!(context.contains("do not run Exitbind commands, initialize a project"));
+    let skill = fs::read_to_string(root.join(".agents/skills/exitbind/SKILL.md")).unwrap();
+    assert!(skill.contains("Reuse complete host-supplied bytes when they match the current profile identity; a hash alone is not acquisition."));
+    assert!(skill.contains(
+        "Follow every exact page route, verify contiguous offsets, total bytes and profile SHA-256"
+    ));
 
     let facts = call(&root, &["project", "context", "--json"]);
     assert_eq!(facts["focus"]["state"], "none");
