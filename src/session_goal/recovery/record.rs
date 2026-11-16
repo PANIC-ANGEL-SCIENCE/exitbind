@@ -75,8 +75,8 @@ pub(super) fn validate_state(state: &RecoveryState) -> Result<(), String> {
     let mut decisions = Vec::new();
     for decision in state.decisions() {
         validate_decision(decision)?;
-        if state.version == GROUP_VERSION {
-            if state
+        if state.version == GROUP_VERSION
+            && (state
                 .owner_config
                 .as_ref()
                 .is_some_and(|owner| super::same_group(owner, &decision.source_config))
@@ -97,12 +97,9 @@ pub(super) fn validate_state(state: &RecoveryState) -> Result<(), String> {
                         || item.member.owner_identity_sha256 != decision.owner_identity_sha256
                         || item.member.owner_project_id != decision.owner_project_id
                         || !all_members.insert(item.member.work.clone())
-                })
-            {
-                return Err(
-                    "native Goal recovery groups overlap or have different identities".into(),
-                );
-            }
+                }))
+        {
+            return Err("native Goal recovery groups overlap or have different identities".into());
         }
         decisions.push(decision);
     }

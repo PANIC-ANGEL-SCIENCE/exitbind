@@ -41,6 +41,7 @@ Identity	src/session_goal/journey/integration/lineage.rs	journey Work start, con
 Integrity	src/session_goal/journey/integration/lineage.rs	journey successor claim does not bind the exact predecessor or same task Goal
 Integrity	src/session_goal/journey/integration/lineage.rs	journey successor start does not match its validated same-goal claim
 Identity	src/session_goal/native.rs	native session Goal owner digest mismatch
+ReadAsFact	src/session_goal/native.rs	native Goal journal changed during Stop observation
 Transient	src/session_goal/progress.rs	Goal record or configuration changed during Work projection
 NotARefusal	src/session_goal/progress/close_route.rs	 direct completion is stale or unknown
 NotARefusal	src/session_goal/progress/close_route.rs	 result reference is stale or unavailable:
@@ -60,6 +61,7 @@ RoutedInText	src/session_goal/recovery.rs	Source Goal membership changed since r
 RoutedInText	src/session_goal/recovery.rs	Source configuration changed or became unavailable; preview recovery again: {error}
 RoutedInText	src/session_goal/recovery.rs	native Goal recovery preview is stale; request a new preview
 Transient	src/session_goal/recovery.rs	owner configuration changed or became unavailable; reload and preview recovery: {error}
+RoutedInText	src/session_goal/recovery.rs	saved Goal owner configuration changed; preview recovery again
 RoutedInText	src/session_goal/recovery.rs	saved Source configuration changed; preview recovery again
 RoutedInText	src/session_goal/recovery.rs	saved Source configuration changed; preview recovery again
 # These reject invalid persisted journal transitions, not tested-input

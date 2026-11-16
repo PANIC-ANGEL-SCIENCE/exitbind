@@ -468,7 +468,7 @@ pub(crate) fn shared_inputs(record: &Value) -> String {
 /// The integration member names the exact Goal event observed before its
 /// admission. Compare shared inputs with that validated event, rather than the
 /// collection head, so migrating a still-current v1 integration is safe.
-pub(crate) fn shared_inputs_current(
+pub(super) fn shared_inputs_current(
     loaded: &Loaded,
     record: &Value,
     integration: &super::journey::Member,
@@ -506,7 +506,7 @@ pub(crate) fn shared_inputs_current(
 
 /// Resolve only the group that actually owns this exact journey member.
 /// Other groups are independently revalidated when they are used.
-pub(crate) fn context_for_member(
+pub(super) fn context_for_member(
     owner_loaded: &Loaded,
     record: &Value,
     member: &super::journey::Member,

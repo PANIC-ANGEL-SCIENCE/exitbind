@@ -892,6 +892,17 @@ fn group_fixture_select(c: &Case, config: &std::path::Path, request: &str) {
 fn two_integrated_foreign_groups_and_goal_quarantine_preserve_the_unknown() {
     let c =
         Case::build_with_feature_mode(true, false, "exec sh checker.sh", false, false, true, true);
+    c.owner_ok(&[
+        "goal",
+        "incorporate",
+        "--goal-id",
+        "original-quarantine-goal",
+        "--goal",
+        "Preserve all original outcomes and unknown evidence",
+        "--none-applicable",
+        "obligations",
+        "--json",
+    ]);
     let ci = Fixture::new("exit 0\n");
     let host = Fixture::new("exit 0\n");
     let ci_config = ci.root.join("exitbind.json");
@@ -980,6 +991,16 @@ fn two_integrated_foreign_groups_and_goal_quarantine_preserve_the_unknown() {
     assert!(
         !close.status.success(),
         "unknown Source must block direct close"
+    );
+    assert!(
+        value(&close)["error"]
+            .as_str()
+            .is_some_and(|error| error.contains("native session journey is not ready to close")),
+        "closure must refuse the unresolved journey rather than an unrelated category: {close:?}"
+    );
+    assert_eq!(
+        c.owner_ok(&["goal", "status", "--json"])["eventSha256"],
+        before["eventSha256"]
     );
 
     let preview = c.preview(REQUEST);
