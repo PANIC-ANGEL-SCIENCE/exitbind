@@ -10,6 +10,48 @@ struct Case {
     binding: String,
 }
 
+/// Own the observer until the controlled checker is released and reaped,
+/// including when a fixture assertion unwinds.
+struct PendingCheck {
+    child: std::process::Child,
+    release: PathBuf,
+}
+
+impl PendingCheck {
+    fn release_and_wait(&mut self) -> std::process::ExitStatus {
+        fs::write(&self.release, b"release").expect("release the controlled checker");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            if let Some(status) = self.child.try_wait().expect("poll the check observer") {
+                return status;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "check did not stop after release"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    }
+}
+
+impl Drop for PendingCheck {
+    fn drop(&mut self) {
+        let _ = fs::write(&self.release, b"release");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            match self.child.try_wait() {
+                Ok(Some(_)) => return,
+                Ok(None) if std::time::Instant::now() < deadline => {
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+                _ => break,
+            }
+        }
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
 impl Case {
     fn new() -> Self {
         let fixture = Fixture::new();
@@ -252,10 +294,11 @@ fn changed_caller_goal_head_config_or_scope_refuses_before_claim() {
     last["timestamp"] = json!("2030-01-01T00:00:00Z");
     last.as_object_mut().unwrap().remove("eventSha256");
     last["eventSha256"] = json!(digest_value(last));
-    let lines = events
-        .iter()
-        .map(|event| format!("{}\n", serde_json::to_string(event).unwrap()))
-        .collect::<String>();
+    let mut lines = String::new();
+    for event in &events {
+        lines.push_str(&serde_json::to_string(event).unwrap());
+        lines.push('\n');
+    }
     fs::write(changed_head.fixture.ledger(&changed_head.work), lines).unwrap();
     assert_refused_without_claim(&changed_head, SESSION, &stale);
     let case = Case::new();
@@ -782,7 +825,14 @@ fn unresolved_check_or_nonlead_or_invalid_source_refuses() {
 
     fs::write(
         other.root.join("waiting-check.sh"),
-        "touch .exitbind/scope-check-started\nsleep 6\nexit 1\n",
+        "printf ready > .exitbind/scope-check-started || exit 2\n\
+         i=0\n\
+         while [ ! -f .exitbind/scope-check-release ] && [ \"$i\" -lt 1000 ]; do\n\
+           sleep 0.05\n\
+           i=$((i + 1))\n\
+         done\n\
+         [ -f .exitbind/scope-check-release ] || exit 2\n\
+         exit 1\n",
     )
     .unwrap();
     let running_work = other.begin_completed_worker(
@@ -791,14 +841,14 @@ fn unresolved_check_or_nonlead_or_invalid_source_refuses() {
     );
     let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
     clear_native_selectors(&mut command);
-    let mut observer = command
+    let child = command
         .current_dir(&other.root)
         .args([
             "work",
             "check",
             &running_work,
             "--timeout-ms",
-            "10000",
+            "60000",
             "--config",
             "exitbind.json",
         ])
@@ -807,11 +857,33 @@ fn unresolved_check_or_nonlead_or_invalid_source_refuses() {
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let mut observer = PendingCheck {
+        child,
+        release: other.root.join(".exitbind/scope-check-release"),
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
     while !other.root.join(".exitbind/scope-check-started").exists() {
+        assert!(
+            observer.child.try_wait().unwrap().is_none(),
+            "observer ended before ready"
+        );
         assert!(std::time::Instant::now() < deadline, "check did not start");
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
+    let events = other.events(&running_work);
+    let admission = events
+        .iter()
+        .find(|event| event["action"] == "check_observation")
+        .expect("a running check must have a durable admission");
+    assert_eq!(admission["observation"]["state"], "running");
+    assert_eq!(
+        admission["observation"]["observer"]["pid"].as_u64(),
+        Some(u64::from(observer.child.id()))
+    );
+    assert!(
+        observer.child.try_wait().unwrap().is_none(),
+        "observer ended before the refusal"
+    );
     let next = other.ok_in_session(
         SESSION,
         &case.store,
@@ -831,7 +903,18 @@ fn unresolved_check_or_nonlead_or_invalid_source_refuses() {
         diagnostic.contains("unresolved check observation"),
         "{diagnostic}"
     );
-    let _ = observer.wait().unwrap();
+    assert!(
+        observer.child.try_wait().unwrap().is_none(),
+        "observer ended before release"
+    );
+    assert!(
+        !observer.release_and_wait().success(),
+        "the released checker must fail"
+    );
+    let events = other.events(&running_work);
+    assert!(events
+        .iter()
+        .any(|event| event["action"] == "check" && event["result"]["code"] == 1));
 }
 
 #[test]
@@ -840,7 +923,7 @@ fn old_reader_refuses_protocol_two_protected_effects() {
     let old = std::env::var_os("EXITBIND_OLD_BIN").expect("pinned previous executable");
     let old_bytes = fs::read(&old).unwrap();
     assert_eq!(
-        format!("{:x}", Sha256::digest(&old_bytes)),
+        format!("{:x}", Sha256::digest(old_bytes)),
         "8f68e62f55aeecdac637760ff2dfe18bbb53affc8ee077f3260cca4fba7130fb"
     );
     let case = Case::new();
