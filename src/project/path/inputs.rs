@@ -272,6 +272,7 @@ pub(crate) const NOT_PATHS: &[&str] = &[
     "reasoning-effort",
     "requirement",
     "scope",
+    "successor-scope",
     "feature-work",
     "owner-config-sha256",
     "verification-work",

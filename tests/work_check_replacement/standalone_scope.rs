@@ -198,23 +198,55 @@ fn preview_unbound_requires_verified_current_caller_and_emits_scope_binding() {
     let next = case.fixture.ok_in_session(
         SESSION,
         &case.store,
-        &["work", "next", &case.work, "--json"],
+        &["work", "next", &case.work, "--json", "--full"],
+    );
+    let form = &next["next"]["current"]["actionForm"];
+    assert_eq!(
+        form["replacementScope"]["state"], "validated_current_caller_unbound",
+        "next={next:#}"
     );
     assert_eq!(
-        next["current"]["actionForm"]["replacementScope"]["state"],
-        "validated_current_caller_unbound"
+        form["replacementScope"]["standaloneAvailable"], true,
+        "next={next:#}"
+    );
+    assert_eq!(
+        next["next"]["current"]["binding"], case.binding,
+        "next={next:#}"
+    );
+    assert!(
+        form["choices"].as_array().is_some_and(|choices| {
+            choices.iter().any(|choice| {
+                choice["command"]["argv"].as_array().is_some_and(|argv| {
+                    argv.windows(2)
+                        .any(|pair| pair[0] == "--successor-scope" && pair[1] == "standalone")
+                })
+            })
+        }),
+        "standalone preview choice missing: next={next:#}"
     );
     let preview = case.preview();
-    assert_eq!(preview["state"], "preview");
-    assert_eq!(preview["decision"]["protocol"], 2);
-    assert_eq!(preview["decision"]["scope"]["kind"], "standalone");
-    assert_eq!(preview["decision"]["scope"]["currentBinding"], case.binding);
-    let digest = preview["decision"]["scopeDecisionSha256"].as_str().unwrap();
-    assert_eq!(digest.len(), 64);
-    let argv = preview["applyCommand"]["argv"].as_array().unwrap();
-    assert!(argv
-        .windows(2)
-        .any(|pair| pair[0] == "--scope-decision-sha256" && pair[1] == digest));
+    assert_eq!(preview["state"], "preview", "preview={preview:#}");
+    assert_eq!(preview["decision"]["protocol"], 2, "preview={preview:#}");
+    assert_eq!(
+        preview["decision"]["scope"]["kind"], "standalone",
+        "preview={preview:#}"
+    );
+    assert_eq!(
+        preview["decision"]["scope"]["currentBinding"], case.binding,
+        "preview={preview:#}"
+    );
+    let digest = preview["decision"]["scopeDecisionSha256"]
+        .as_str()
+        .unwrap_or_else(|| panic!("missing digest: preview={preview:#}"));
+    assert_eq!(digest.len(), 64, "preview={preview:#}");
+    let argv = preview["applyCommand"]["argv"]
+        .as_array()
+        .unwrap_or_else(|| panic!("missing apply argv: preview={preview:#}"));
+    assert!(
+        argv.windows(2)
+            .any(|pair| pair[0] == "--scope-decision-sha256" && pair[1] == digest),
+        "preview={preview:#}"
+    );
     assert_eq!(fs::read(case.fixture.ledger(&case.work)).unwrap(), before);
     assert_eq!(fs::read(case.goal_path()).unwrap(), goal);
     assert!(!case.claim_path().exists());
@@ -666,9 +698,20 @@ fn predecessor_journal_and_accounting_preserved_without_old_credit() {
 #[test]
 fn standalone_scope_survives_full_lifecycle_without_goal_membership() {
     let case = Case::new();
+    let before_apply_goal = fs::read(case.goal_path()).unwrap();
+    let before_goal = support::goal_journal::latest(&case.goal_path());
+    let before_revision = before_goal["revision"]
+        .as_u64()
+        .unwrap_or_else(|| panic!("missing prior Goal revision: goal={before_goal:#}"));
     let (applied, _) = case.apply();
-    let successor = applied["successor"]["work"].as_str().unwrap().to_owned();
-    case.fixture.ok_in_session(
+    assert_eq!(applied["effect"], "committed", "applied={applied:#}");
+    assert_eq!(applied["state"], "successor_created", "applied={applied:#}");
+    let successor = applied["successor"]["work"]
+        .as_str()
+        .unwrap_or_else(|| panic!("missing successor: applied={applied:#}"))
+        .to_owned();
+    assert_eq!(fs::read(case.goal_path()).unwrap(), before_apply_goal);
+    let goal_update = case.fixture.ok_in_session(
         SESSION,
         &case.store,
         &[
@@ -682,62 +725,157 @@ fn standalone_scope_survives_full_lifecycle_without_goal_membership() {
             "An unrelated later goal revision",
         ],
     );
+    assert_eq!(
+        goal_update["revision"].as_u64(),
+        Some(before_revision + 1),
+        "goal update={goal_update:#}"
+    );
+    assert!(
+        goal_update["eventSha256"].is_string(),
+        "goal update={goal_update:#}"
+    );
+    assert_ne!(
+        goal_update["eventSha256"], before_goal["eventSha256"],
+        "goal update={goal_update:#}"
+    );
     let goal = fs::read(case.goal_path()).unwrap();
-    for outcome in ["scoped", "completed"] {
+    let goal_at_start = support::goal_journal::latest(&case.goal_path());
+    assert_eq!(
+        goal_update["eventSha256"], goal_at_start["eventSha256"],
+        "goal update={goal_update:#}; latest={goal_at_start:#}"
+    );
+    let assert_recorded = |returned: &Value, role: &str, outcome: &str| {
+        assert_eq!(returned["effect"], "recorded", "return={returned:#}");
+        let event_sha = returned["eventSha256"]
+            .as_str()
+            .unwrap_or_else(|| panic!("missing recorded event: return={returned:#}"));
+        let event = case
+            .fixture
+            .events(&successor)
+            .into_iter()
+            .find(|event| event["eventSha256"].as_str() == Some(event_sha))
+            .unwrap_or_else(|| panic!("recorded event missing: return={returned:#}"));
+        assert_eq!(
+            event["action"], "submit",
+            "event={event:#}; return={returned:#}"
+        );
+        assert_eq!(event["role"], role, "event={event:#}; return={returned:#}");
+        assert_eq!(
+            event["outcome"], outcome,
+            "event={event:#}; return={returned:#}"
+        );
+        if let Some(observed) = returned.get("outcome") {
+            assert_eq!(observed.as_str(), Some(outcome), "return={returned:#}");
+        }
+    };
+    for (role, outcome) in [("lead", "scoped"), ("worker", "completed")] {
         let next = case.fixture.ok_in_session(
             SESSION,
             &case.store,
             &["work", "next", &successor, "--json", "--full"],
         );
-        case.fixture.ok_in_session(
+        assert_eq!(next["next"]["role"], role, "next={next:#}");
+        let assignment = next["next"]["assignment"]
+            .as_str()
+            .unwrap_or_else(|| panic!("missing assignment: next={next:#}"));
+        let returned = case.fixture.ok_in_session(
             SESSION,
             &case.store,
             &[
                 "work",
                 "return",
                 &successor,
-                next["next"]["assignment"].as_str().unwrap(),
+                assignment,
                 "--outcome",
                 outcome,
             ],
         );
+        assert_recorded(&returned, role, outcome);
     }
     let check = case.fixture.ok_in_session(
         SESSION,
         &case.store,
         &["work", "check", &successor, "--timeout-ms", "2000"],
     );
-    assert_eq!(check["result"]["code"], 0);
-    for outcome in ["approved", "accepted"] {
+    assert_eq!(check["effect"], "recorded", "check={check:#}");
+    assert_eq!(check["result"]["code"], 0, "check={check:#}");
+    for (role, outcome) in [("reviewer", "approved"), ("lead", "accepted")] {
         let next = case.fixture.ok_in_session(
             SESSION,
             &case.store,
             &["work", "next", &successor, "--json", "--full"],
         );
-        case.fixture.ok_in_session(
+        assert_eq!(next["next"]["role"], role, "next={next:#}");
+        let assignment = next["next"]["assignment"]
+            .as_str()
+            .unwrap_or_else(|| panic!("missing assignment: next={next:#}"));
+        let returned = case.fixture.ok_in_session(
             SESSION,
             &case.store,
             &[
                 "work",
                 "return",
                 &successor,
-                next["next"]["assignment"].as_str().unwrap(),
+                assignment,
                 "--outcome",
                 outcome,
             ],
         );
+        assert_recorded(&returned, role, outcome);
+    }
+    let terminal = case.fixture.ok_in_session(
+        SESSION,
+        &case.store,
+        &["work", "next", &successor, "--json", "--full"],
+    );
+    assert_eq!(
+        terminal["next"]["current"]["action"], "done",
+        "terminal={terminal:#}"
+    );
+    if let Some(action) = terminal["next"].get("action") {
+        assert_eq!(action.as_str(), Some("done"), "terminal={terminal:#}");
+    } else {
+        assert!(
+            terminal["next"]["warnings"]
+                .as_array()
+                .is_some_and(|warnings| !warnings.is_empty()),
+            "missing next.action without warning wrapper: terminal={terminal:#}"
+        );
     }
     assert_eq!(
-        case.fixture.ok_in_session(
-            SESSION,
-            &case.store,
-            &["work", "next", &successor, "--json"]
-        )["next"]["action"],
-        "done"
+        terminal["next"]["current"]["completion"]["workAcceptance"]["state"], "accepted",
+        "terminal={terminal:#}"
+    );
+    let relation = &terminal["next"]["current"]["checkReplacement"];
+    assert_eq!(relation["state"], "verified", "terminal={terminal:#}");
+    assert_eq!(relation["direction"], "successor", "terminal={terminal:#}");
+    assert_eq!(
+        relation["successorScope"]["kind"], "standalone",
+        "terminal={terminal:#}"
+    );
+    assert_eq!(
+        relation["predecessor"]["work"].as_str(),
+        Some(case.work.as_str()),
+        "terminal={terminal:#}"
     );
     assert_eq!(fs::read(case.goal_path()).unwrap(), goal);
     let latest = support::goal_journal::latest(&case.goal_path());
-    assert!(!latest["journeyMembers"].to_string().contains(&successor));
+    assert_eq!(
+        latest["journeyMembers"], goal_at_start["journeyMembers"],
+        "goal={latest:#}"
+    );
+    assert!(
+        !latest["journeyMembers"].to_string().contains(&successor),
+        "goal={latest:#}"
+    );
+    assert!(
+        latest["journeyMembers"].as_array().is_some_and(|members| {
+            members
+                .iter()
+                .all(|member| member["work"].as_str() != Some(successor.as_str()))
+        }),
+        "unexpected or invalid Goal membership: goal={latest:#}"
+    );
 }
 
 #[test]

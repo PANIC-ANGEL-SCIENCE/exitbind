@@ -11,6 +11,22 @@ current Goal must provide the validated native journey admission coverage used
 by the existing replacement guard. A legacy protocol-1 Goal or missing coverage
 does not establish that absence and remains unavailable; this command does not
 upgrade a Goal. Actual eligibility must be observed for the selected caller.
+
+For the standalone selection, read current Work detail from the same native
+session and configuration that will preview. When the bound form offers
+replacement, `actionForms.replacementScope` reports its observed scope state.
+A compact `work next` response may omit this field; omission is not an
+eligibility verdict. Follow its emitted read-only detail or full-recovery
+route, or use `work next WORK --json --full` in the same session and
+configuration and inspect `next.current.actionForm.replacementScope`.
+
+A bounded response may show `next.action` as `inspect` to request more detail.
+Before concluding that Work is done and accepted, read the full response's
+`next.current.action` and `next.current.completion.workAcceptance.state` and
+require `done` and `accepted`, respectively. If the outer `next.action` is
+present it must also be `done`; the warning wrapper may omit that alias. If the
+canonical facts are unavailable, preserve the uncertainty.
+
 The preview returns a `scopeDecisionSha256` and an exact apply command. Apply must
 use that fingerprint and current binding; a changed caller, Goal observation,
 Work head, configuration, policy or reason requires a fresh preview. The
