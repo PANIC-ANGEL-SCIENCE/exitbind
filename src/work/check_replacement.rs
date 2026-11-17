@@ -420,8 +420,10 @@ pub(crate) fn replace(loaded: &Loaded, work: &str, options: Options<'_>) -> Resu
                     &options,
                     new_pre_return_policy.as_ref(),
                     new_check_policy.as_ref(),
-                    &requested_relation,
-                    true,
+                    ApplyCommandScope {
+                        relation: &requested_relation,
+                        recover_partial: true,
+                    },
                 );
             }
             return Ok(result);
@@ -447,7 +449,10 @@ pub(crate) fn replace(loaded: &Loaded, work: &str, options: Options<'_>) -> Resu
             "decision":requested_relation,
             "currentBinding":binding,
             "applyCommand": replacement_apply_command(loaded, work, binding, &options,
-                new_pre_return_policy.as_ref(), new_check_policy.as_ref(), &requested_relation, false),
+                new_pre_return_policy.as_ref(), new_check_policy.as_ref(), ApplyCommandScope {
+                    relation: &requested_relation,
+                    recover_partial: false,
+                }),
             "meaning": if replacing_pre_return { "Preview only. The predecessor remains immutable. Repeat with --apply and this current binding to create one claimed successor; the prior diagnostic is not a pass and the successor needs fresh evidence and review." } else { "Preview only. The predecessor remains immutable. Repeat with --apply and this current binding to create one claimed successor; the changed check earns no pass or review credit." }
         }));
     }
@@ -506,6 +511,11 @@ pub(crate) fn replace(loaded: &Loaded, work: &str, options: Options<'_>) -> Resu
     }))
 }
 
+struct ApplyCommandScope<'a> {
+    relation: &'a Value,
+    recover_partial: bool,
+}
+
 fn replacement_apply_command(
     loaded: &Loaded,
     work: &str,
@@ -513,8 +523,7 @@ fn replacement_apply_command(
     options: &Options<'_>,
     pre_return: Option<&crate::run_value::PreReturnPolicy>,
     check: Option<&crate::run_value::CheckPolicy>,
-    relation: &Value,
-    recover_partial: bool,
+    scope: ApplyCommandScope<'_>,
 ) -> Value {
     let mut route = crate::emitted::Route::new([
         "work",
@@ -545,10 +554,12 @@ fn replacement_apply_command(
         route = route.words(["--successor-scope", "standalone"]);
         route = route.words([
             "--scope-decision-sha256",
-            relation["scopeDecisionSha256"].as_str().unwrap_or_default(),
+            scope.relation["scopeDecisionSha256"]
+                .as_str()
+                .unwrap_or_default(),
         ]);
     }
-    if recover_partial {
+    if scope.recover_partial {
         route = route.words(["--recover-partial"]);
     }
     crate::work::action_forms::command(loaded, route)
