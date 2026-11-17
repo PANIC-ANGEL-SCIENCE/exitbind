@@ -638,7 +638,7 @@ fn assert_fixture_step_budget(
         output.stdout, exact_json,
         "fixture byte accounting requires the actual JSON bytes"
     );
-    let (full, full_output) = fixture.call(&["work", "detail", work, "--json"]);
+    let (full, _) = fixture.call(&["work", "detail", work, "--json"]);
     let mut actor_bytes = 0;
     if value["currentDelivery"]["kind"] == "work_actor_context" {
         assert!(
@@ -679,52 +679,13 @@ fn assert_fixture_step_budget(
     assert_eq!(inspected["authorizesMutation"], false);
     assert_eq!(fs::read(&ledger).unwrap(), ledger_before);
     assert_eq!(fs::read(&count).ok(), count_before);
-    let metadata_json = serde_json::to_vec(&metadata).unwrap();
-    let metadata_bytes = metadata_json.len() + 1;
-    eprintln!("step_total_bytes={} verified_actor_value_bytes={actor_bytes} actual_metadata_bytes={actual_metadata} normalized_metadata_bytes={metadata_bytes}", output.stdout.len());
-    if metadata_bytes > 8 * 1024 {
-        let fields = metadata.as_object().unwrap();
-        let mut pairs_bytes = 0;
-        for (name, value) in fields {
-            let key_bytes = serde_json::to_vec(name).unwrap().len();
-            let value_bytes = serde_json::to_vec(value).unwrap().len();
-            let pair_bytes = key_bytes + 1 + value_bytes;
-            pairs_bytes += pair_bytes;
-            eprintln!("metadata_field={name:?} key_bytes={key_bytes} value_bytes={value_bytes} pair_bytes={pair_bytes}");
-        }
-        let recomposed_bytes = 2 + fields.len().saturating_sub(1) + pairs_bytes + 1;
-        eprintln!("metadata_recomposed_bytes={recomposed_bytes}");
-        eprintln!("normalized_metadata_begin bytes={}", metadata_json.len());
-        eprintln!("{}", std::str::from_utf8(&metadata_json).unwrap());
-        eprintln!("normalized_metadata_end");
-        eprintln!("fixture_wire_begin bytes={}", output.stdout.len());
-        eprint!("{}", std::str::from_utf8(&output.stdout).unwrap());
-        if !output.stdout.ends_with(b"\n") {
-            eprintln!();
-        }
-        eprintln!("fixture_wire_end");
-        eprintln!("fixture_detail_begin bytes={}", full_output.stdout.len());
-        eprint!("{}", std::str::from_utf8(&full_output.stdout).unwrap());
-        if !full_output.stdout.ends_with(b"\n") {
-            eprintln!();
-        }
-        eprintln!("fixture_detail_end");
-        let mut recipient_hashes: Vec<_> = seen.iter().map(String::as_str).collect();
-        recipient_hashes.sort_unstable();
-        eprintln!(
-            "verified_recipient_hashes={}",
-            serde_json::to_string(&recipient_hashes).unwrap()
-        );
-        assert_eq!(
-            recomposed_bytes, metadata_bytes,
-            "diagnostic byte accounting mismatch"
-        );
-    }
+    let metadata_bytes = serde_json::to_vec(&metadata).unwrap().len() + 1;
     assert!(
         metadata_bytes <= 8 * 1024,
         "metadata={metadata_bytes}, total={}, actor={actor_bytes}",
         output.stdout.len()
     );
+    eprintln!("step_total_bytes={} verified_actor_value_bytes={actor_bytes} actual_metadata_bytes={actual_metadata} normalized_metadata_bytes={metadata_bytes}", output.stdout.len());
 }
 
 #[test]
@@ -1009,6 +970,60 @@ fn recorded_result_survives_later_head_and_inspection_never_rechecks() {
         &failed_output,
         &mut read_recipients,
     );
+    // A failed result retains the complete current scope and preview in its
+    // effective form and a same-binding full route after exact deduplication.
+    let (failed_full, _) = fixture.call(&["work", "detail", work, "--json"]);
+    assert!(failed["current"].get("actionForm").is_none());
+    assert_eq!(
+        failed["effectiveAction"]["replacementScope"],
+        failed_full["actionForms"]["replacementScope"]
+    );
+    assert_eq!(failed["full"]["binding"], failed_full["binding"]);
+    assert!(failed["full"]["command"].is_array());
+    let preview_label = "preview replacement of an explicitly defective frozen check";
+    let full_preview = failed_full["actionForms"]["choices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|choice| choice["label"] == preview_label)
+        .unwrap();
+    let effective_preview = failed["effectiveAction"]["choices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|choice| choice["label"] == preview_label)
+        .unwrap();
+    assert_eq!(
+        effective_preview["command"]["argv"],
+        full_preview["command"]["argv"]
+    );
+    let return_choice = failed["effectiveAction"]["choices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|choice| choice["kind"] == "outcome_template")
+        .unwrap();
+    assert_eq!(
+        return_choice["outcomes"],
+        serde_json::json!(["rework", "blocked"])
+    );
+    let full_environmental = failed_full["actionForms"]["choices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|choice| choice["label"] == "environmental")
+        .unwrap();
+    let effective_environmental = failed["effectiveAction"]["choices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|choice| choice["label"] == "environmental")
+        .unwrap();
+    assert_eq!(
+        effective_environmental["command"]["argv"],
+        full_environmental["command"]["argv"]
+    );
+
     eprintln!("failed_check_bytes={}", failed_output.stdout.len());
     assert_eq!(failed["effect"], "recorded");
     assert_eq!(failed["result"]["code"], 1);

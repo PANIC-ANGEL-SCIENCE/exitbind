@@ -145,9 +145,46 @@ fn retain_partial_child_prepare(
     Ok(())
 }
 
+/// Verify the complete compact scoped form before return choices are folded.
+/// Reusing the owner projection keeps unknown or changed fields from vanishing.
+fn exact_scoped_compact_form(value: &Value) -> Option<Value> {
+    let current = &value["current"];
+    let forms = &value["actionForms"];
+    let Some(binding) = current["binding"]
+        .as_str()
+        .filter(|binding| !binding.is_empty())
+    else {
+        return None;
+    };
+    let Some(work) = value["work"].as_str().filter(|work| !work.is_empty()) else {
+        return None;
+    };
+    if forms["state"] != "failed_check"
+        || !forms["replacementScope"].is_object()
+        || forms["work"] != work
+        || current["work"] != work
+        || forms["binding"] != binding
+        || value["effectiveAction"]["binding"] != binding
+        || value["effectiveAction"]["exists"] != true
+        || value["transportCompletion"]["complete"] == false
+        || !forms["actor"].is_string()
+        || !forms["assignment"].is_string()
+        || forms["actor"] != current["recipient"]["actor"]
+        || forms["assignment"] != current["recipient"]["assignment"]
+    {
+        return None;
+    }
+    let compact = crate::work::action_forms::compact_projection(forms.clone(), binding);
+    (compact == current["actionForm"]).then_some(compact)
+}
+
 /// Keep one current executable form and one full-detail route on ordinary
 /// steps. Explicit full/detail readers and native packets use their own path.
-fn project_public_step(loaded: &config::Loaded, value: &mut Value) -> bool {
+fn project_public_step(
+    loaded: &config::Loaded,
+    value: &mut Value,
+    exact_scoped_compact: Option<Value>,
+) -> bool {
     let Some(work) = value["work"].as_str().map(str::to_owned) else {
         return false;
     };
@@ -198,6 +235,7 @@ fn project_public_step(loaded: &config::Loaded, value: &mut Value) -> bool {
         }
     }
     let mut action = value["effectiveAction"].clone();
+    let mut remove_scoped_compact = false;
     if let Some(forms) = value["actionForms"].as_object() {
         let mut merged = action.clone();
         let target = merged.as_object_mut().expect("effective action object");
@@ -222,6 +260,10 @@ fn project_public_step(loaded: &config::Loaded, value: &mut Value) -> bool {
                     .as_object_mut()
                     .unwrap()
                     .remove("actionForm");
+            } else {
+                remove_scoped_compact = exact_scoped_compact
+                    .as_ref()
+                    .is_some_and(|prior| value["current"].get("actionForm") == Some(prior));
             }
         }
     }
@@ -248,6 +290,17 @@ fn project_public_step(loaded: &config::Loaded, value: &mut Value) -> bool {
     full["readOnly"] = json!(true);
     full["binding"] = value["current"]["binding"].clone();
     value["full"] = full;
+    if remove_scoped_compact
+        && value["transportCompletion"]["complete"] != false
+        && value["full"]["readOnly"] == true
+        && value["full"]["binding"] == value["current"]["binding"]
+        && value["full"]["command"].is_array()
+    {
+        value["current"]
+            .as_object_mut()
+            .unwrap()
+            .remove("actionForm");
+    }
     let current = value["current"].clone();
     if value["full"]["command"].is_array()
         && value["full"]["binding"] == current["binding"]
@@ -1258,6 +1311,126 @@ mod navigation_delta_tests {
 mod public_step_metadata_tests {
     use super::*;
 
+    fn scoped_step(available: bool) -> Value {
+        let executable = crate::emitted::executable().unwrap();
+        let scope = json!({"state":if available { "validated_current_caller_unbound" } else { "unavailable" },
+            "standaloneAvailable":available});
+        let choice = json!({"label":"preview replacement of an explicitly defective frozen check",
+            "command":{"argv":[executable,"work","replace-check","w","--current-binding","b",
+                "--config","/tmp/config"],"sameExecutableRequired":false,"sameConfigRequired":false},
+            "placeholders":["REASON"],"fill":{"choice":"preview"},"unknownMirrored":{"keep":true}});
+        let mut forms = json!({"state":"failed_check","work":"w","binding":"b",
+            "actor":"lead","assignment":"a","choices":[choice],"replacementScope":scope});
+        if available {
+            let mut standalone = forms["choices"][0].clone();
+            standalone["label"] = json!("preview replacement of an explicitly defective frozen check with standalone successor scope");
+            standalone["command"]["argv"]
+                .as_array_mut()
+                .unwrap()
+                .extend([json!("--successor-scope"), json!("standalone")]);
+            forms["choices"].as_array_mut().unwrap().push(standalone);
+        }
+        let compact = crate::work::action_forms::compact_projection(forms.clone(), "b");
+        json!({"work":"w","effect":"recorded", "current":{"work":"w","binding":"b",
+            "recipient":{"actor":"lead","assignment":"a"},"actionForm":compact},
+            "effectiveAction":{"exists":true,"binding":"b","choices":forms["choices"]},
+            "actionForms":forms})
+    }
+
+    fn scoped_loaded() -> config::Loaded {
+        config::Loaded {
+            config: json!({}),
+            agents: Default::default(),
+            lead: None,
+            architecture_contract: None,
+            capabilities: Vec::new(),
+            workflows: Default::default(),
+            verification_preparation: None,
+            path: "/tmp/config".into(),
+            control_root: "/tmp".into(),
+            product_root: "/tmp".into(),
+            state_root: "/tmp".into(),
+            mode: crate::project::layout_types::Mode::Portable,
+            project_id: None,
+            source: String::new(),
+        }
+    }
+
+    #[test]
+    fn scoped_compact_is_omitted_only_when_complete_and_exactly_reproduced() {
+        let loaded = scoped_loaded();
+        for available in [false, true] {
+            let mut value = scoped_step(available);
+            let expected_choices = value["actionForms"]["choices"].clone();
+            let expected_scope = value["actionForms"]["replacementScope"].clone();
+            let exact = exact_scoped_compact_form(&value);
+            assert!(exact.is_some());
+            crate::work::action_forms::public_return_templates(&mut value, &loaded.path);
+            assert!(project_public_step(&loaded, &mut value, exact));
+            assert!(value["current"].get("actionForm").is_none());
+            assert_eq!(value["effectiveAction"]["choices"], expected_choices);
+            assert_eq!(value["effectiveAction"]["replacementScope"], expected_scope);
+            assert_eq!(
+                value["effectiveAction"]["choices"][0]["unknownMirrored"]["keep"],
+                true
+            );
+            assert!(value["full"]["command"].is_array());
+        }
+        for pointer in [
+            "/current/actionForm/replacementScope/state",
+            "/current/actionForm/choices/0/command/argv/0",
+            "/current/actionForm/binding",
+            "/current/recipient/assignment",
+        ] {
+            let mut value = scoped_step(false);
+            *value.pointer_mut(pointer).unwrap() = json!("changed");
+            let exact = exact_scoped_compact_form(&value);
+            assert!(exact.is_none(), "{pointer}");
+            assert!(project_public_step(&loaded, &mut value, exact));
+            assert!(value["current"].get("actionForm").is_some(), "{pointer}");
+        }
+        let mut extra = scoped_step(false);
+        extra["current"]["actionForm"]["futureUnmatched"] = json!({"retain":true});
+        let exact = exact_scoped_compact_form(&extra);
+        assert!(exact.is_none());
+        assert!(project_public_step(&loaded, &mut extra, exact));
+        assert_eq!(
+            extra["current"]["actionForm"]["futureUnmatched"]["retain"],
+            true
+        );
+        let mut changed_after_precheck = scoped_step(false);
+        let prior = exact_scoped_compact_form(&changed_after_precheck);
+        assert!(prior.is_some());
+        changed_after_precheck["current"]["actionForm"]["futureLate"] = json!({"retain":true});
+        assert!(project_public_step(
+            &loaded,
+            &mut changed_after_precheck,
+            prior
+        ));
+        assert_eq!(
+            changed_after_precheck["current"]["actionForm"]["futureLate"]["retain"],
+            true
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStringExt;
+            let mut no_route = scoped_loaded();
+            no_route.path = std::ffi::OsString::from_vec(b"/tmp/\xff".to_vec()).into();
+            let mut value = scoped_step(false);
+            let prior = exact_scoped_compact_form(&value);
+            assert!(prior.is_some());
+            assert!(project_public_step(&no_route, &mut value, prior));
+            assert!(value["full"].get("command").is_none());
+            assert!(value["current"].get("actionForm").is_some());
+        }
+        let mut incomplete = scoped_step(false);
+        incomplete["transportCompletion"]["complete"] = json!(false);
+        let exact = exact_scoped_compact_form(&incomplete);
+        assert!(exact.is_none());
+        assert!(project_public_step(&loaded, &mut incomplete, exact));
+        assert!(incomplete["current"].get("actionForm").is_some());
+    }
+
     #[test]
     fn actor_step_omits_only_equal_current_facts() {
         let current = json!({"binding":"b","action":"spawn",
@@ -1625,8 +1798,9 @@ fn print_compact_read(loaded: &config::Loaded, value: &serde_json::Value) -> Res
     let mut projected_step = false;
     if value["navigationStep"] == true {
         value.as_object_mut().unwrap().remove("navigationStep");
+        let exact_scoped_compact = exact_scoped_compact_form(&value);
         crate::work::action_forms::public_return_templates(&mut value, &loaded.path);
-        projected_step = project_public_step(loaded, &mut value);
+        projected_step = project_public_step(loaded, &mut value, exact_scoped_compact);
         if projected_step {
             consolidate_mechanical_action(&mut value);
         }
@@ -1901,8 +2075,9 @@ fn bounded_step_json(
     }
     let mut projected_step = false;
     if !forms_only && completed["kind"] != "work_detail" {
+        let exact_scoped_compact = exact_scoped_compact_form(&completed);
         crate::work::action_forms::public_return_templates(&mut completed, &loaded.path);
-        projected_step = project_public_step(loaded, &mut completed);
+        projected_step = project_public_step(loaded, &mut completed, exact_scoped_compact);
     }
     if serde_json::to_vec(&completed)
         .map_err(|error| error.to_string())?

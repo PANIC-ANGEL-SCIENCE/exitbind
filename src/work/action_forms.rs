@@ -471,7 +471,12 @@ fn blocked_replacement_choices(
 }
 
 pub(crate) fn project(loaded: &Loaded, work: &str, next: &Value, binding: &str) -> Value {
-    let mut result = full(loaded, work, next, binding);
+    compact_projection(full(loaded, work, next, binding), binding)
+}
+
+/// Apply the same compact projection to an already selected full form.
+/// This is a value transformation; it does not select a new binding or action.
+pub(crate) fn compact_projection(mut result: Value, binding: &str) -> Value {
     let replacement_choice = |choice: &Value| {
         choice["label"].as_str().is_some_and(|label| {
             label.contains("replacement of an explicitly defective frozen check")
