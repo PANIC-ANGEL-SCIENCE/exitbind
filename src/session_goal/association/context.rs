@@ -45,6 +45,7 @@ fn standalone_observation_for(
         .last()
         .ok_or("the current native Goal is unavailable")?;
     super::super::journey::require_unbound_replacement_coverage(loaded, current, work)?;
+    ensure_no_ancestor_companion(loaded, work)?;
     for record in history {
         if super::super::progress::record_bound_to_work(record, work) {
             return Err("the Work already has a native Goal relation".into());
@@ -71,6 +72,47 @@ fn standalone_observation_for(
             "ownerProjectSha256":crate::evidence::hash::value(&json!(owner.project_id))}),
         goal_event_sha256: event.to_owned(),
     })
+}
+
+/// A successor need not have its own companion, so check every validated
+/// predecessor before treating a missing leaf companion as unbound.
+fn ensure_no_ancestor_companion(loaded: &crate::config::Loaded, work: &str) -> Result<(), String> {
+    const MAX_SUCCESSORS: usize = 64;
+    let mut current = work.to_owned();
+    let mut seen = std::collections::BTreeSet::new();
+    for depth in 0..=MAX_SUCCESSORS {
+        let relative = crate::work::resolve(loaded, &current)?;
+        if !seen.insert(relative.clone()) {
+            return Err("Work successor lineage contains a cycle".into());
+        }
+        let (_, events, _) = crate::run::ledger::load(loaded, &relative)?;
+        let start = events.first().ok_or("Work lineage has no start event")?;
+        if start["action"] != "start" || start["eventSha256"].as_str().is_none() {
+            return Err("Work lineage start identity is invalid".into());
+        }
+        if start["supersedes"].is_null() {
+            return Ok(());
+        }
+        if depth == MAX_SUCCESSORS {
+            return Err("Work successor lineage exceeds the supported bound".into());
+        }
+        let predecessor = start["supersedes"]["ledgerPath"]
+            .as_str()
+            .ok_or("Work successor has no exact predecessor ledger")?;
+        let previous = crate::work::locator_for_ledger(predecessor)
+            .ok_or("Work successor names a non-Work predecessor")?;
+        if crate::work::resolve(loaded, &previous)? != predecessor {
+            return Err("Work successor names a noncanonical predecessor ledger".into());
+        }
+        if companion(loaded, &previous)?.is_some() {
+            return Err(
+                "the Work already has a native or legacy Goal relation in its predecessor lineage"
+                    .into(),
+            );
+        }
+        current = previous;
+    }
+    unreachable!("bounded lineage loop returns or errors")
 }
 
 pub(crate) fn classify_replacement_scope(

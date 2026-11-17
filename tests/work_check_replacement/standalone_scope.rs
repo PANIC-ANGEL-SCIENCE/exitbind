@@ -367,6 +367,239 @@ fn existing_legacy_member_or_pending_admission_refuses_standalone() {
 }
 
 #[test]
+fn foreign_goal_protocol_one_successor_refuses_standalone() {
+    const OWNER: &str = "foreign-lineage-owner";
+    const FOREIGN: &str = "foreign-lineage-other";
+    let fixture = Fixture::new();
+    let store = fixture.root.join(".exitbind/native-test-session-goals");
+    let (member, binding) = native_failed_work(&fixture, OWNER, &store);
+    let first_check = fixture
+        .events(&member)
+        .into_iter()
+        .find(|event| event["action"] == "check")
+        .expect("owner member has a recorded failed check");
+    assert_eq!(first_check["result"]["code"], 1, "{first_check:#}");
+    fixture.ok_in_session(
+        FOREIGN,
+        &store,
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "foreign-lineage-other-goal",
+            "--goal",
+            "A different valid Goal in the same project",
+            "--none-applicable",
+            "obligations,findings,blockers,decisions,externalActions",
+        ],
+    );
+
+    let mut first_args = replacement_args(&member, &binding);
+    let command_index = first_args
+        .iter()
+        .position(|arg| arg == "--check-command")
+        .unwrap();
+    first_args[command_index + 1] = "exit 9".into();
+    let first = fixture.ok_in_session(OWNER, &store, &refs(&first_args));
+    assert_eq!(first["state"], "preview", "first={first:#}");
+    assert_eq!(first["decision"]["protocol"], 1, "first={first:#}");
+    let first_apply = first["applyCommand"]["argv"]
+        .as_array()
+        .unwrap_or_else(|| panic!("protocol-1 apply missing: first={first:#}"))
+        .iter()
+        .map(|arg| arg.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    let applied = fixture.ok_in_session(OWNER, &store, &refs(&first_apply));
+    assert_eq!(applied["effect"], "committed", "applied={applied:#}");
+    assert_eq!(applied["state"], "successor_created", "applied={applied:#}");
+    let successor = applied["successor"]["work"]
+        .as_str()
+        .unwrap_or_else(|| panic!("successor missing: applied={applied:#}"))
+        .to_owned();
+    assert_ne!(successor, member);
+    let owner_detail = full_work_detail_in_session(&fixture, OWNER, &store, &successor);
+    assert_eq!(
+        owner_detail["goalAssociation"]["kind"], "verified_successor_lineage",
+        "owner_detail={owner_detail:#}"
+    );
+    assert_eq!(
+        owner_detail["goalAssociation"]["originalMemberWork"].as_str(),
+        Some(member.as_str()),
+        "owner_detail={owner_detail:#}"
+    );
+    let member_companion = fixture.root.join(format!(
+        ".exitbind/runs/work-{}.session-goal.json",
+        &member[4..]
+    ));
+    let successor_companion = fixture.root.join(format!(
+        ".exitbind/runs/work-{}.session-goal.json",
+        &successor[4..]
+    ));
+    assert!(member_companion.is_file());
+    assert!(!successor_companion.exists());
+
+    for (role, outcome) in [("lead", "scoped"), ("worker", "completed")] {
+        let next = fixture.ok_in_session(
+            OWNER,
+            &store,
+            &["work", "next", &successor, "--json", "--full"],
+        );
+        assert_eq!(next["next"]["role"], role, "next={next:#}");
+        let assignment = next["next"]["assignment"]
+            .as_str()
+            .unwrap_or_else(|| panic!("assignment missing: next={next:#}"));
+        let returned = fixture.ok_in_session(
+            OWNER,
+            &store,
+            &[
+                "work",
+                "return",
+                &successor,
+                assignment,
+                "--outcome",
+                outcome,
+            ],
+        );
+        assert_eq!(returned["effect"], "recorded", "returned={returned:#}");
+    }
+    let failed = fixture.call_in_session(
+        OWNER,
+        &store,
+        &["work", "check", &successor, "--timeout-ms", "2000"],
+    );
+    assert!(!failed.status.success(), "failed={failed:?}");
+    let failed_json: Value = serde_json::from_slice(&failed.stdout)
+        .unwrap_or_else(|error| panic!("{error}: failed={failed:?}"));
+    assert_eq!(failed_json["effect"], "recorded", "failed={failed_json:#}");
+    assert_eq!(failed_json["result"]["code"], 9, "failed={failed_json:#}");
+
+    let owner_next = fixture.ok_in_session(
+        OWNER,
+        &store,
+        &["work", "next", &successor, "--json", "--full"],
+    );
+    let owner_current = &owner_next["next"]["current"];
+    assert_eq!(
+        owner_current["actionForm"]["replacementScope"]["state"], "bound",
+        "owner_next={owner_next:#}"
+    );
+    let owner_args = replacement_args(&successor, owner_current["binding"].as_str().unwrap());
+    let owner_preview = fixture.ok_in_session(OWNER, &store, &refs(&owner_args));
+    assert_eq!(owner_preview["state"], "preview", "{owner_preview:#}");
+    assert_eq!(
+        owner_preview["decision"]["protocol"], 1,
+        "{owner_preview:#}"
+    );
+
+    // Obtain a real decision for a different, genuinely unbound Work. It is
+    // deliberately not authority for the foreign successor below.
+    let (unbound, _) = fixture.begin_failed_check();
+    let unbound_next = fixture.ok_in_session(
+        FOREIGN,
+        &store,
+        &["work", "next", &unbound, "--json", "--full"],
+    );
+    let unbound_current = &unbound_next["next"]["current"];
+    assert_eq!(
+        unbound_current["actionForm"]["replacementScope"]["state"],
+        "validated_current_caller_unbound",
+        "unbound_next={unbound_next:#}"
+    );
+    let mut unbound_args = replacement_args(&unbound, unbound_current["binding"].as_str().unwrap());
+    unbound_args.extend(["--successor-scope".into(), "standalone".into()]);
+    let unbound_preview = fixture.ok_in_session(FOREIGN, &store, &refs(&unbound_args));
+    assert_eq!(unbound_preview["state"], "preview", "{unbound_preview:#}");
+    assert_eq!(
+        unbound_preview["decision"]["protocol"], 2,
+        "{unbound_preview:#}"
+    );
+    let other_decision = unbound_preview["decision"]["scopeDecisionSha256"]
+        .as_str()
+        .unwrap_or_else(|| panic!("unbound decision missing: {unbound_preview:#}"));
+
+    let owner_goal = fixture.ok_in_session(OWNER, &store, &["goal", "status", "--json"]);
+    let foreign_goal = fixture.ok_in_session(FOREIGN, &store, &["goal", "status", "--json"]);
+    assert_ne!(owner_goal["goalId"], foreign_goal["goalId"]);
+    assert!(owner_goal["journeyMembers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry["work"].as_str() == Some(member.as_str())));
+    assert!(foreign_goal["journeyMembers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|entry| entry["work"].as_str() != Some(member.as_str())
+            && entry["work"].as_str() != Some(successor.as_str())));
+    let owner_journal = native_session_root(&store, OWNER).join(".exitbind/session-goal.jsonl");
+    let foreign_journal = native_session_root(&store, FOREIGN).join(".exitbind/session-goal.jsonl");
+    let owner_before = fs::read(&owner_journal).unwrap();
+    let foreign_before = fs::read(&foreign_journal).unwrap();
+    let member_before = fs::read(fixture.ledger(&member)).unwrap();
+    let successor_before = fs::read(fixture.ledger(&successor)).unwrap();
+    let successor_claim = PathBuf::from(format!(
+        "{}.supersede",
+        fixture.ledger(&successor).display()
+    ));
+    assert!(!successor_claim.exists());
+
+    let next = fixture.ok_in_session(
+        FOREIGN,
+        &store,
+        &["work", "next", &successor, "--json", "--full"],
+    );
+    let current = &next["next"]["current"];
+    let scope = &current["actionForm"]["replacementScope"];
+    assert_eq!(scope["state"], "unavailable", "next={next:#}");
+    assert_eq!(scope["standaloneAvailable"], false, "next={next:#}");
+    assert!(
+        scope["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("predecessor lineage")),
+        "next={next:#}"
+    );
+    let choices = current["actionForm"]["choices"]
+        .as_array()
+        .unwrap_or_else(|| panic!("choices missing: next={next:#}"));
+    assert!(
+        !choices.iter().any(|choice| {
+            choice["command"]["argv"].as_array().is_some_and(|argv| {
+                argv.windows(2)
+                    .any(|pair| pair[0] == "--successor-scope" && pair[1] == "standalone")
+            })
+        }),
+        "foreign standalone choice exposed: next={next:#}"
+    );
+    let mut foreign_args = replacement_args(&successor, current["binding"].as_str().unwrap());
+    foreign_args.extend(["--successor-scope".into(), "standalone".into()]);
+    let preview = fixture.call_in_session(FOREIGN, &store, &refs(&foreign_args));
+    assert!(!preview.status.success(), "preview={preview:?}");
+    assert!(
+        String::from_utf8_lossy(&preview.stderr).contains("predecessor lineage"),
+        "preview={preview:?}"
+    );
+    foreign_args.extend([
+        "--scope-decision-sha256".into(),
+        other_decision.into(),
+        "--apply".into(),
+    ]);
+    let apply = fixture.call_in_session(FOREIGN, &store, &refs(&foreign_args));
+    assert!(!apply.status.success(), "apply={apply:?}");
+    assert!(
+        String::from_utf8_lossy(&apply.stderr).contains("predecessor lineage"),
+        "apply={apply:?}"
+    );
+    assert!(!successor_claim.exists());
+    assert_eq!(fs::read(fixture.ledger(&member)).unwrap(), member_before);
+    assert_eq!(
+        fs::read(fixture.ledger(&successor)).unwrap(),
+        successor_before
+    );
+    assert_eq!(fs::read(owner_journal).unwrap(), owner_before);
+    assert_eq!(fs::read(foreign_journal).unwrap(), foreign_before);
+}
+
+#[test]
 fn changed_caller_goal_head_config_or_scope_refuses_before_claim() {
     let changed_head = Case::new();
     let stale = changed_head.apply_args();
