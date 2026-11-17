@@ -581,6 +581,20 @@ pub(crate) fn obtain_claim(path: &Path, wanted: &Value) -> Result<SupersessionCl
     }
 }
 
+/// Resume only a claim that already exists. Unlike `obtain_claim`, this must
+/// never create a new reservation if the inspected recovery intent vanished.
+pub(crate) fn recover_existing_claim(
+    path: &Path,
+    wanted: &Value,
+) -> Result<SupersessionClaim, String> {
+    let value = valid_claim(path)?.ok_or("saved successor claim disappeared; recovery stopped")?;
+    assert_claim_request(&value, wanted)?;
+    Ok(SupersessionClaim {
+        value,
+        created_inode: None,
+    })
+}
+
 /// Apply the same stable-request comparison before and during claim creation.
 pub(crate) fn assert_claim_request(value: &Value, wanted: &Value) -> Result<(), String> {
     validate_claim(value)?;
@@ -798,6 +812,14 @@ fn now() -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn missing_recovery_claim_is_not_recreated() {
+        let root = crate::test_root::temp("missing-recovery-claim");
+        let path = root.join("absent.supersede");
+        assert!(recover_existing_claim(&path, &json!({})).is_err());
+        assert!(!path.exists());
+    }
 
     fn fixture() -> (crate::test_root::TempRoot, LedgerPath, String) {
         let root = crate::test_root::temp("run-ledger");

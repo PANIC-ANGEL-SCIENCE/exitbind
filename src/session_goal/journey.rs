@@ -419,6 +419,28 @@ pub(crate) fn find_admission(record: &Value, work: &str) -> Result<Option<Admiss
     }))
 }
 
+/// Standalone replacement is available only with complete, settled native
+/// admission coverage. It never creates or resolves an admission.
+pub(crate) fn require_unbound_replacement_coverage(
+    loaded: &Loaded,
+    record: &Value,
+    work: &str,
+) -> Result<(), String> {
+    let journey = state(record)?.ok_or("native Goal admission coverage is unavailable")?;
+    if journey.protocol < MEMBERSHIP_PROTOCOL {
+        return Err("native Goal admission coverage is unavailable".into());
+    }
+    let ancestors = integration::ancestors(loaded, work)?;
+    if journey
+        .admissions
+        .iter()
+        .any(|item| ancestors.contains(&item.work))
+    {
+        return Err("check replacement is blocked by unresolved native Goal admissions".into());
+    }
+    Ok(())
+}
+
 pub(crate) fn new_admission(
     loaded: &Loaded,
     request: AdmissionRequest<'_>,

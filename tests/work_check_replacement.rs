@@ -9,3 +9,5 @@ mod refusal_and_native_lineage;
 mod replacement_lifecycle;
 #[path = "work_check_replacement/source_and_binding_validation.rs"]
 mod source_and_binding_validation;
+#[path = "work_check_replacement/standalone_scope.rs"]
+mod standalone_scope;

@@ -349,7 +349,8 @@ cannot assess the intended task, use the preview-first, current-binding
 predecessor head, failed-check or blocked-worker source event, reason and
 configured Lead owner. The predecessor remains unchanged; no old pass, review
 or grant transfers. See [continue after a defective frozen check](check-replacement.md)
-for the command and refusal boundaries. Ordinary assertion, environment,
+for command and refusal boundaries, including the optional explicit standalone
+successor and its freshness check. Ordinary assertion, environment,
 timeout and uncertain-effect failures do not establish a defective contract.
 
 A blocked same-goal governor normally stays absorbing. One narrow successor

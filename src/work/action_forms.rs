@@ -528,6 +528,39 @@ pub(crate) fn full_with_grant_offer(
 ) -> (Value, Option<GrantOffer>) {
     let mut offer = None;
     let mut result = forms(loaded, work, next, binding, &mut offer);
+    let replacements: Vec<Value> = result["choices"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|choice| {
+            choice["command"]["argv"]
+                .as_array()
+                .is_some_and(|argv| argv.iter().any(|arg| arg == "replace-check"))
+        })
+        .cloned()
+        .collect();
+    if !replacements.is_empty() {
+        let scope = crate::session_goal::association::replacement_scope_projection(loaded, work);
+        if scope["standaloneAvailable"] == true {
+            for mut choice in replacements {
+                if let Some(argv) = choice["command"]["argv"].as_array_mut() {
+                    let pre_return = argv.iter().any(|arg| arg == "--pre-return-command");
+                    argv.retain(|arg| arg != "--apply");
+                    argv.extend([json!("--successor-scope"), json!("standalone")]);
+                    choice["label"] = json!(if pre_return {
+                        "preview replacement of an explicitly defective frozen pre-return check with standalone successor scope"
+                    } else {
+                        "preview replacement of an explicitly defective frozen check with standalone successor scope"
+                    });
+                    choice["sideEffect"] = json!("preview only; apply requires the emitted scope-decision fingerprint and current binding");
+                    if let Some(choices) = result["choices"].as_array_mut() {
+                        choices.push(choice);
+                    }
+                }
+            }
+        }
+        result["replacementScope"] = scope;
+    }
     fill::attach(loaded, work, binding, &mut result);
     (result, offer)
 }

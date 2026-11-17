@@ -53,7 +53,9 @@ pub(crate) use companion::{
     read_private_companion, write_private_companion, PrivateCompanionWrite,
 };
 pub(crate) use context::{
-    context_for_work, context_for_work_readonly, context_for_work_with_root, verify_owner_session,
+    classify_replacement_scope, context_for_work, context_for_work_readonly,
+    context_for_work_with_root, durable_standalone_scope, replacement_scope_projection,
+    scope_decision_sha256, verify_owner_session, with_standalone_claim, ReplacementScope,
 };
 pub(super) use record::{
     entries, for_work, preserve_same_goal, public_record, valid_sha, valid_work, validate_record,

@@ -4,6 +4,207 @@ use super::super::native::Access;
 use super::*;
 use serde_json::json;
 
+/// A validated current caller and Goal observation, without creating a Work
+/// association or treating a host-reported selector as authentication.
+pub(crate) struct StandaloneObservation {
+    pub(crate) caller: Value,
+    goal_event_sha256: String,
+}
+
+pub(crate) enum ReplacementScope {
+    Bound,
+    ValidatedCurrentCallerUnbound(StandaloneObservation),
+    Unavailable(String),
+    Invalid,
+}
+
+pub(crate) fn standalone_observation(
+    loaded: &crate::config::Loaded,
+    work: &str,
+) -> Result<StandaloneObservation, String> {
+    let session = super::super::native::current_with_access(Access::RequireWritable)?
+        .ok_or("a current native caller is required for standalone replacement")?;
+    let history = super::super::records(&session.root)?;
+    standalone_observation_for(loaded, work, session, Access::RequireWritable, &history)
+}
+
+fn standalone_observation_for(
+    loaded: &crate::config::Loaded,
+    work: &str,
+    session: super::super::native::Session,
+    access: Access,
+    history: &[Value],
+) -> Result<StandaloneObservation, String> {
+    if companion(loaded, work)?.is_some() || legacy_goal_is_bound(loaded, work, &session, access)? {
+        return Err("the Work already has a native or legacy Goal relation".into());
+    }
+    let owner = session
+        .owner_with_access(access)?
+        .ok_or("the current native Goal owner is unavailable")?;
+    let current = history
+        .last()
+        .ok_or("the current native Goal is unavailable")?;
+    super::super::journey::require_unbound_replacement_coverage(loaded, current, work)?;
+    for record in history {
+        if super::super::progress::record_bound_to_work(record, work) {
+            return Err("the Work already has a native Goal relation".into());
+        }
+        if let Some(member) =
+            super::super::journey::member_for_work_with_lineage(loaded, record, work)?
+        {
+            super::super::journey::validate_member_for_session(loaded, &member, &session, &owner)?;
+            return Err("the Work already has a native Goal member or successor relation".into());
+        }
+    }
+    let event = current["eventSha256"]
+        .as_str()
+        .filter(|value| valid_sha(value))
+        .ok_or("the current native Goal observation is invalid")?;
+    let root = session
+        .root
+        .to_str()
+        .ok_or("the current native Goal root is not valid UTF-8")?;
+    Ok(StandaloneObservation {
+        caller: json!({"host":session.host,"sessionKey":session.key,
+            "selectorKey":session.selector_key,"rootSha256":crate::evidence::hash::text(root),
+            "ownerIdentitySha256":owner.identity_sha256,
+            "ownerProjectSha256":crate::evidence::hash::value(&json!(owner.project_id))}),
+        goal_event_sha256: event.to_owned(),
+    })
+}
+
+pub(crate) fn classify_replacement_scope(
+    loaded: &crate::config::Loaded,
+    work: &str,
+) -> ReplacementScope {
+    match context_for_work(loaded, work) {
+        WorkContext::Owner(_) | WorkContext::Session(_) | WorkContext::Local => {
+            ReplacementScope::Bound
+        }
+        WorkContext::Invalid => ReplacementScope::Invalid,
+        WorkContext::Unavailable | WorkContext::NotRequested => {
+            match standalone_observation(loaded, work) {
+                Ok(observation) => ReplacementScope::ValidatedCurrentCallerUnbound(observation),
+                Err(error) => ReplacementScope::Unavailable(error),
+            }
+        }
+    }
+}
+
+pub(crate) fn replacement_scope_projection(loaded: &crate::config::Loaded, work: &str) -> Value {
+    match classify_replacement_scope(loaded, work) {
+        ReplacementScope::Bound => json!({
+            "state":"bound", "standaloneAvailable":false,
+            "reason":"an existing native or local Goal relation must be preserved"}),
+        ReplacementScope::Invalid => json!({"state":"invalid", "standaloneAvailable":false,
+            "reason":"the current Goal association is malformed or foreign"}),
+        ReplacementScope::ValidatedCurrentCallerUnbound(_) => json!({
+            "state":"validated_current_caller_unbound", "standaloneAvailable":true,
+            "reason":"the current caller and Goal owner are valid and no applicable Work relation was found"}),
+        ReplacementScope::Unavailable(reason) => {
+            json!({"state":"unavailable", "standaloneAvailable":false,
+            "reason":reason})
+        }
+    }
+}
+
+/// Hash the preview's exact decision inputs; this is not a permanent Goal
+/// revision requirement on the committed successor.
+pub(crate) fn scope_decision_sha256(
+    loaded: &crate::config::Loaded,
+    work: &str,
+    relation: &Value,
+    observation: &StandaloneObservation,
+) -> String {
+    let mut unsigned = relation.clone();
+    if let Some(object) = unsigned.as_object_mut() {
+        object.remove("scopeDecisionSha256");
+    }
+    crate::evidence::hash::value(&json!({"version":1,"work":work,
+        "configPath":loaded.path,"configSha256":crate::evidence::hash::text(&loaded.source),
+        "productRoot":loaded.product_root,"controlRoot":loaded.control_root,
+        "stateRoot":loaded.state_root,"projectId":loaded.project_id,
+        "goalEventSha256":observation.goal_event_sha256,"decision":unsigned}))
+}
+
+/// Recheck the exact preview while holding the Goal journal lock through the
+/// predecessor claim. The caller already holds the predecessor Work lock.
+pub(crate) fn with_standalone_claim<T>(
+    loaded: &crate::config::Loaded,
+    work: &str,
+    relation: &Value,
+    action: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    let session = super::super::native::current_with_access(Access::RequireWritable)?
+        .ok_or("a current native caller is required for standalone replacement")?;
+    let root = session.root.clone();
+    super::super::with_history(&root, |history| {
+        if std::fs::read_to_string(&loaded.path).map_err(|error| error.to_string())?
+            != loaded.source
+        {
+            return Err("project configuration changed after preview; no claim was created".into());
+        }
+        let binding = relation["scope"]["currentBinding"]
+            .as_str()
+            .ok_or("standalone scope has no current Work binding")?;
+        crate::work::details::ensure_action_binding(loaded, work, Some(binding))?;
+        let observation =
+            standalone_observation_for(loaded, work, session, Access::RequireWritable, history)?;
+        if relation["scope"]["caller"] != observation.caller
+            || relation["scopeDecisionSha256"].as_str()
+                != Some(scope_decision_sha256(loaded, work, relation, &observation).as_str())
+        {
+            return Err(
+                "standalone scope decision changed after preview; no claim was created".into(),
+            );
+        }
+        action()
+    })
+}
+
+pub(crate) fn durable_standalone_scope(
+    loaded: &crate::config::Loaded,
+    work: &str,
+    access: Access,
+) -> Result<bool, String> {
+    let ledger = crate::work::resolve(loaded, work)?;
+    let (_, events, _) = crate::run::ledger::load(loaded, &ledger)?;
+    let Some(marker) = events
+        .first()
+        .and_then(|start| start.get("checkReplacement"))
+    else {
+        return Ok(false);
+    };
+    if marker["protocol"].as_u64() != Some(2) {
+        return Ok(false);
+    }
+    // RunSnapshot validates the claimed predecessor/start pair, not just the
+    // marker's shape, before the marker affects association resolution.
+    crate::run::RunSnapshot::capture(loaded, &ledger)?;
+    let session = super::super::native::current_with_access(access)?
+        .ok_or("the standalone successor's native caller is unavailable")?;
+    let history = super::super::records(&session.root)?;
+    let observation = standalone_observation_for(loaded, work, session, access, &history)?;
+    // A verified adopted child may have its own selector while reading the
+    // same owner journal. The selector was bound at preview/apply; subsequent
+    // lifecycle reads require the same validated journal and owner, not that
+    // every participant reuse the Lead's selector.
+    let caller = &marker["scope"]["caller"];
+    if [
+        "host",
+        "sessionKey",
+        "rootSha256",
+        "ownerIdentitySha256",
+        "ownerProjectSha256",
+    ]
+    .iter()
+    .any(|field| caller[field] != observation.caller[field])
+    {
+        return Err("the standalone successor's caller or Goal owner changed".into());
+    }
+    Ok(true)
+}
+
 /// Resolve an optional native-session context without making malformed or
 /// foreign context a failure of ordinary Work detail and recovery routes.
 pub(crate) fn context_for_work(loaded: &crate::config::Loaded, work: &str) -> WorkContext {
@@ -29,6 +230,11 @@ fn context_for_work_with_access(
     work: &str,
     access: Access,
 ) -> super::WorkContextResolution {
+    match durable_standalone_scope(loaded, work, access) {
+        Ok(true) => return resolution(WorkContext::NotRequested, None),
+        Ok(false) => {}
+        Err(_) => return resolution(WorkContext::Invalid, None),
+    }
     let value = match companion(loaded, work) {
         Ok(Some(value)) => value,
         Ok(None) => {

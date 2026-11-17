@@ -8,6 +8,11 @@ use crate::config::Loaded;
 use serde_json::{json, Value};
 
 fn replacement_policy_projection(marker: &Value, mut relation: Value) -> Value {
+    if marker["protocol"].as_u64() == Some(crate::run::check_replacement::STANDALONE_PROTOCOL) {
+        relation["successorScope"] = json!({"kind":"standalone",
+            "basis":"validated_current_caller_unbound"});
+        relation["scopeDecisionSha256"] = marker["scopeDecisionSha256"].clone();
+    }
     if marker["target"] == "pre_return" {
         relation["target"] = json!("pre_return");
         for side in ["predecessor", "successor"] {

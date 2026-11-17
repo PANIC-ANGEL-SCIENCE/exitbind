@@ -77,6 +77,8 @@ pub fn supersede_with_policy(
         None,
         None,
         None,
+        None,
+        false,
     )
 }
 
@@ -117,6 +119,8 @@ pub fn supersede_with_owner_recovery(
         None,
         None,
         None,
+        None,
+        false,
     )
 }
 
@@ -140,6 +144,8 @@ pub(super) fn supersede_with_policy_and_recovery(
     expected_head_event_sha256: Option<&str>,
     check_replacement: Option<Value>,
     pre_return_policy_override: Option<crate::run_value::PreReturnPolicy>,
+    current_scope_observation: Option<Value>,
+    require_existing_claim: bool,
 ) -> Result<Value, String> {
     supersede_with_hook(
         SupersedeRequest {
@@ -161,6 +167,8 @@ pub(super) fn supersede_with_policy_and_recovery(
             expected_head_event_sha256,
             check_replacement,
             pre_return_policy_override,
+            current_scope_observation,
+            require_existing_claim,
         },
         None,
     )
@@ -197,6 +205,8 @@ pub(crate) fn supersede_with_native_admission(
             expected_head_event_sha256: None,
             check_replacement: None,
             pre_return_policy_override: None,
+            current_scope_observation: None,
+            require_existing_claim: false,
         },
         Some(before_claim),
     )
@@ -221,6 +231,8 @@ struct SupersedeRequest<'a> {
     expected_head_event_sha256: Option<&'a str>,
     check_replacement: Option<Value>,
     pre_return_policy_override: Option<crate::run_value::PreReturnPolicy>,
+    current_scope_observation: Option<Value>,
+    require_existing_claim: bool,
 }
 
 fn supersede_with_hook(
@@ -246,6 +258,8 @@ fn supersede_with_hook(
         expected_head_event_sha256,
         mut check_replacement,
         pre_return_policy_override,
+        current_scope_observation,
+        require_existing_claim,
     } = request;
     if workflow.trim().is_empty() {
         return Err("workflow is required".into());
@@ -270,6 +284,17 @@ fn supersede_with_hook(
         let (_, old_events, old_source) = load_at(loaded, &old)?;
         let old_state = run_state::reduce(&old_events)?;
         crate::run::quarantine::refuse_mutation(&old_state, "supersession or replacement")?;
+        if old_events[0]["checkReplacement"]["protocol"].as_u64()
+            == Some(crate::run::check_replacement::STANDALONE_PROTOCOL)
+            && check_replacement
+                .as_ref()
+                .and_then(|value| value["protocol"].as_u64())
+                != Some(crate::run::check_replacement::STANDALONE_PROTOCOL)
+        {
+            return Err(
+                "a standalone predecessor requires an explicit standalone successor preview".into(),
+            );
+        }
         if check_replacement.is_some()
             && old_events
                 .last()
@@ -686,7 +711,43 @@ fn supersede_with_hook(
         } else {
             None
         };
-        let claim = obtain_claim(&claim_path, &wanted_claim)?;
+        let standalone_context = if let Some(replacement) =
+            check_replacement.as_ref().filter(|value| {
+                value["protocol"].as_u64()
+                    == Some(crate::run::check_replacement::STANDALONE_PROTOCOL)
+            }) {
+            let current = current_scope_observation
+                .as_ref()
+                .ok_or("standalone replacement has no current scope observation")?;
+            let mut comparable = current.clone();
+            comparable["scope"]["currentBinding"] = replacement["scope"]["currentBinding"].clone();
+            comparable["scopeDecisionSha256"] = replacement["scopeDecisionSha256"].clone();
+            if &comparable != replacement {
+                return Err("current standalone decision differs from the saved intent".into());
+            }
+            let work = crate::work::locator_for_ledger(&old_rel)
+                .ok_or("standalone predecessor is not a canonical Work")?;
+            Some((work, current))
+        } else {
+            if current_scope_observation.is_some() {
+                return Err("a current scope observation requires standalone replacement".into());
+            }
+            None
+        };
+        if require_existing_claim && standalone_context.is_none() {
+            return Err("saved-claim recovery requires a standalone replacement".into());
+        }
+        let claim = if let Some((work, current)) = &standalone_context {
+            crate::session_goal::association::with_standalone_claim(loaded, work, current, || {
+                if require_existing_claim {
+                    crate::run::ledger::recover_existing_claim(&claim_path, &wanted_claim)
+                } else {
+                    obtain_claim(&claim_path, &wanted_claim)
+                }
+            })?
+        } else {
+            obtain_claim(&claim_path, &wanted_claim)?
+        };
         let mut event_value = build_event(&claim.value)?;
         let ticket = crate::project::continuation::runtime::prepare_successor(
             loaded,
@@ -709,7 +770,7 @@ fn supersede_with_hook(
         if new.path.exists() {
             let (_, existing, _) = load_at(loaded, &new)?;
             successor_protocol::assert_same_request(&existing, &event)?;
-            return Ok(successor_protocol::attach_goal_linkage(
+            let mut value = successor_protocol::attach_goal_linkage(
                 loaded,
                 &new_rel,
                 attach_successor_work(
@@ -717,17 +778,39 @@ fn supersede_with_hook(
                     claim.value["newLedgerPath"].as_str().unwrap_or_default(),
                     result(&existing)?,
                 ),
-            ));
+            );
+            if standalone_context.is_some() {
+                value["scopeStartEffect"] = json!("already_present");
+            }
+            return Ok(value);
         }
-        if let Err(error) = append(&new, &event, true, "") {
+        let append_result = if let Some((work, current)) = &standalone_context {
+            crate::session_goal::association::with_standalone_claim(loaded, work, current, || {
+                let saved = crate::run::ledger::valid_claim(&claim_path)?
+                    .ok_or("saved successor claim disappeared; recovery stopped")?;
+                if saved != claim.value {
+                    return Err(
+                        "saved successor claim changed before start; recovery stopped".into(),
+                    );
+                }
+                append(&new, &event, true, "")
+            })
+        } else {
+            append(&new, &event, true, "")
+        };
+        if let Err(error) = append_result {
             rollback_claim(&claim_path, &claim);
             return Err(error);
         }
         super::continuation_effect::complete(loaded, &ticket, true, true)?;
-        Ok(successor_protocol::attach_goal_linkage(
+        let mut value = successor_protocol::attach_goal_linkage(
             loaded,
             &new_rel,
             attach_successor_work(loaded, &new_rel, result(&[event])?),
-        ))
+        );
+        if standalone_context.is_some() {
+            value["scopeStartEffect"] = json!("recorded");
+        }
+        Ok(value)
     })
 }

@@ -20,7 +20,18 @@ pub fn replace_check_contract(
     expected_head_event_sha256: &str,
     lead_agent: &str,
     lead_native_task_name: &str,
+    scope_relation: Option<&Value>,
+    current_scope_observation: Option<&Value>,
+    require_existing_claim: bool,
 ) -> Result<Value, String> {
+    let mut marker = json!({
+        "protocol": 1,
+        "classification": "defective_contract",
+        "reason": reason,
+        "source": {"kind": source_kind, "eventSha256": source_event_sha256},
+        "leadOwner": {"agent": lead_agent, "nativeTaskName": lead_native_task_name},
+    });
+    attach_scope(&mut marker, scope_relation);
     supersede_with_policy_and_recovery(
         loaded,
         old_ledger,
@@ -38,14 +49,10 @@ pub fn replace_check_contract(
         None,
         None,
         Some(expected_head_event_sha256),
-        Some(json!({
-            "protocol": 1,
-            "classification": "defective_contract",
-            "reason": reason,
-            "source": {"kind": source_kind, "eventSha256": source_event_sha256},
-            "leadOwner": {"agent": lead_agent, "nativeTaskName": lead_native_task_name},
-        })),
+        Some(marker),
         None,
+        current_scope_observation.cloned(),
+        require_existing_claim,
     )
 }
 
@@ -63,6 +70,9 @@ pub fn replace_pre_return_contract(
     expected_head_event_sha256: &str,
     lead_agent: &str,
     lead_native_task_name: &str,
+    scope_relation: Option<&Value>,
+    current_scope_observation: Option<&Value>,
+    require_existing_claim: bool,
 ) -> Result<Value, String> {
     let (_, old_events, _) = load(loaded, old_ledger)?;
     let old_state = reduce_live(loaded, &old_events)?;
@@ -72,6 +82,17 @@ pub fn replace_pre_return_contract(
     let old_policy = crate::run::gate::value::pre_return_policy_from_value(old_policy, 0)?;
     let old_policy_sha256 = crate::evidence::hash::value(&old_policy.value());
     let new_policy_sha256 = crate::evidence::hash::value(&policy.value());
+    let mut marker = json!({
+        "protocol": 1,
+        "target": "pre_return",
+        "classification": "defective_contract",
+        "reason": reason,
+        "source": {"kind":"blocked_worker","eventSha256":source_event_sha256,"attemptId":attempt_id},
+        "leadOwner": {"agent":lead_agent,"nativeTaskName":lead_native_task_name},
+        "oldPolicy": {"policySha256":old_policy_sha256},
+        "newPolicy": {"policySha256":new_policy_sha256},
+    });
+    attach_scope(&mut marker, scope_relation);
     supersede_with_policy_and_recovery(
         loaded,
         old_ledger,
@@ -89,18 +110,19 @@ pub fn replace_pre_return_contract(
         None,
         None,
         Some(expected_head_event_sha256),
-        Some(json!({
-            "protocol": 1,
-            "target": "pre_return",
-            "classification": "defective_contract",
-            "reason": reason,
-            "source": {"kind":"blocked_worker","eventSha256":source_event_sha256,"attemptId":attempt_id},
-            "leadOwner": {"agent":lead_agent,"nativeTaskName":lead_native_task_name},
-            "oldPolicy": {"policySha256":old_policy_sha256},
-            "newPolicy": {"policySha256":new_policy_sha256},
-        })),
+        Some(marker),
         Some(policy),
+        current_scope_observation.cloned(),
+        require_existing_claim,
     )
+}
+
+fn attach_scope(marker: &mut Value, relation: Option<&Value>) {
+    if let Some(relation) = relation {
+        for field in ["protocol", "scope", "scopeDecisionSha256"] {
+            marker[field] = relation[field].clone();
+        }
+    }
 }
 
 /// Bind a replacement marker to the predecessor it replaces: the exact

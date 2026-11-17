@@ -4,6 +4,33 @@ A check policy is part of an immutable run start. If the configured Lead determi
 
 Read current Work detail and use its current binding. Preview the explicit Lead decision:
 
+When the active native caller and Goal owner are verified and this Work has no
+matching member, companion, legacy binding or applicable pending admission, the
+Lead may explicitly select `--successor-scope standalone` in the preview. The
+current Goal must provide the validated native journey admission coverage used
+by the existing replacement guard. A legacy protocol-1 Goal or missing coverage
+does not establish that absence and remains unavailable; this command does not
+upgrade a Goal. Actual eligibility must be observed for the selected caller.
+The preview returns a `scopeDecisionSha256` and an exact apply command. Apply must
+use that fingerprint and current binding; a changed caller, Goal observation,
+Work head, configuration, policy or reason requires a fresh preview. The
+selection describes only the future successor; it does not characterize the
+predecessor's unknown history, add a Goal member, or transfer prior credit.
+The committed scope remains valid across unrelated later Goal revisions, while
+contradictory or unreadable association evidence continues to refuse action.
+Omitting the scope retains the existing association rules. Replacing an already
+standalone successor requires a fresh explicit standalone preview.
+
+An exact replay with an authoritative successor start is read-only. If only an
+exact protocol-2 claim exists, its preview reports `partial_successor_claim` and
+offers a separate explicit recovery apply. That apply rechecks the recorded
+intent and current caller, binding, Goal associations and pending admissions,
+then records the reserved start under the existing claim. It does not replace
+unknown bytes or make another claim. The emitted command includes
+`--recover-partial`, which refuses if the saved claim has disappeared. A
+protocol-1 partial claim retains its
+existing inspection-only recovery behavior.
+
 ```sh
 exitbind work replace-check WORK \
   --check-command 'cargo test --test intended_case' \

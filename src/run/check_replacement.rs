@@ -5,6 +5,7 @@
 use serde_json::Value;
 
 pub(crate) const PROTOCOL: u64 = 1;
+pub(crate) const STANDALONE_PROTOCOL: u64 = 2;
 
 pub(crate) fn frozen_plan(loaded: &crate::config::Loaded, start: &Value) -> Result<Value, String> {
     frozen_plan_for(loaded, start, "check replacement")
@@ -98,16 +99,46 @@ pub(crate) fn validate_marker(value: &Value, line: usize) -> Result<(), String> 
         "oldPolicy",
         "newPolicy",
     ];
-    if object
-        .keys()
-        .any(|key| !expected.contains(&key.as_str()) && key != "target")
-        || object.len() != expected.len() + usize::from(object.contains_key("target"))
-        || value["protocol"].as_u64() != Some(PROTOCOL)
+    let protocol = value["protocol"].as_u64();
+    let standalone = protocol == Some(STANDALONE_PROTOCOL);
+    if object.keys().any(|key| {
+        !expected.contains(&key.as_str())
+            && key != "target"
+            && !(standalone && matches!(key.as_str(), "scope" | "scopeDecisionSha256"))
+    }) || object.len()
+        != expected.len() + usize::from(object.contains_key("target")) + usize::from(standalone) * 2
+        || !matches!(protocol, Some(PROTOCOL | STANDALONE_PROTOCOL))
         || value["classification"] != "defective_contract"
         || !bounded_text(value["reason"].as_str(), 1024)
         || !sha(value["predecessorHeadEventSha256"].as_str())
     {
         return Err(invalid());
+    }
+    if standalone {
+        let scope = value["scope"].as_object().ok_or_else(invalid)?;
+        let caller = value["scope"]["caller"].as_object().ok_or_else(invalid)?;
+        if scope.len() != 4
+            || value["scope"]["kind"] != "standalone"
+            || value["scope"]["basis"] != "validated_current_caller_unbound"
+            || !sha(value["scope"]["currentBinding"].as_str())
+            || !sha(value["scopeDecisionSha256"].as_str())
+            || caller.len() != 6
+            || !matches!(
+                value["scope"]["caller"]["host"].as_str(),
+                Some("codex" | "claude")
+            )
+            || [
+                "sessionKey",
+                "selectorKey",
+                "rootSha256",
+                "ownerIdentitySha256",
+                "ownerProjectSha256",
+            ]
+            .iter()
+            .any(|key| !sha(value["scope"]["caller"][key].as_str()))
+        {
+            return Err(invalid());
+        }
     }
     let source = value["source"].as_object().ok_or_else(invalid)?;
     let source_shape = if target == "pre_return" {

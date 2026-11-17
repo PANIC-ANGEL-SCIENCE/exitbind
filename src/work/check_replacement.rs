@@ -12,10 +12,27 @@ pub(crate) struct Options<'a> {
     pub(crate) reason: &'a str,
     pub(crate) classification: &'a str,
     pub(crate) current_binding: Option<&'a str>,
+    pub(crate) successor_scope: Option<&'a str>,
+    pub(crate) scope_decision_sha256: Option<&'a str>,
+    pub(crate) recover_partial: bool,
     pub(crate) apply: bool,
 }
 
 pub(crate) fn replace(loaded: &Loaded, work: &str, options: Options<'_>) -> Result<Value, String> {
+    let standalone = match options.successor_scope {
+        None => false,
+        Some("standalone") => true,
+        Some(_) => return Err("--successor-scope must be standalone".into()),
+    };
+    if !standalone && options.scope_decision_sha256.is_some() {
+        return Err("--scope-decision-sha256 requires --successor-scope standalone".into());
+    }
+    if options.recover_partial && (!standalone || !options.apply) {
+        return Err("--recover-partial requires --successor-scope standalone and --apply".into());
+    }
+    if standalone && options.apply != options.scope_decision_sha256.is_some() {
+        return Err("standalone apply requires the scope decision SHA-256 from its preview".into());
+    }
     let replacing_pre_return = options.pre_return_command.is_some();
     if options.check_command.is_some() == replacing_pre_return
         || (!replacing_pre_return
@@ -48,6 +65,9 @@ pub(crate) fn replace(loaded: &Loaded, work: &str, options: Options<'_>) -> Resu
     }
     let _frozen_plan = crate::run::check_replacement::frozen_plan(loaded, start)?;
     let next = next_for(loaded, work, &ledger)?;
+    if standalone && super::check::unresolved(&next) {
+        return Err("an unresolved check observation blocks standalone replacement".into());
+    }
     if next["current"]["binding"] != binding {
         let route = crate::emitted::refresh(work, &loaded.path);
         return Err(format!(
@@ -68,18 +88,58 @@ pub(crate) fn replace(loaded: &Loaded, work: &str, options: Options<'_>) -> Resu
     } else {
         return Err("check replacement requires a current Lead decision or blocked Work with a configured Lead owner".into());
     };
-    match crate::session_goal::association::context_for_work(loaded, work) {
-        crate::session_goal::association::WorkContext::Owner(record)
-        | crate::session_goal::association::WorkContext::Session(record) => {
-            crate::session_goal::journey::require_resolved_replacement_admissions(&record)?;
+    if !standalone
+        && crate::session_goal::association::durable_standalone_scope(
+            loaded,
+            work,
+            crate::session_goal::native::Access::RequireWritable,
+        )?
+    {
+        return Err(
+            "a standalone predecessor requires an explicit standalone successor preview".into(),
+        );
+    }
+    let standalone_observation = if standalone {
+        match crate::session_goal::association::classify_replacement_scope(loaded, work) {
+            crate::session_goal::association::ReplacementScope::ValidatedCurrentCallerUnbound(
+                observation,
+            ) => Some(observation),
+            crate::session_goal::association::ReplacementScope::Bound => {
+                return Err(
+                    "an existing native or local Goal relation cannot select standalone scope"
+                        .into(),
+                );
+            }
+            crate::session_goal::association::ReplacementScope::Invalid => {
+                return Err("native Goal/session/project association is malformed or foreign; check replacement is blocked".into());
+            }
+            crate::session_goal::association::ReplacementScope::Unavailable(reason) => {
+                return Err(format!("standalone scope unavailable: {reason}"));
+            }
         }
-        crate::session_goal::association::WorkContext::Invalid => {
-            return Err("native Goal/session/project association is malformed or foreign; check replacement is blocked".into());
+    } else {
+        None
+    };
+    if standalone && next_for(loaded, work, &ledger)?["current"]["binding"] != binding {
+        return Err(
+            "the current Work binding changed during scope observation; refresh before replacement"
+                .into(),
+        );
+    }
+    if !standalone {
+        match crate::session_goal::association::context_for_work(loaded, work) {
+            crate::session_goal::association::WorkContext::Owner(record)
+            | crate::session_goal::association::WorkContext::Session(record) => {
+                crate::session_goal::journey::require_resolved_replacement_admissions(&record)?;
+            }
+            crate::session_goal::association::WorkContext::Invalid => {
+                return Err("native Goal/session/project association is malformed or foreign; check replacement is blocked".into());
+            }
+            crate::session_goal::association::WorkContext::Unavailable => {
+                return Err("expected native Goal association or admission is unresolved; check replacement is blocked".into());
+            }
+            _ => {}
         }
-        crate::session_goal::association::WorkContext::Unavailable => {
-            return Err("expected native Goal association or admission is unresolved; check replacement is blocked".into());
-        }
-        _ => {}
     }
     let blocking = crate::session_goal::blocking_child(loaded, work)
         .map_err(|_| "prepared child state is unreadable; check replacement is blocked")?;
@@ -261,11 +321,58 @@ pub(crate) fn replace(loaded: &Loaded, work: &str, options: Options<'_>) -> Resu
             relation.remove("target");
         }
     }
-    let new_path = crate::run::ledger::ledger_path(&loaded.state_root, new_ledger, true)?;
-    let expected_new_relative = crate::config::rel(&loaded.state_root, &new_path.expected)?;
     let existing_claim = crate::run::ledger::load(loaded, &ledger).and_then(|(path, _, _)| {
         crate::run::ledger::valid_claim(&crate::run::ledger::claim_path(&path))
     })?;
+    if options.recover_partial && existing_claim.is_none() {
+        return Err(
+            "saved successor claim disappeared; recovery stopped without a new claim".into(),
+        );
+    }
+    let mut current_scope_observation = None;
+    if let Some(observation) = &standalone_observation {
+        requested_relation["protocol"] = json!(crate::run::check_replacement::STANDALONE_PROTOCOL);
+        requested_relation["scope"] = json!({"kind":"standalone",
+            "basis":"validated_current_caller_unbound", "caller":observation.caller.clone(),
+            "currentBinding":binding});
+        let current_decision = crate::session_goal::association::scope_decision_sha256(
+            loaded,
+            work,
+            &requested_relation,
+            observation,
+        );
+        let mut current_relation = requested_relation.clone();
+        current_relation["scopeDecisionSha256"] = json!(current_decision.clone());
+        current_scope_observation = Some(current_relation);
+        let decision = if let Some(claim) = &existing_claim {
+            let saved = &claim["checkReplacement"];
+            if saved["protocol"].as_u64()
+                != Some(crate::run::check_replacement::STANDALONE_PROTOCOL)
+                || saved["scope"]["caller"] != observation.caller
+            {
+                return Err(
+                    "a different successor is already claimed; no replacement was made".into(),
+                );
+            }
+            requested_relation["scope"]["currentBinding"] =
+                saved["scope"]["currentBinding"].clone();
+            saved["scopeDecisionSha256"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned()
+        } else {
+            current_decision
+        };
+        if options.apply && options.scope_decision_sha256 != Some(decision.as_str()) {
+            return Err(
+                "standalone scope decision changed after preview; no claim was created".into(),
+            );
+        }
+        requested_relation["scopeDecisionSha256"] = json!(decision);
+    }
+    let new_path = crate::run::ledger::ledger_path(&loaded.state_root, new_ledger, true)?;
+    let expected_new_relative = crate::config::rel(&loaded.state_root, &new_path.expected)?;
+    let recovering_partial = existing_claim.is_some() && !new_path.path.exists();
     if let Some(claim) = &existing_claim {
         if claim.get("checkReplacement") != Some(&requested_relation)
             || claim["newLedgerPath"] != expected_new_relative
@@ -288,6 +395,11 @@ pub(crate) fn replace(loaded: &Loaded, work: &str, options: Options<'_>) -> Resu
                         .into(),
                 );
             }
+            if standalone {
+                // A marker and run id alone are not proof that the saved
+                // start belongs to this complete predecessor claim.
+                run::RunSnapshot::capture(loaded, successor_ledger)?;
+            }
             return Ok(
                 json!({"effect":"no-change","state":"existing_successor_recovered","work":work,
                 "predecessor":{"ledger":ledger,"runId":claim["oldRunId"],"headEventSha256":claim["oldHeadEventSha256"]},
@@ -295,12 +407,25 @@ pub(crate) fn replace(loaded: &Loaded, work: &str, options: Options<'_>) -> Resu
                 "recovery":detail_recovery(loaded, &successor_work, "Read the committed successor. Do not repeat replacement.")}),
             );
         }
-        return Ok(
-            json!({"effect":"no-change","state":"partial_successor_claim","work":work,
+        if !standalone || !options.recover_partial {
+            let mut result = json!({"effect":"no-change","state":"partial_successor_claim","work":work,
             "predecessor":{"ledger":ledger,"runId":claim["oldRunId"],"headEventSha256":claim["oldHeadEventSha256"]},
             "successor":{"work":successor_work,"ledger":successor_ledger,"runId":claim["newRunId"],"checkReplacement":requested_relation,"ledgerPresent":false},
-            "recovery":detail_recovery(loaded, work, "Inspect the predecessor's verified or unverified successor relation. Do not repeat replacement.")}),
-        );
+            "recovery":detail_recovery(loaded, work, if standalone { "Inspect the saved claim. Completing the exact saved standalone intent requires an explicit apply and a fresh current binding; it writes the reserved successor start." } else { "Inspect the predecessor's verified or unverified successor relation. Do not repeat replacement." })});
+            if standalone {
+                result["recoveryApplyCommand"] = replacement_apply_command(
+                    loaded,
+                    work,
+                    binding,
+                    &options,
+                    new_pre_return_policy.as_ref(),
+                    new_check_policy.as_ref(),
+                    &requested_relation,
+                    true,
+                );
+            }
+            return Ok(result);
+        }
     }
     if !options.apply {
         let successor_preview = if let Some(policy) = &new_pre_return_policy {
@@ -315,38 +440,14 @@ pub(crate) fn replace(loaded: &Loaded, work: &str, options: Options<'_>) -> Resu
             json!({"ledger":new_ledger,"workflow":workflow,"goalSha256":crate::evidence::hash::text(goal),
                 "checkCommandSha256":policy.command_sha256,"proofOrigin":policy.origin.as_str()})
         };
-        let mut apply_argv = crate::emitted::Route::new([
-            "work",
-            "replace-check",
-            work,
-            "--reason",
-            options.reason,
-            "--classification",
-            "defective-contract",
-            "--current-binding",
-            binding,
-            "--apply",
-        ]);
-        if let Some(policy) = &new_pre_return_policy {
-            apply_argv = apply_argv.words(["--pre-return-command", policy.command.as_str()]);
-            apply_argv = apply_argv.words([
-                "--pre-return-timeout-ms".to_owned(),
-                policy.timeout_ms.to_string(),
-            ]);
-            apply_argv = apply_argv.words([
-                "--pre-return-capture-bytes".to_owned(),
-                policy.capture_limit_bytes.to_string(),
-            ]);
-        } else if let Some(policy) = &new_check_policy {
-            apply_argv = apply_argv.words(["--check-command", policy.command.as_str()]);
-        }
         return Ok(json!({
             "effect":"no-change", "state":"preview", "work":work,
             "predecessor":{"ledger":ledger,"runId":start["runId"],"headEventSha256":events.last().map(|event| &event["eventSha256"]),"checkPolicy":old_policy,"preReturnPolicy":start.get("preReturnPolicy")},
             "successor":successor_preview,
             "decision":requested_relation,
             "currentBinding":binding,
-            "applyCommand": crate::work::action_forms::command(loaded, apply_argv),
+            "applyCommand": replacement_apply_command(loaded, work, binding, &options,
+                new_pre_return_policy.as_ref(), new_check_policy.as_ref(), &requested_relation, false),
             "meaning": if replacing_pre_return { "Preview only. The predecessor remains immutable. Repeat with --apply and this current binding to create one claimed successor; the prior diagnostic is not a pass and the successor needs fresh evidence and review." } else { "Preview only. The predecessor remains immutable. Repeat with --apply and this current binding to create one claimed successor; the changed check earns no pass or review credit." }
         }));
     }
@@ -370,6 +471,9 @@ pub(crate) fn replace(loaded: &Loaded, work: &str, options: Options<'_>) -> Resu
             head,
             lead_agent,
             lead_native,
+            standalone.then_some(&requested_relation),
+            current_scope_observation.as_ref(),
+            options.recover_partial,
         )?
     } else {
         run::replace_check_contract(
@@ -388,14 +492,66 @@ pub(crate) fn replace(loaded: &Loaded, work: &str, options: Options<'_>) -> Resu
             head,
             lead_agent,
             lead_native,
+            standalone.then_some(&requested_relation),
+            current_scope_observation.as_ref(),
+            options.recover_partial,
         )?
     };
     Ok(json!({
-        "effect":"committed", "state":"successor_created", "work":work,
+        "effect": if value["scopeStartEffect"] == "already_present" { "no-change" } else { "committed" },
+        "state": if value["scopeStartEffect"] == "already_present" { "existing_successor_recovered" } else if recovering_partial { "partial_successor_recovered" } else { "successor_created" }, "work":work,
         "predecessor":{"ledger":ledger,"runId":start["runId"],"headEventSha256":events.last().map(|event| &event["eventSha256"])},
         "successor":value,
         "recovery":detail_recovery(loaded, value["work"].as_str().unwrap_or_default(), "The successor is committed. Inspect this current Work route; do not repeat replacement.")
     }))
+}
+
+fn replacement_apply_command(
+    loaded: &Loaded,
+    work: &str,
+    binding: &str,
+    options: &Options<'_>,
+    pre_return: Option<&crate::run_value::PreReturnPolicy>,
+    check: Option<&crate::run_value::CheckPolicy>,
+    relation: &Value,
+    recover_partial: bool,
+) -> Value {
+    let mut route = crate::emitted::Route::new([
+        "work",
+        "replace-check",
+        work,
+        "--reason",
+        options.reason,
+        "--classification",
+        "defective-contract",
+        "--current-binding",
+        binding,
+        "--apply",
+    ]);
+    if let Some(policy) = pre_return {
+        route = route.words(["--pre-return-command", policy.command.as_str()]);
+        route = route.words([
+            "--pre-return-timeout-ms".to_owned(),
+            policy.timeout_ms.to_string(),
+        ]);
+        route = route.words([
+            "--pre-return-capture-bytes".to_owned(),
+            policy.capture_limit_bytes.to_string(),
+        ]);
+    } else if let Some(policy) = check {
+        route = route.words(["--check-command", policy.command.as_str()]);
+    }
+    if options.successor_scope == Some("standalone") {
+        route = route.words(["--successor-scope", "standalone"]);
+        route = route.words([
+            "--scope-decision-sha256",
+            relation["scopeDecisionSha256"].as_str().unwrap_or_default(),
+        ]);
+    }
+    if recover_partial {
+        route = route.words(["--recover-partial"]);
+    }
+    crate::work::action_forms::command(loaded, route)
 }
 
 fn start_lead_owner(start: &Value) -> Result<(&str, &str), String> {
