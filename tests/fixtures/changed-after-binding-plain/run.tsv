@@ -101,3 +101,5 @@ Identity	src/run/view.rs	successor start differs from its native admission; repe
 LeadPreparation	src/run/view.rs	successor check policy differs from predecessor; choose an explicit new checked run
 LeadPreparation	src/run/view.rs	successor preservation policy differs from predecessor; choose an explicit new checked run
 Transient	src/run/ledger/atomic_record.rs	private record differs from its observed bytes
+# Compare the selected replacement with the reconstructed intent before the claim action; an earlier partial claim can remain.
+LeadPreparation	src/run/view.rs	current standalone decision differs from the saved intent

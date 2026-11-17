@@ -141,6 +141,55 @@ fn assert_refused_without_claim(case: &Case, session: &str, args: &[String]) {
     assert!(!case.claim_path().exists());
 }
 
+// These helpers observe JSON refusals without weakening any existing assertions.
+fn decision_refusal(case: &Case, args: &[String], supplied: &str) -> Value {
+    let mut changed = args.to_vec();
+    let index = changed
+        .iter()
+        .position(|arg| arg == "--scope-decision-sha256")
+        .unwrap();
+    changed[index + 1] = supplied.to_owned();
+    if !changed.iter().any(|arg| arg == "--json") {
+        changed.push("--json".into());
+    }
+    let result = case
+        .fixture
+        .call_in_session(SESSION, &case.store, &refs(&changed));
+    assert!(!result.status.success(), "unexpected success: {result:?}");
+    serde_json::from_slice(&result.stdout).expect("JSON refusal")
+}
+
+fn assert_decision_drift(case: &Case, body: &Value, bound: &str, current: &str) {
+    assert_eq!(
+        body["classification"],
+        "standalone_replacement_decision_mismatch"
+    );
+    assert_eq!(body["boundSha256"].as_str(), Some(bound));
+    assert_eq!(body["currentSha256"].as_str(), Some(current));
+    assert!(body["keptCopy"].is_null());
+    assert_eq!(body["nextAction"]["readOnly"], true);
+    let command: Vec<&str> = body["nextAction"]["command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|part| part.as_str().unwrap())
+        .collect();
+    let executable = fs::canonicalize(env!("CARGO_BIN_EXE_exitbind")).unwrap();
+    let config = fs::canonicalize(case.fixture.root.join("exitbind.json")).unwrap();
+    assert_eq!(
+        command,
+        [
+            executable.to_str().unwrap(),
+            "work",
+            "detail",
+            case.work.as_str(),
+            "--json",
+            "--config",
+            config.to_str().unwrap(),
+        ]
+    );
+}
+
 #[test]
 fn preview_unbound_requires_verified_current_caller_and_emits_scope_binding() {
     let case = Case::new();
@@ -364,6 +413,36 @@ fn changed_reason_or_policy_refuses_before_claim() {
         };
         assert_refused_without_claim(&case, SESSION, &changed);
     }
+    let index = args
+        .iter()
+        .position(|arg| arg == "--scope-decision-sha256")
+        .unwrap();
+    let current = args[index + 1].clone();
+    let wrong = if current == "0".repeat(64) {
+        "1".repeat(64)
+    } else {
+        "0".repeat(64)
+    };
+    let before = fs::read(case.fixture.ledger(&case.work)).unwrap();
+    let goal = fs::read(case.goal_path()).unwrap();
+    let body = decision_refusal(&case, &args, &wrong);
+    assert_decision_drift(&case, &body, &wrong, &current);
+    // Uppercase ASCII hex is valid, even though it is not silently normalized.
+    let upper = "A".repeat(64);
+    let body = decision_refusal(&case, &args, &upper);
+    assert_decision_drift(&case, &body, &upper, &current);
+    for malformed in ["f".repeat(63), "g".repeat(64), "0".repeat(65)] {
+        let body = decision_refusal(&case, &args, &malformed);
+        assert_eq!(
+            body["error"],
+            "--scope-decision-sha256 must be 64 ASCII hex characters"
+        );
+        assert!(body.get("classification").is_none());
+        assert!(body.get("boundSha256").is_none());
+    }
+    assert_eq!(fs::read(case.fixture.ledger(&case.work)).unwrap(), before);
+    assert_eq!(fs::read(case.goal_path()).unwrap(), goal);
+    assert!(!case.claim_path().exists());
 }
 
 #[test]
@@ -379,7 +458,37 @@ fn exact_apply_replay_and_partial_claim_recovery_preserve_single_successor() {
     let path = case.fixture.ledger(successor);
     let bytes = fs::read(&path).unwrap();
     let claim = fs::read(case.claim_path()).unwrap();
+    let index = args
+        .iter()
+        .position(|arg| arg == "--scope-decision-sha256")
+        .unwrap();
+    let saved = args[index + 1].clone();
+    let wrong = if saved == "0".repeat(64) {
+        "1".repeat(64)
+    } else {
+        "0".repeat(64)
+    };
+    let predecessor = fs::read(case.fixture.ledger(&case.work)).unwrap();
+    let goal = fs::read(case.goal_path()).unwrap();
+    let body = decision_refusal(&case, &args, &wrong);
+    assert_decision_drift(&case, &body, &saved, &wrong);
+    assert_eq!(fs::read(case.claim_path()).unwrap(), claim);
+    assert_eq!(fs::read(&path).unwrap(), bytes);
+    assert_eq!(
+        fs::read(case.fixture.ledger(&case.work)).unwrap(),
+        predecessor
+    );
+    assert_eq!(fs::read(case.goal_path()).unwrap(), goal);
     fs::remove_file(&path).unwrap();
+    let body = decision_refusal(&case, &args, &wrong);
+    assert_decision_drift(&case, &body, &saved, &wrong);
+    assert_eq!(fs::read(case.claim_path()).unwrap(), claim);
+    assert!(!path.exists());
+    assert_eq!(
+        fs::read(case.fixture.ledger(&case.work)).unwrap(),
+        predecessor
+    );
+    assert_eq!(fs::read(case.goal_path()).unwrap(), goal);
     case.fixture.ok_in_session(
         SESSION,
         &case.store,

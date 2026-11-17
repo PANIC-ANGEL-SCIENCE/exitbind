@@ -364,9 +364,26 @@ pub(crate) fn replace(loaded: &Loaded, work: &str, options: Options<'_>) -> Resu
             current_decision
         };
         if options.apply && options.scope_decision_sha256 != Some(decision.as_str()) {
-            return Err(
-                "standalone scope decision changed after preview; no claim was created".into(),
-            );
+            let supplied = options.scope_decision_sha256.unwrap_or_default();
+            if supplied.len() != 64 || !supplied.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                return Err("--scope-decision-sha256 must be 64 ASCII hex characters".into());
+            }
+            // A saved claim remains authoritative even if the Goal revision later moves.
+            let (bound, current) = if existing_claim.is_some() {
+                (decision.as_str(), supplied)
+            } else {
+                (supplied, decision.as_str())
+            };
+            return Err(crate::drift::refusal(
+                crate::drift::Class::StandaloneReplacementDecision,
+                bound,
+                Some(current),
+                None,
+                crate::drift::Route::WorkDetail {
+                    work,
+                    config: &loaded.path,
+                },
+            ));
         }
         requested_relation["scopeDecisionSha256"] = json!(decision);
     }

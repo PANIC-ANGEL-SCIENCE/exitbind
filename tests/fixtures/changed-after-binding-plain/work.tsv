@@ -58,3 +58,5 @@ RoutedInText	src/work/return_result_impl.rs	current action form binding is stale
 Transient	src/work/recipient_context.rs	recipient profile changed or exceeds the complete section bound
 NotARefusal	src/work/start_delivery.rs	configuration changed
 Transient	src/work/start_delivery.rs	configuration changed during delivery
+# An unresolved observation blocks this action; the preceding unrelated hash comparison is not its cause.
+NotCurrentState	src/work/check_replacement.rs	an unresolved check observation blocks standalone replacement

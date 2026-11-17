@@ -238,6 +238,7 @@ pub(crate) const NOT_PATHS: &[&str] = &[
     "input-digest",
     "evidence-request",
     "scope-decision",
+    "scope-decision-sha256",
     "section",
     "view",
     "blocker",

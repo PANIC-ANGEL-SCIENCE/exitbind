@@ -57,6 +57,8 @@ pub(crate) enum Class {
     PreReturnRecoveryDecision,
     /// A lost-caller report no longer has the original observed inputs.
     LostCallerInputs,
+    /// A standalone replacement decision differs from the applicable selection.
+    StandaloneReplacementDecision,
     /// A lost-caller decision no longer matches its preview or replay.
     LostCallerDecision,
     /// A forward repair needs the frozen configuration.
@@ -202,6 +204,12 @@ pub(crate) const MEMBERS: &[Member] = &[
         classification: "lost_caller_inputs_changed",
         message: "lost-caller reporting requires the original observed inputs; no execution was launched",
         meaning: "inspect the current Work and preserve the unknown observation; do not retry the interrupted execution",
+    },
+    Member {
+        class: Class::StandaloneReplacementDecision,
+        classification: "standalone_replacement_decision_mismatch",
+        message: "supplied standalone replacement decision does not match the applicable selection",
+        meaning: "inspect current Work detail and any saved claim. Without a claim, bound is the supplied preview and current is recomputed; request a fresh preview only if still eligible. With a claim, bound is saved and current is supplied; inspect its exact intent and follow only its offered replay or partial-recovery route. Do not rerun a check or create a second claim",
     },
     Member {
         class: Class::LostCallerDecision,
