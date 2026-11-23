@@ -412,6 +412,7 @@ pub(crate) fn session_addendum(
     budget: usize,
     goal_line: Option<&str>,
     profile_line: Option<&str>,
+    project_scoped_focus: bool,
 ) -> String {
     let (mut text, facts_end) = session_required_parts(loaded, facts);
     let reserve = session_reference_reserve(facts);
@@ -430,14 +431,19 @@ pub(crate) fn session_addendum(
         add(&mut text, line);
     }
     let focus = &facts["focus"];
+    let focus_label = if project_scoped_focus {
+        "Project-scoped Work focus"
+    } else {
+        "Current work"
+    };
     let focus_line = match focus["state"].as_str() {
         Some("work") => format!(
-            "\nCurrent work: {} (navigation only).",
+            "\n{focus_label}: {} (navigation only).",
             focus["work"].as_str().unwrap_or("?")
         ),
-        Some("none") => "\nCurrent work: none.".to_owned(),
+        Some("none") => format!("\n{focus_label}: none."),
         _ => format!(
-            "\nCurrent work: unavailable; use `{}` to diagnose.",
+            "\n{focus_label}: unavailable; use `{}` to diagnose.",
             crate::emitted::command_line(&["work", "resume"], Some(&loaded.path))
         ),
     };

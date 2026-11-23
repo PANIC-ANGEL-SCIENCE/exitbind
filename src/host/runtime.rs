@@ -328,12 +328,17 @@ pub fn run(host: Option<&str>, slot: Option<usize>) -> Result<(), String> {
             // Required facts precede the reserved complete notice; remaining
             // space may hold optional diagnostics and references.
             let budget = 3072usize.saturating_sub(text.len() + update_reserve);
+            let project_scoped_focus = crate::session_goal::native::current()
+                .ok()
+                .flatten()
+                .is_some();
             text.push_str(&crate::project::context::session_addendum(
                 &loaded,
                 facts,
                 budget,
                 include_goal.then_some(goal_line.as_deref()).flatten(),
                 include_profile.then_some(profile_line.as_deref()).flatten(),
+                project_scoped_focus,
             ));
         } else if let Some(memory) = super::project_memory::session_context(&loaded) {
             text.push('\n');
@@ -350,13 +355,6 @@ pub fn run(host: Option<&str>, slot: Option<usize>) -> Result<(), String> {
             text.push_str(recovery);
         }
         if crate::producer::exitbind_surface() {
-            if crate::session_goal::native::current()
-                .ok()
-                .flatten()
-                .is_some()
-            {
-                text = text.replace("\nCurrent work:", "\nProject-scoped Work focus:");
-            }
             if text.len() > 4096 {
                 let fallback = format!(
                     "Use `{}` for the exact bounded recovery record.",
