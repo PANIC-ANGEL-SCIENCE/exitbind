@@ -113,13 +113,26 @@ The observer proof is local product-owned state; it is not authenticated against
 another process with write access under the same operating-system account.
 
 For Exitbind contributors, select the existing diagnostic before the Worker
-returns, using the intended comparison commit for `PRE_RETURN_BASE`. For
-example, supply
-`--pre-return-command 'PRE_RETURN_BASE=<BASE_COMMIT> ./scripts/ci-local.sh --pre-return'`
-when beginning the Work, replacing
-`<BASE_COMMIT>` with that commit. The route shares its stage definition with
-full CI and omits release builds and live asset verification. For affected Rust
-tests on Linux, it selects owning Cargo targets and their required features for
-Clippy before running the selected tests, so a lint warning can stop the return
-before runtime tests. Other projects choose their own cheap command and acquire
-no Cargo or Clippy dependency.
+returns. Choose the intended comparison commit and a short task-owned temporary
+directory outside the checkout. Run these commands from the checkout.
+
+```sh
+CHECK_BASE=$(git rev-parse HEAD^) # Use the intended comparison commit.
+CHECK_TMP=$(mktemp -d /tmp/exitbind-check.XXXXXX)
+TMPDIR="$CHECK_TMP" PRE_RETURN_BASE="$CHECK_BASE" ./scripts/ci-local.sh --preflight
+```
+
+Inspect the target, temporary and log paths in the preflight output. Pass this
+option to the Work start command using the same overrides. Keep the temporary
+directory available for the diagnostic.
+
+```sh
+--pre-return-command "TMPDIR='$CHECK_TMP' PRE_RETURN_BASE='$CHECK_BASE' ./scripts/ci-local.sh --pre-return"
+```
+
+The route shares its stage definition with full CI and omits release builds
+and live asset verification. For affected Rust tests on Linux, it selects owning
+Cargo targets and their required features for Clippy before running the selected
+tests, so a lint warning can stop the return before runtime tests. Other
+projects choose their own cheap command and acquire no Cargo or Clippy
+dependency.
