@@ -276,6 +276,49 @@ pub fn run(host: Option<&str>, slot: Option<usize>) -> Result<(), String> {
                     }
                 }
             }
+            // Keep current Goal facts and the verified first-page route whole.
+            // The existing shorter forms preserve their mandatory semantics.
+            let goal_line = current_goal_line(&loaded, object);
+            let profile_line = crate::project::context::session_profile_line(&loaded, facts);
+            let minimal = minimal_session_summary(&lead, facts, false);
+            let compact = super::receive_text::receive_work_compact(Some(&loaded.path));
+            let tight_summary = minimal_session_summary(&lead, facts, true);
+            let tight_receive = super::receive_text::receive_work_tight(Some(&loaded.path));
+            let tight_line = project::tight_routed_fact_line(source);
+            let forms = [
+                (text.clone(), receive.clone(), direct, line.clone()),
+                (minimal.clone(), compact.clone(), direct, line.clone()),
+                (minimal, compact, DIRECT_WORK_COMPACT, line.clone()),
+                (tight_summary, tight_receive, DIRECT_WORK_TIGHT, tight_line),
+            ];
+            let mut include_goal = false;
+            let mut include_profile = false;
+            for (want_goal, want_profile) in [(true, true), (true, false), (false, true)] {
+                if (want_goal && goal_line.is_none()) || (want_profile && profile_line.is_none()) {
+                    continue;
+                }
+                let extra = usize::from(want_goal) * goal_line.as_ref().map_or(0, String::len)
+                    + usize::from(want_profile) * profile_line.as_ref().map_or(0, String::len);
+                if let Some((summary, route, direct_text, fact_line)) =
+                    forms
+                        .iter()
+                        .find(|(summary, route, direct_text, fact_line)| {
+                            summary.len()
+                                + fixed(route, direct_text, fact_line)
+                                + update_reserve
+                                + extra
+                                <= 3072
+                        })
+                {
+                    text = summary.clone();
+                    receive = route.clone();
+                    direct = *direct_text;
+                    line = fact_line.clone();
+                    include_goal = want_goal;
+                    include_profile = want_profile;
+                    break;
+                }
+            }
             text.push('\n');
             text.push_str(direct);
             text.push('\n');
@@ -286,7 +329,11 @@ pub fn run(host: Option<&str>, slot: Option<usize>) -> Result<(), String> {
             // space may hold optional diagnostics and references.
             let budget = 3072usize.saturating_sub(text.len() + update_reserve);
             text.push_str(&crate::project::context::session_addendum(
-                &loaded, facts, budget,
+                &loaded,
+                facts,
+                budget,
+                include_goal.then_some(goal_line.as_deref()).flatten(),
+                include_profile.then_some(profile_line.as_deref()).flatten(),
             ));
         } else if let Some(memory) = super::project_memory::session_context(&loaded) {
             text.push('\n');
@@ -569,6 +616,42 @@ const DIRECT_WORK_TIGHT: &str = "Minor reversible edits: do not run Exitbind com
 const MANDATORY_SESSION_CORE: &str = "Preserve the existing root host conversation; project context only augments it. Do not replace, reset, fork, or request compaction of it for role loading or handoff. Keep recent user corrections and rejected approaches with their rationale; refer frozen-run conflicts to the existing lead for explicit supersession. Native conversational recall is distinct from durable role memory. When a Work or Goal response carries a non-null `presentation.terminal`, print that value on a line of its own exactly as given. For a Goal `completionEvent`, print once per event ID; consume the normal closure response without status polling. Recover a lost closure reply through its exact read-only route. No model was selected or launched; declarations are not an OS sandbox.";
 // Keep all mandatory semantics when only the final tight fallback can fit.
 const MANDATORY_SESSION_CORE_TIGHT: &str = "Keep the original root host conversation; project context only augments it. Never replace, reset, fork or request compaction for role loading or handoff. Keep recent user corrections and rejected approaches with reasons; refer frozen-run conflicts to Lead for explicit supersession. Native recall is not durable role memory. Print non-null Work/Goal `presentation.terminal` verbatim on its own line; Goal once per `completionEvent.id` from normal closure reply; no status polls. Recover lost closure replies via exact read-only routes. No model chosen or run; declarations aren't OS sandboxes.";
+
+fn current_goal_line(
+    loaded: &crate::config::Loaded,
+    payload: &serde_json::Map<String, Value>,
+) -> Option<String> {
+    let session = crate::session_goal::native::current().ok()??;
+    if !session.reports(payload.get("session_id")?.as_str()?) {
+        return None;
+    }
+    let snapshot = session
+        .recovery_snapshot(crate::session_goal::native::Access::ReadExisting)
+        .ok()??;
+    let expected = crate::session_goal::native::owner_for(loaded).ok()?;
+    if snapshot.owner.identity_sha256 != expected.identity_sha256
+        || snapshot.owner.project_id != expected.project_id
+    {
+        return None;
+    }
+    let goal = snapshot.latest?;
+    if goal["closure"]["closed"] != false
+        || !goal["goal"].is_string()
+        || !goal["obligations"].is_array()
+        || !goal["decisions"].is_array()
+    {
+        return None;
+    }
+    let current = json!({
+        "goalId": goal["goalId"],
+        "revision": goal["revision"],
+        "eventSha256": goal["eventSha256"],
+        "goal": goal["goal"],
+        "obligations": goal["obligations"],
+        "decisions": goal["decisions"],
+    });
+    Some(format!("\nCurrent native Goal (owner verified): {current}"))
+}
 
 fn retry_busy<T>(action: impl Fn() -> Result<T, String>) -> Result<T, String> {
     for _ in 0..20 {

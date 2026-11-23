@@ -48,6 +48,25 @@ pub(crate) fn attach(loaded: &Loaded, work: &str, next: &Value, response: &mut V
             candidate["actionForms"] = delivery["actionForms"].clone();
             candidate["currentDelivery"] = delivery;
             candidate = super::effective_action::attach(&candidate);
+            // The normal same-host route validates the session and assignment.
+            // Only attach it to the matching current spawn and retain it whole.
+            if candidate["next"]["action"] == "spawn"
+                && candidate["next"]["assignment"] == next["assignment"]
+                && candidate["currentDelivery"]["recipient"]["assignment"] == next["assignment"]
+            {
+                let full_next = json!({"next": next});
+                if let Some(route) =
+                    crate::session_goal::same_host_child_route(loaded, work, &full_next)
+                {
+                    candidate["next"]["prepareChild"] = route;
+                    if size(&candidate) > super::readable::MAX_GROUPED_BYTES {
+                        candidate["next"]
+                            .as_object_mut()
+                            .unwrap()
+                            .remove("prepareChild");
+                    }
+                }
+            }
             if size(&candidate) <= super::readable::MAX_GROUPED_BYTES {
                 *response = candidate;
                 return;

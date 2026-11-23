@@ -1,6 +1,7 @@
 //! The pre-decision Lead profile route delivers complete current bytes.
 use super::*;
 use sha2::{Digest, Sha256};
+use std::os::unix::fs::PermissionsExt;
 use std::process::Output;
 
 fn route(root: &Path, command: &Value) -> Output {
@@ -45,6 +46,136 @@ fn configured_profile(root: &Path) -> std::path::PathBuf {
     config["agents"]["captain"]["profile"] = json!("exitbind/agents/custom captain.md");
     fs::write(config_path, serde_json::to_vec(&config).unwrap()).unwrap();
     profile
+}
+
+fn session_profile_command(context: &str) -> &str {
+    context
+        .split_once("Read Lead profile: `")
+        .and_then(|(_, rest)| rest.split_once("`."))
+        .map(|(command, _)| command)
+        .unwrap_or_else(|| panic!("complete profile route missing: {context}"))
+}
+
+fn run_hook_command(root: &Path, command: &str) -> Output {
+    support::git_topology::command("/bin/sh")
+        .current_dir(root)
+        .args(["-c", command])
+        .output()
+        .unwrap()
+}
+
+fn native_session_hook(root: &Path, store: &Path, reported_session: &str) -> String {
+    let payload = json!({"hook_event_name":"SessionStart", "cwd":root,
+        "session_id":reported_session});
+    let mut command = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"));
+    command
+        .arg("hook-run")
+        .env("CODEX_THREAD_ID", "profile-resume-session")
+        .env("EXITBIND_SESSION_GOALS_DIR", store)
+        .env("EXITBIND_NO_UPDATE_CHECK", "1")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped());
+    let mut process = support::spawn(&mut command).unwrap();
+    process
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(payload.to_string().as_bytes())
+        .unwrap();
+    let output = process.wait_with_output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    value["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+#[test]
+fn start_and_resume_offer_the_current_bound_profile_without_a_facts_read() {
+    let root = project("lead-profile-short-route");
+    let profile_path = configured_profile(&root);
+    let store = support::temp("lead-profile-session-store");
+    fs::set_permissions(&store, fs::Permissions::from_mode(0o700)).unwrap();
+    let goal = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
+        .current_dir(&root)
+        .env("CODEX_THREAD_ID", "profile-resume-session")
+        .env("EXITBIND_SESSION_GOALS_DIR", &store)
+        .args([
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "profile-resume",
+            "--goal",
+            "Deliver the requested result",
+            "--obligation",
+            "Keep the owner's constraint",
+            "--config",
+            "exitbind.json",
+        ])
+        .output()
+        .unwrap();
+    assert!(goal.status.success(), "{goal:?}");
+    let initial = native_session_hook(&root, &store, "profile-resume-session");
+    assert!(
+        initial.contains("Deliver the requested result"),
+        "{initial}"
+    );
+    assert!(initial.contains("Keep the owner's constraint"), "{initial}");
+    let initial_command = session_profile_command(&initial);
+    let output = run_hook_command(&root, initial_command);
+    assert!(output.status.success(), "{output:?}");
+    let acquired: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(acquired["content"], "Custom Lead instruction\n");
+    assert_eq!(acquired["complete"], true);
+
+    let resumed = native_session_hook(&root, &store, "profile-resume-session");
+    assert!(
+        resumed.contains("Deliver the requested result"),
+        "{resumed}"
+    );
+    assert!(resumed.contains("Keep the owner's constraint"), "{resumed}");
+    let resumed_command = session_profile_command(&resumed);
+    assert_eq!(resumed_command, initial_command);
+    assert!(resumed.contains("Reuse complete bytes acquired for this verified binding."));
+    let resumed_page = run_hook_command(&root, resumed_command);
+    assert!(resumed_page.status.success(), "{resumed_page:?}");
+    let resumed_page: Value = serde_json::from_slice(&resumed_page.stdout).unwrap();
+    assert_eq!(resumed_page["binding"], acquired["binding"]);
+    let goal_status = support::git_topology::command(env!("CARGO_BIN_EXE_exitbind"))
+        .current_dir(&root)
+        .env("CODEX_THREAD_ID", "profile-resume-session")
+        .env("EXITBIND_SESSION_GOALS_DIR", &store)
+        .args(["goal", "status", "--json", "--config", "exitbind.json"])
+        .output()
+        .unwrap();
+    assert!(goal_status.status.success(), "{goal_status:?}");
+    let goal_status: Value = serde_json::from_slice(&goal_status.stdout).unwrap();
+    assert_eq!(goal_status["goal"], "Deliver the requested result");
+    assert!(goal_status["obligations"]
+        .to_string()
+        .contains("Keep the owner's constraint"));
+    let mismatched = native_session_hook(&root, &store, "other-session");
+    assert!(
+        !mismatched.contains("Deliver the requested result"),
+        "{mismatched}"
+    );
+    assert!(
+        !mismatched.contains("Keep the owner's constraint"),
+        "{mismatched}"
+    );
+
+    fs::write(&profile_path, "Changed Lead instruction\n").unwrap();
+    drift_refusal(&run_hook_command(&root, initial_command));
+    let changed = native_session_hook(&root, &store, "profile-resume-session");
+    let changed_command = session_profile_command(&changed);
+    assert_ne!(changed_command, initial_command);
+    let output = run_hook_command(&root, changed_command);
+    assert!(output.status.success(), "{output:?}");
+    let current: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(current["content"], "Changed Lead instruction\n");
+    assert_ne!(current["binding"], acquired["binding"]);
+    assert!(changed.contains("do not run Exitbind commands, initialize a project"));
 }
 
 #[test]

@@ -83,8 +83,10 @@ to carry protocol JSON or event hashes between turns.
 
 For a consequential choice in a configured project, first use the Lead profile
 already supplied by the host if its complete bytes match the current identity.
-Otherwise follow the SessionStart project-facts route and `lead.profileAccess`.
-Its exact read-only commands return bounded pages of the selected Lead's current
+Otherwise use the verified first-page route in SessionStart when available, or
+follow its project-facts route and `lead.profileAccess`. A later SessionStart
+can reuse previously acquired complete profile bytes for the same verified
+binding. Its exact read-only commands return bounded pages of the selected Lead's current
 profile: check contiguous offsets, total bytes and SHA-256 before using the whole
 profile. A changed or unavailable binding requires fresh project facts. These
 reads do not grant permissions, initialize Work or replace the owner's current
@@ -299,7 +301,7 @@ the record and digest; the agent need not compose JSON or copy revision
 counters. The older `work record` JSON surface remains available for expert
 continuation actions. The bundled skill describes the handoff and your host
 executes it. Exitbind
-`v0.31.28` includes optional `--event-id` and `--text` conveniences; they are not
+`v0.31.29` includes optional `--event-id` and `--text` conveniences; they are not
 prerequisites for host-managed work. Configuration and skill discovery alone
 do not prove that an agent ran: inspect the actual native result and the
 recorded check.
@@ -368,7 +370,7 @@ For the longer one-file product example, use the matching source checkout:
 EXITBIND_BIN=exitbind ./scripts/demo-checked-work.sh
 ```
 
-`v0.31.28` includes the `--event-id` and `--text` options used
+`v0.31.29` includes the `--event-id` and `--text` options used
 here. To build from source instead, run `cargo build --locked` and use
 `EXITBIND_BIN=target/debug/exitbind`. The script records a failing product check,
 observes refused acceptance, requests rework, retrieves the assignment in a
@@ -409,7 +411,7 @@ After a binary update, explicitly refresh only owned project skill copies:
 exitbind init --refresh-skills --root PATH
 ```
 
-In `v0.31.28`, `check` reports the invoking binary version and hashes of
+In `v0.31.29`, `check` reports the invoking binary version and hashes of
 its bundled and installed skill copies. A managed difference produces an
 actionable warning, including on stderr with `check --json`; the JSON result
 still describes configuration validity. Missing optional copies or a

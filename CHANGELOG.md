@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.31.29
+
+Release: https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/tag/v0.31.29 — the tag sits on this entry's release commit, and the page lists its assets once they are published.
+
+- Carry the verified current native Goal and Lead profile route into bounded
+  session context when they fit, and retain complete recovery routes for
+  longer or unavailable content.
+- Offer the existing same-host child preparation route with a current checked
+  result, so the selected reviewer can receive or acquire its own assignment.
+- Include the optional Mercury/Telegram owner-clarification source bridge and
+  strengthen native Goal recovery and check-replacement scope validation.
+
 ## 0.31.28
 
 Release: https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/tag/v0.31.28 — the tag sits on this entry's release commit, and the page lists its assets once they are published.

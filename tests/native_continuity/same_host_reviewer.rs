@@ -1,10 +1,29 @@
 //! Selected reviewer delivery after a checked worker result.
-use super::{argv, run, sha, text, Fixture, CHILD, REVIEWER_PROFILE_BODY, SESSION};
+use super::{argv, run, sha, text, Fixture, CHILD, OTHER, REVIEWER_PROFILE_BODY, SESSION};
 use serde_json::{json, Value};
 use std::fs;
 
 fn checked_reviewer_return(fixture: &Fixture, worker_content: &[u8], explicit: bool) {
-    fixture.value(Some(SESSION), &["work", "check", &fixture.work]);
+    let checked = fixture.value(Some(SESSION), &["work", "check", &fixture.work]);
+    assert_eq!(checked["result"]["code"], 0, "{checked}");
+    let route = argv(&checked["next"]["prepareChild"]);
+    let binding = route
+        .iter()
+        .position(|word| word == "--current-binding")
+        .unwrap();
+    assert_eq!(route[binding + 1], checked["current"]["binding"]);
+    let foreign = run(&route, &fixture.product, &fixture.store, Some(OTHER), b"");
+    assert!(!foreign.status.success(), "{}", text(&foreign));
+    let native_index = route
+        .iter()
+        .position(|word| word == "--agent-type")
+        .unwrap();
+    let native = &route[native_index + 1];
+    let prepared = run(&route, &fixture.product, &fixture.store, Some(SESSION), b"");
+    assert!(prepared.status.success(), "{}", text(&prepared));
+
+    // These reads are test oracles. The actor prepares the reviewer directly
+    // from the successful check response above.
     let full = fixture.value(Some(SESSION), &["work", "next", &fixture.work, "--full"]);
     let reviewer = &full["next"];
     assert_eq!(reviewer["role"], "reviewer", "{reviewer}");
@@ -49,14 +68,6 @@ fn checked_reviewer_return(fixture: &Fixture, worker_content: &[u8], explicit: b
         .collect::<Vec<_>>();
     assert_eq!(references.len(), 1, "{reviewer}");
 
-    let route = argv(&fixture.next(Some(SESSION))["prepareChild"]);
-    let native_index = route
-        .iter()
-        .position(|word| word == "--agent-type")
-        .unwrap();
-    let native = &route[native_index + 1];
-    let prepared = run(&route, &fixture.product, &fixture.store, Some(SESSION), b"");
-    assert!(prepared.status.success(), "{}", text(&prepared));
     let start = fixture
         .hook(
             json!({"hook_event_name":"SubagentStart","session_id":SESSION,
@@ -64,6 +75,68 @@ fn checked_reviewer_return(fixture: &Fixture, worker_content: &[u8], explicit: b
         )
         .expect("reviewer start must present complete context");
     assert!(start.contains(REVIEWER_PROFILE_BODY.trim_end()), "{start}");
+    if start.contains("Complete assignment exceeds the host context envelope") {
+        // The reviewer follows its own emitted recovery route, then returns
+        // through its current bound form. No automatic delivery is credited.
+        let route = start
+            .lines()
+            .find_map(|line| line.strip_prefix("Full assignment packet route: "))
+            .expect("the incomplete presentation supplies its exact recovery route");
+        let route: Value = serde_json::from_str(route).unwrap();
+        let current = run(
+            &argv(&json!({"command":route["argv"]})),
+            &fixture.product,
+            &fixture.store,
+            Some(SESSION),
+            b"",
+        );
+        assert!(current.status.success(), "{}", text(&current));
+        let current: Value = serde_json::from_slice(&current.stdout).unwrap();
+        let detail_route = &current["next"]["current"]["details"]["grouped"];
+        let acquired = run(
+            &argv(detail_route),
+            &fixture.product,
+            &fixture.store,
+            Some(SESSION),
+            b"",
+        );
+        assert!(acquired.status.success(), "{}", text(&acquired));
+        let acquired: Value = serde_json::from_slice(&acquired.stdout).unwrap();
+        assert_eq!(acquired["complete"], true);
+        assert_eq!(acquired["recipient"]["role"], "reviewer");
+        assert_eq!(acquired["sections"]["evidence"]["checkEvidence"], *checks);
+        assert_eq!(
+            acquired["sections"]["evidence"]["preReturn"]["enabled"],
+            true
+        );
+        let choice = acquired["actionForms"]["choices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|choice| choice["label"] == "approved")
+            .unwrap();
+        let mut return_route = choice["command"]["argv"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|word| word.as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        for word in &mut return_route {
+            if word == "<REASON>" {
+                *word = "Reviewed the current result and evidence".into();
+            }
+        }
+        let returned = run(
+            &return_route,
+            &fixture.product,
+            &fixture.store,
+            Some(SESSION),
+            b"Reviewed the current result and check.",
+        );
+        assert!(returned.status.success(), "{}", text(&returned));
+        assert_eq!(fixture.next(Some(SESSION))["role"], "lead");
+        return;
+    }
     let actor = start
         .split_once("Complete current assignment, evidence and task conditions (verified for this recipient):\n")
         .and_then(|(_, rest)| rest.lines().next())
@@ -107,6 +180,60 @@ fn checked_reviewer_return(fixture: &Fixture, worker_content: &[u8], explicit: b
     assert!(intent["returnEventSha256"].is_string(), "{intent}");
     assert!(intent["rawObservation"].is_null(), "{intent}");
     assert_eq!(fixture.next(Some(SESSION))["role"], "lead");
+}
+
+#[test]
+fn pre_return_check_routes_checked_result_to_the_selected_reviewer() {
+    let mut fixture = Fixture::new_for_reviewer("reviewer-pre-return", None, None);
+    let begun = fixture.value(
+        Some(SESSION),
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "Deliver a pre-checked result to an independent reviewer",
+            "--check-command",
+            "true",
+            "--pre-return-command",
+            "true",
+            "--review-policy",
+            "required",
+        ],
+    );
+    fixture.work = begun["work"].as_str().unwrap().to_owned();
+    let assignment = begun["next"]["assignment"].as_str().unwrap();
+    let scoped = fixture.call(
+        Some(SESSION),
+        &[
+            "work",
+            "return",
+            &fixture.work,
+            assignment,
+            "--outcome",
+            "scoped",
+        ],
+        b"Scope the result",
+        true,
+    );
+    assert!(scoped.status.success(), "{}", text(&scoped));
+    let worker = fixture.next(Some(SESSION));
+    let content = b"Result prepared for independent review.\n";
+    let returned = fixture.call(
+        Some(SESSION),
+        &[
+            "work",
+            "return",
+            &fixture.work,
+            worker["assignment"].as_str().unwrap(),
+            "--outcome",
+            "completed",
+        ],
+        content,
+        true,
+    );
+    assert!(returned.status.success(), "{}", text(&returned));
+    checked_reviewer_return(&fixture, content, false);
 }
 
 #[test]

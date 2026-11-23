@@ -8,9 +8,10 @@
 //! `#[path]` and nesting; dispatcher arms and declared lists are read from
 //! the CLI's own tables.
 #![allow(dead_code)]
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::Path;
+use std::sync::{Mutex, OnceLock};
 
 /// A string literal: byte span (quotes included) and raw content.
 pub struct Literal {
@@ -282,6 +283,7 @@ pub fn strip_test_modules(text: &str) -> String {
 
 /// One `mod` item: its name, whether it is out of line (`mod x;`), the gate
 /// of its attributes, its `#[path]` and the line its attributes start on.
+#[derive(Clone)]
 pub struct ModItem {
     pub name: String,
     pub out_of_line: bool,
@@ -364,6 +366,37 @@ fn manifest() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
 }
 
+// Parsing is a pure function of the complete file text. Cache that work, while
+// still reading the filesystem on each inventory so changed and fixture files
+// are observed. Limits keep this test-process cache bounded.
+fn cached_mod_items(text: &str) -> Vec<ModItem> {
+    static CACHE: OnceLock<Mutex<HashMap<String, Vec<ModItem>>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(items) = cache.lock().unwrap().get(text).cloned() {
+        return items;
+    }
+    let items = mod_items(text);
+    let mut cache = cache.lock().unwrap();
+    if cache.len() < 2048 && text.len() <= 128 * 1024 {
+        cache.insert(text.to_owned(), items.clone());
+    }
+    items
+}
+
+fn cached_production_text(text: &str) -> String {
+    static CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(stripped) = cache.lock().unwrap().get(text).cloned() {
+        return stripped;
+    }
+    let stripped = strip_test_modules(text);
+    let mut cache = cache.lock().unwrap();
+    if cache.len() < 2048 && text.len() <= 128 * 1024 {
+        cache.insert(text.to_owned(), stripped.clone());
+    }
+    stripped
+}
+
 /// Every `.rs` file under `root/dir` (relative, `/`-separated, sorted) with
 /// its text; `tests/fixtures` is data, not code.
 pub fn sources_in(root: &Path, dir: &str) -> Vec<(String, String)> {
@@ -407,7 +440,7 @@ pub fn test_files(root: &Path) -> BTreeMap<String, Gate> {
     let known: BTreeSet<&str> = files.iter().map(|(file, _)| file.as_str()).collect();
     let items: Vec<(&str, Vec<ModItem>)> = files
         .iter()
-        .map(|(file, text)| (file.as_str(), mod_items(text)))
+        .map(|(file, text)| (file.as_str(), cached_mod_items(text)))
         .collect();
     let mut test: BTreeMap<String, Gate> = files
         .iter()
@@ -454,7 +487,7 @@ pub fn production_in(root: &Path) -> Vec<(String, String)> {
                 && !path.ends_with("_tests.rs")
         })
         .map(|(path, text)| {
-            let stripped = strip_test_modules(&text);
+            let stripped = cached_production_text(&text);
             (path, stripped)
         })
         .collect()

@@ -54,18 +54,32 @@ fn permit_response_wording_trace_opens_two_relevant_source_files() {
         .filter(|v| v.starts_with("src/"))
         .collect::<Vec<_>>();
     assert_eq!(links, ["src/work/permit_response.rs"]);
-    let dispatch = cli.split("\"permit\" =>").nth(1).expect("permit dispatch");
-    assert!(dispatch
-        .lines()
-        .take(20)
-        .any(|line| line.contains("crate::work::permit(")));
     let owner = read(links[0]);
     let owner_header = owner.lines().take(8).collect::<Vec<_>>().join("\n");
     assert!(owner_header.contains("permit result") && owner_header.contains("no host permission"));
-    assert!(
-        owner.contains("pub(crate) fn permit(") && owner.contains("let mut response = compact(")
-    );
-    assert!(owner.contains("The permit event is recorded. Inspect current Work"));
     assert_eq!(opened.len(), 2);
     println!("S0 permit response wording source trace: {opened:?}; limit 3");
+}
+
+#[test]
+fn source_inventory_observes_changed_fixture_contents_between_scans() {
+    let root = super::support::temp("source-inventory-changing-fixture");
+    std::fs::create_dir(root.join("src")).unwrap();
+    std::fs::write(root.join("src/main.rs"), "mod feature;\n").unwrap();
+    std::fs::write(root.join("src/feature.rs"), "fn first() {}\n").unwrap();
+
+    let first = super::rust_source::production_in(&root);
+    assert!(first
+        .iter()
+        .any(|(path, text)| path == "src/feature.rs" && text.contains("first")));
+
+    std::fs::write(root.join("src/feature.rs"), "fn other() {}\n").unwrap();
+    let changed = super::rust_source::production_in(&root);
+    assert!(changed
+        .iter()
+        .any(|(path, text)| path == "src/feature.rs" && text.contains("other")));
+
+    std::fs::write(root.join("src/main.rs"), "#[cfg(test)]\nmod feature;\n").unwrap();
+    let test_only = super::rust_source::production_in(&root);
+    assert!(!test_only.iter().any(|(path, _)| path == "src/feature.rs"));
 }

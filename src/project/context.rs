@@ -391,8 +391,28 @@ pub(crate) fn session_reference_reserve(facts: &Value) -> usize {
     }
 }
 
+/// The first-page route is usable only after the same current binding check
+/// that a page read performs.
+pub(crate) fn session_profile_line(loaded: &Loaded, facts: &Value) -> Option<String> {
+    let binding = facts["lead"]["profileAccess"]["binding"].as_str()?;
+    lead_profile_page(loaded, binding, 0).ok()?;
+    let route = crate::emitted::command_line(
+        &["project", "context", "lead-profile", binding, "0", "--json"],
+        Some(&loaded.path),
+    );
+    Some(format!(
+        "\nRead Lead profile: `{route}`. Reuse complete bytes acquired for this verified binding."
+    ))
+}
+
 /// Fit complete references only; the host hook never cuts an instruction mid-byte.
-pub(crate) fn session_addendum(loaded: &Loaded, facts: &Value, budget: usize) -> String {
+pub(crate) fn session_addendum(
+    loaded: &Loaded,
+    facts: &Value,
+    budget: usize,
+    goal_line: Option<&str>,
+    profile_line: Option<&str>,
+) -> String {
     let (mut text, facts_end) = session_required_parts(loaded, facts);
     let reserve = session_reference_reserve(facts);
     let add = |text: &mut String, line: &str| {
@@ -403,6 +423,12 @@ pub(crate) fn session_addendum(loaded: &Loaded, facts: &Value, budget: usize) ->
             false
         }
     };
+    if let Some(line) = goal_line {
+        add(&mut text, line);
+    }
+    if let Some(line) = profile_line {
+        add(&mut text, line);
+    }
     let focus = &facts["focus"];
     let focus_line = match focus["state"].as_str() {
         Some("work") => format!(
