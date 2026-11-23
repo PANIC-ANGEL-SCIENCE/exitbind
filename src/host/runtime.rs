@@ -354,47 +354,43 @@ pub fn run(host: Option<&str>, slot: Option<usize>) -> Result<(), String> {
             text.push('\n');
             text.push_str(recovery);
         }
-        if crate::producer::exitbind_surface() {
-            if text.len() > 4096 {
-                let fallback = format!(
-                    "Use `{}` for the exact bounded recovery record.",
-                    crate::emitted::Route::new(["session", "recovery", "show", "--json"])
-                        .config(&loaded.path)
-                        .shell_text()
-                );
-                let recovery = recovery_context.as_deref().unwrap_or(&fallback);
-                let receive = super::receive_text::receive_work_compact(Some(&loaded.path));
-                let facts = session_facts.as_ref().expect("session facts");
-                let required = crate::project::context::session_required(&loaded, facts);
-                let base = |direct| {
-                    session_base(
-                        &minimal_session_summary(&lead, facts, false),
-                        direct,
-                        &receive,
-                        &project::routed_fact_line(source),
-                        &required,
-                    )
-                };
-                let tight = session_base(
-                    &minimal_session_summary(&lead, facts, true),
-                    DIRECT_WORK_TIGHT,
-                    &super::receive_text::receive_work_tight(Some(&loaded.path)),
-                    &project::tight_routed_fact_line(source),
+        if crate::producer::exitbind_surface() && text.len() > 4096 {
+            let fallback = format!(
+                "Use `{}` for the exact bounded recovery record.",
+                crate::emitted::Route::new(["session", "recovery", "show", "--json"])
+                    .config(&loaded.path)
+                    .shell_text()
+            );
+            let recovery = recovery_context.as_deref().unwrap_or(&fallback);
+            let receive = super::receive_text::receive_work_compact(Some(&loaded.path));
+            let facts = session_facts.as_ref().expect("session facts");
+            let required = crate::project::context::session_required(&loaded, facts);
+            let base = |direct| {
+                session_base(
+                    &minimal_session_summary(&lead, facts, false),
+                    direct,
+                    &receive,
+                    &project::routed_fact_line(source),
                     &required,
-                );
-                text = [
-                    format!("{}\n{recovery}", base(DIRECT_WORK)),
-                    format!("{}\n{recovery}", base(DIRECT_WORK_COMPACT)),
-                    format!("{tight}\n{recovery}"),
-                    format!("{}\n{fallback}", base(DIRECT_WORK_COMPACT)),
-                    format!("{tight}\n{fallback}"),
-                ]
-                .into_iter()
-                .find(|candidate| candidate.len() <= 4096)
-                .ok_or(
-                    "complete mandatory session context and recovery routes exceed 4096 bytes",
-                )?;
-            }
+                )
+            };
+            let tight = session_base(
+                &minimal_session_summary(&lead, facts, true),
+                DIRECT_WORK_TIGHT,
+                &super::receive_text::receive_work_tight(Some(&loaded.path)),
+                &project::tight_routed_fact_line(source),
+                &required,
+            );
+            text = [
+                format!("{}\n{recovery}", base(DIRECT_WORK)),
+                format!("{}\n{recovery}", base(DIRECT_WORK_COMPACT)),
+                format!("{tight}\n{recovery}"),
+                format!("{}\n{fallback}", base(DIRECT_WORK_COMPACT)),
+                format!("{tight}\n{fallback}"),
+            ]
+            .into_iter()
+            .find(|candidate| candidate.len() <= 4096)
+            .ok_or("complete mandatory session context and recovery routes exceed 4096 bytes")?;
         }
         text
     } else {

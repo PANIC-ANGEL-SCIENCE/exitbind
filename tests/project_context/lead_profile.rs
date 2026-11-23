@@ -165,7 +165,7 @@ fn start_and_resume_offer_the_current_bound_profile_without_a_facts_read() {
         "{mismatched}"
     );
 
-    fs::write(&profile_path, "Changed Lead instruction\n").unwrap();
+    fs::write(profile_path, "Changed Lead instruction\n").unwrap();
     drift_refusal(&run_hook_command(&root, initial_command));
     let changed = native_session_hook(&root, &store, "profile-resume-session");
     let changed_command = session_profile_command(&changed);
