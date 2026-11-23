@@ -1,9 +1,9 @@
 {
-  "main_sha": "3cca99776851aa3cbdca4f156053d62783fb675a",
+  "main_sha": "679454a5d440fc1f821c736f7514ae07303de446",
   "ci": {
-    "label": "passing",
-    "run_id": 43700726516,
-    "sha": "3cca99776851aa3cbdca4f156053d62783fb675a"
+    "label": "running",
+    "run_id": 45212349266,
+    "sha": "679454a5d440fc1f821c736f7514ae07303de446"
   },
   "release": {
     "label": "v0.31.28",
@@ -14,5 +14,5 @@
     "label": "MIT",
     "spdx": "MIT"
   },
-  "checked_at": "2026-11-23T16:03:21.926609+00:00"
+  "checked_at": "2026-11-23T16:04:45.006621+00:00"
 }
