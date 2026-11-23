@@ -49,6 +49,10 @@ Exitbind keeps local task records and checks whether its acceptance conditions a
 
 [Setup](#equipment-issue--setup) · [Reference](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/blob/main/REFERENCE.md) · [Recovery](https://github.com/PANIC-ANGEL-SCIENCE/exitbind/blob/main/docs/continuing-native-work.md)
 
+### CHECK THE DESTINATION BEFORE ENTERING.
+
+A shorter route to the wrong room is still the wrong room.
+
 ### AN OPEN DOOR IS NOT PROOF OF COMPLETION.
 
 The door may open before your work is finished.
