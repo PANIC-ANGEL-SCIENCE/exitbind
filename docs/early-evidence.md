@@ -112,7 +112,14 @@ retained result. Continuation-managed Works do not use this recovery route.
 The observer proof is local product-owned state; it is not authenticated against
 another process with write access under the same operating-system account.
 
-For Exitbind contributors, `scripts/ci-local.sh --pre-return` shares its stage
-definition with full CI. It includes static checks and selected invariant
-tests without release builds or live asset verification. Other projects choose
-their own cheap command and acquire no Cargo or Clippy dependency.
+For Exitbind contributors, select the existing diagnostic before the Worker
+returns, using the intended comparison commit for `PRE_RETURN_BASE`. For
+example, supply
+`--pre-return-command 'PRE_RETURN_BASE=<BASE_COMMIT> ./scripts/ci-local.sh --pre-return'`
+when beginning the Work, replacing
+`<BASE_COMMIT>` with that commit. The route shares its stage definition with
+full CI and omits release builds and live asset verification. For affected Rust
+tests on Linux, it selects owning Cargo targets and their required features for
+Clippy before running the selected tests, so a lint warning can stop the return
+before runtime tests. Other projects choose their own cheap command and acquire
+no Cargo or Clippy dependency.

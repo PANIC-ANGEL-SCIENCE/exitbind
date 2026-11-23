@@ -6,6 +6,7 @@ python3 -B - "$root" <<'PY'
 import io
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import sys
@@ -47,7 +48,26 @@ printf '%s|%s|%s|%s\\n' "${CARGO_PROFILE_DEV_OPT_LEVEL:-missing}" "${CARGO_PROFI
 printf '%s\\n' "${CARGO_TARGET_DIR:-missing}" >> "$TARGET_RECORD"
 case ${1:-} in
   --version) printf 'cargo scope-fixture\\n'; exit 0 ;;
-  fmt|clippy) printf '%s\\n' "$*" >> "$CARGO_RECORD" ;;
+  fmt) printf '%s\\n' "$*" >> "$CARGO_RECORD" ;;
+  clippy)
+    printf '%s\\n' "$*" >> "$CARGO_RECORD"
+    warning_target=false
+    warning_feature=false
+    warnings_denied=false
+    previous=
+    for argument in "$@"; do
+      case "$previous" in
+        --test) [ "$argument" != "${CLIPPY_WARNING_TARGET:-__none__}" ] || warning_target=true ;;
+        --features)
+          case ",$argument," in *",${CLIPPY_WARNING_FEATURE:-__none__},"*) warning_feature=true ;; esac ;;
+        -D) [ "$argument" != warnings ] || warnings_denied=true ;;
+      esac
+      previous=$argument
+    done
+    if [ "$warning_target" = true ] && [ "$warning_feature" = true ] && [ "$warnings_denied" = true ]; then
+      printf 'error: simulated warning in selected test target\\n' >&2
+      exit 49
+    fi ;;
   test)
     printf '%s\\n' "$*" >> "$CARGO_RECORD"
     case " $* " in *" --test ${FAIL_TARGET:-__none__} "*) exit 47 ;; esac
@@ -125,6 +145,7 @@ esac
                RECOVERY_CASE=recovery, VALUE_PROOF_BASE=base,
                PYTHONDONTWRITEBYTECODE="1")
     for name in ["PRE_RETURN_BASE", "FAIL_TARGET", "ZERO_TARGET", "ISOLATED_RESULT", "ORDINARY_RESULT", "FAKE_PLATFORM", "CI_PRE_RETURN_SCOPE",
+                 "CLIPPY_WARNING_TARGET", "CLIPPY_WARNING_FEATURE",
                  "CARGO_PROFILE_DEV_OPT_LEVEL", "CARGO_PROFILE_TEST_OPT_LEVEL",
                  "CARGO_PROFILE_DEV_DEBUG", "CARGO_PROFILE_TEST_DEBUG"]:
         env.pop(name, None)
@@ -169,6 +190,29 @@ esac
         assert "stage=affected-tests" in result.stdout, result.stdout
         assert log.count("test --locked --test first_impression\n") == 1, log
     print("affected regression: nonzero and zero-test results refuse")
+    restore()
+    # A changed test submodule must be linted with its gated owning target
+    # before the same selection is allowed to execute its tests.
+    edit("tests/recurrence_repairs.rs")
+    warning_log, _, result = run(
+        ci, success=False, FAKE_PLATFORM="linux", PRE_RETURN_BASE=base,
+        CLIPPY_WARNING_TARGET="check_review_recovery", CLIPPY_WARNING_FEATURE="repository-checks")
+    assert result.returncode == 49 and "stage=clippy" in result.stdout, result.stdout
+    warning_lines = warning_log.splitlines()
+    clippy = [line for line in warning_lines if line.startswith("clippy ")]
+    assert len(clippy) == 1 and not any(line.startswith("test ") for line in warning_lines), warning_log
+    argv = shlex.split(clippy[0])
+    assert any(argv[i:i + 2] == ["--test", "check_review_recovery"] for i in range(len(argv))), argv
+    assert any("repository-checks" in argv[i + 1].split(",")
+               for i, arg in enumerate(argv[:-1]) if arg == "--features"), argv
+    assert argv[-3:] == ["--", "-D", "warnings"], argv
+    assert "--all-targets" not in argv and "--test host_runtime" not in clippy[0], argv
+    log, tools, result = run(ci, FAKE_PLATFORM="linux", PRE_RETURN_BASE=base)
+    assert [line for line in log.splitlines() if line.startswith("clippy ")] == clippy, log
+    assert "test --locked --features repository-checks --test check_review_recovery\n" in log, log
+    assert "--test host_runtime" not in log and not tools, (log, tools)
+    assert "stage=pre-return-complete" in result.stdout, result.stdout
+    print("feature-gated test submodule: selected lint refuses warning before tests; same selection runs")
     restore()
     edit("tests/temp_root_contract/temp_root_guard.rs")
     log, _, _ = run(affected)
