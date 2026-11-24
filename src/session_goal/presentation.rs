@@ -154,13 +154,25 @@ pub(crate) fn presentation_for_selected(
     root: &std::path::Path,
     project_selected: bool,
 ) -> Result<Value, String> {
+    presentation_and_requirements_for_selected(loaded, value, root, project_selected)
+        .map(|(presentation, _)| presentation)
+}
+
+/// Share the named requirement projection only within this selected Goal view.
+pub(crate) fn presentation_and_requirements_for_selected(
+    loaded: &crate::config::Loaded,
+    value: Option<&Value>,
+    root: &std::path::Path,
+    project_selected: bool,
+) -> Result<(Value, Option<Result<Value, String>>), String> {
     let mut rendered = presentation(value);
     let readiness = current::evaluate(loaded, value, root, project_selected);
     rendered["historicalLeadClosure"] = rendered["explicitLeadClosure"].clone();
     rendered["explicitLeadClosure"] = json!(readiness.is_current());
     rendered["currentReadiness"] = readiness.value();
-    rendered["goalProgress"] =
+    let (progress, requirements) =
         progress::project_selected(loaded, root, project_selected, value, &rendered, None);
+    rendered["goalProgress"] = progress;
     if !selected_observation_still_current(root, value) {
         let reason = crate::run::inputs::active_resume_budget()
             .and_then(|mut budget| budget.limited_reason())
@@ -176,7 +188,7 @@ pub(crate) fn presentation_for_selected(
         );
     }
     rendered["terminal"] = json!(crate::presentation_events::whole_goal_terminal(&rendered));
-    Ok(rendered)
+    Ok((rendered, requirements))
 }
 
 /// Preserve standalone Work display while a bound goal owns its completion.

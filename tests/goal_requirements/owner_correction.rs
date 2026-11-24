@@ -1937,7 +1937,11 @@ fn corrected_owner_emits_reviewed_integration_and_exact_close_routes() {
     assert_eq!(closed["completionEvent"]["kind"], "session_goal_completed");
     let status = fixture.target.status();
     assert_eq!(status["closure"]["closed"], true);
-    assert_eq!(status["currentReadiness"]["state"], "current");
+    assert_eq!(
+        status["currentReadiness"]["state"], "current",
+        "current readiness: {}",
+        status["currentReadiness"]
+    );
     assert_eq!(status["goalProgress"]["overall"], "complete");
     assert_eq!(status["presentation"]["terminal"], TERMINAL);
 }

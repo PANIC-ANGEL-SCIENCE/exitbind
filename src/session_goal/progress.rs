@@ -8,6 +8,7 @@
 
 use crate::config::Loaded;
 use serde_json::{json, Value};
+use std::cell::OnceCell;
 
 pub(super) mod categories;
 mod close_route;
@@ -28,6 +29,11 @@ struct GoalProjectionContext<'a> {
     loaded: Option<&'a Loaded>,
     root: Option<&'a std::path::Path>,
     project_selected: bool,
+}
+
+struct GoalProjectionObservations<'a> {
+    journey: Option<&'a mut JourneyObservation>,
+    named: Option<&'a OnceCell<Result<Value, String>>>,
 }
 
 /// Journey progress stays within the exact record, configuration and Work
@@ -175,8 +181,9 @@ pub(super) fn project_selected(
     record: Option<&Value>,
     rendered: &Value,
     result: Option<&Value>,
-) -> Value {
-    project_with_limit(
+) -> (Value, Option<Result<Value, String>>) {
+    let named = OnceCell::new();
+    let view = project_with_observations(
         GoalProjectionContext {
             loaded: Some(loaded),
             root: Some(root),
@@ -187,8 +194,12 @@ pub(super) fn project_selected(
         result,
         MAX_TASKS,
         false,
-        None,
-    )
+        GoalProjectionObservations {
+            journey: None,
+            named: Some(&named),
+        },
+    );
+    (view, named.into_inner())
 }
 
 /// A bounded Goal preview for a non-owner project. It deliberately has no
@@ -229,6 +240,29 @@ fn project_with_limit(
     include_canonical_id: bool,
     journey: Option<&mut JourneyObservation>,
 ) -> Value {
+    project_with_observations(
+        context,
+        record,
+        rendered,
+        result,
+        task_limit,
+        include_canonical_id,
+        GoalProjectionObservations {
+            journey,
+            named: None,
+        },
+    )
+}
+
+fn project_with_observations(
+    context: GoalProjectionContext<'_>,
+    record: Option<&Value>,
+    rendered: &Value,
+    result: Option<&Value>,
+    task_limit: usize,
+    include_canonical_id: bool,
+    observations: GoalProjectionObservations<'_>,
+) -> Value {
     let mut view = goal_view(
         context,
         record,
@@ -236,7 +270,7 @@ fn project_with_limit(
         result,
         task_limit,
         include_canonical_id,
-        journey,
+        observations,
     );
     if let (Some(loaded), Some(record)) = (context.loaded, record) {
         super::goal_summary::append(loaded, record, &mut view);
@@ -254,7 +288,7 @@ fn goal_view(
     result: Option<&Value>,
     task_limit: usize,
     include_canonical_id: bool,
-    journey: Option<&mut JourneyObservation>,
+    observations: GoalProjectionObservations<'_>,
 ) -> Value {
     let GoalProjectionContext {
         loaded,
@@ -270,7 +304,7 @@ fn goal_view(
             "unavailable",
         );
     };
-    let mut observation = journey;
+    let mut observation = observations.journey;
     let journey = match observation.as_deref_mut() {
         Some(observation) => observation.progress(loaded, record),
         None => loaded
@@ -306,9 +340,25 @@ fn goal_view(
     }
     if super::requirements::named(record) {
         if let Some(loaded) = loaded {
+            let project = || {
+                super::requirements::projection_selected(
+                    loaded,
+                    goal_root.unwrap_or(&loaded.state_root),
+                    project_selected,
+                    record,
+                )
+            };
+            let owned_projection;
+            let projection = match observations.named {
+                Some(named) => named.get_or_init(project),
+                None => {
+                    owned_projection = project();
+                    &owned_projection
+                }
+            };
             let mut view = named_progress(
                 loaded,
-                goal_root.unwrap_or(&loaded.state_root),
+                projection,
                 project_selected,
                 record,
                 overall_state,
@@ -518,26 +568,25 @@ fn overall_state(record: &Value, rendered: &Value) -> &'static str {
 
 fn named_progress(
     loaded: &Loaded,
-    root: &std::path::Path,
+    projection: &Result<Value, String>,
     project_selected: bool,
     record: &Value,
     overall: &'static str,
     result: Option<&Value>,
     limit: usize,
 ) -> Value {
-    let projection =
-        match super::requirements::projection_selected(loaded, root, project_selected, record) {
-            Ok(value) => value,
-            Err(_) => {
-                return unavailable(
-                    result,
-                    "named_coverage_unavailable",
-                    "named requirement evidence is unavailable",
-                    record["goal"].as_str(),
-                    overall,
-                )
-            }
-        };
+    let projection = match projection {
+        Ok(value) => value,
+        Err(_) => {
+            return unavailable(
+                result,
+                "named_coverage_unavailable",
+                "named requirement evidence is unavailable",
+                record["goal"].as_str(),
+                overall,
+            )
+        }
+    };
     let Some(rows) = projection["requirements"].as_array() else {
         return unavailable(
             result,

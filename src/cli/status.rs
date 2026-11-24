@@ -119,12 +119,6 @@ fn goal_status_bounded(l: &config::Loaded, a: &Arguments) -> Result<(), String> 
         finish_event_observation(&scope.root, record.as_ref(), &mut response);
         return print_json(&crate::producer::observed(response));
     }
-    let mut presentation = crate::session_goal::presentation_for_selected(
-        l,
-        record.as_ref(),
-        &scope.root,
-        a.flags.contains_key("project"),
-    )?;
     let mut value = record.clone().unwrap_or_else(|| json!({"closed": false}));
     if let Some(session) = &scope.session {
         if let Some(recovery) = crate::session_goal::owner_correction::pending_recovery(session, l)?
@@ -132,6 +126,13 @@ fn goal_status_bounded(l: &config::Loaded, a: &Arguments) -> Result<(), String> 
             value["ownerCorrectionRecovery"] = recovery;
         }
     }
+    let (mut presentation, selected_requirements) =
+        crate::session_goal::presentation_and_requirements_for_selected(
+            l,
+            record.as_ref(),
+            &scope.root,
+            a.flags.contains_key("project"),
+        )?;
     value["currentReadiness"] = presentation["currentReadiness"].clone();
     value["goalProgress"] = presentation["goalProgress"].clone();
     if scope.is_session()
@@ -149,12 +150,14 @@ fn goal_status_bounded(l: &config::Loaded, a: &Arguments) -> Result<(), String> 
         .as_ref()
         .is_some_and(crate::session_goal::requirements::named);
     if named {
-        let requirements = crate::session_goal::requirements::projection_selected(
-            l,
-            &scope.root,
-            a.flags.contains_key("project"),
-            record.as_ref().expect("named record"),
-        );
+        let requirements = selected_requirements.unwrap_or_else(|| {
+            crate::session_goal::requirements::projection_selected(
+                l,
+                &scope.root,
+                a.flags.contains_key("project"),
+                record.as_ref().expect("named record"),
+            )
+        });
         match requirements {
             Ok(requirements) => value["requirements"] = requirements,
             Err(_) if observation_limit().is_some() => {
