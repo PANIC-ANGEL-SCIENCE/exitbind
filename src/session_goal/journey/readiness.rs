@@ -319,7 +319,7 @@ pub(super) fn readiness_for_state_inner(
     if let Some(record) = record {
         match super::super::owner_correction::uncredited_binding(record) {
             Ok(Some(_)) => {
-                if let Some(observation) = observation.as_deref_mut() {
+                if let Some(observation) = observation {
                     observation.disable();
                 }
                 let integration =
