@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.31.31
+
+Release: https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/tag/v0.31.31 — the tag sits on this entry's release commit, and the page lists its assets once they are published.
+
+- Correct a named native Goal with explicitly selected historical Work from
+  its recorded configurations. Verify each Work in its original configuration
+  and retain its history without closure credit. Fresh validation and reviewed
+  integration in the corrected project remain required.
+- A retained selection uses version 2 only when every member matches the target's
+  canonical configuration path and bytes, project and local identities, and
+  product and state roots. Otherwise it uses version 3, including separate
+  configurations in one project. Use a reader supporting the decision through
+  recovery and after commit. Existing version-1 and version-2 decisions remain
+  readable. Establish quiescence for the original Goal and every selected Work
+  source before preview. [Goal owner correction](docs/goal-requirements.md)
+
 ## 0.31.30
 
 Release: https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/tag/v0.31.30 — the tag sits on this entry's release commit, and the page lists its assets once they are published.

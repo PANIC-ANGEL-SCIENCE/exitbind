@@ -219,14 +219,27 @@ pub(super) fn parse_selection(raw: &str) -> Result<Vec<String>, String> {
     Ok(works)
 }
 
-pub(super) fn select(
+#[derive(Clone)]
+pub(super) struct SelectedMember {
+    work: String,
+    member: Value,
+    intent: String,
+}
+
+pub(super) struct MemberLock {
+    work: String,
+    pub(super) ledger: crate::run::ledger::LedgerPath,
+}
+
+/// Establish the complete historical selection and original owner before
+/// reading any configuration or Work path named by a member.
+pub(super) fn select_history(
     history: &[Value],
     goal_id: &str,
-    target: &Loaded,
     session: &super::super::native::Session,
     owner: &super::super::native::Owner,
     works: &[String],
-) -> Result<Vec<UncreditedMember>, String> {
+) -> Result<Vec<SelectedMember>, String> {
     let mut observed = History::default();
     let mut previous = None;
     for record in history {
@@ -242,6 +255,95 @@ pub(super) fn select(
             "uncredited Work selection must name every historical member exactly once".into(),
         );
     }
+    works
+        .iter()
+        .map(|work| {
+            let member = &observed.members[work];
+            if member["host"] != session.host
+                || member["sessionKey"] != session.key
+                || member["parentGoalId"] != goal_id
+                || member["ownerIdentitySha256"] != owner.identity_sha256
+                || member["ownerProjectId"] != serde_json::json!(owner.project_id)
+            {
+                return Err("historical Work belongs to another session or owner".into());
+            }
+            Ok(SelectedMember {
+                work: work.clone(),
+                member: member.clone(),
+                intent: observed.linked_intents[work].clone(),
+            })
+        })
+        .collect()
+}
+
+pub(super) fn matches_binding(
+    member: &Value,
+    binding: &super::super::recovery::ConfigBinding,
+) -> bool {
+    member["projectIdentitySha256"] == binding.project_identity_sha256
+        && member["localIdentitySha256"] == binding.local_identity_sha256
+        && member["configPath"] == binding.path
+        && member["configSha256"] == binding.config_sha256
+        && member["productRoot"] == binding.product_root
+        && member["stateRoot"] == binding.state_root
+}
+
+fn source(member: &Value) -> Result<Loaded, String> {
+    let path = member["configPath"]
+        .as_str()
+        .ok_or("historical Work configuration path is unavailable")?;
+    let source = super::target_config(path)?;
+    let binding = super::super::recovery::config_binding_for_current(&source)?;
+    if !matches_binding(member, &binding) {
+        return Err("historical Work configuration or project identity changed".into());
+    }
+    Ok(source)
+}
+
+fn member_ledger(source: &Loaded, work: &str) -> Result<crate::run::ledger::LedgerPath, String> {
+    let relative = crate::work::resolve(source, work)?;
+    crate::run::ledger::ledger_path(&source.state_root, &relative, false)
+}
+
+pub(super) fn member_locks(selected: &[SelectedMember]) -> Result<Vec<MemberLock>, String> {
+    selected
+        .iter()
+        .map(|item| {
+            let source = source(&item.member)?;
+            Ok(MemberLock {
+                work: item.work.clone(),
+                ledger: member_ledger(&source, &item.work)?,
+            })
+        })
+        .collect()
+}
+
+fn require_locked(
+    work: &str,
+    current: &crate::run::ledger::LedgerPath,
+    locks: &[MemberLock],
+) -> Result<(), String> {
+    let lock = locks
+        .iter()
+        .find(|lock| lock.work == work)
+        .ok_or("historical Work was not locked")?;
+    if lock.ledger.path != current.path
+        || lock.ledger.expected != current.expected
+        || lock.ledger.root != current.root
+        || lock.ledger.lock != current.lock
+    {
+        return Err("historical Work ledger path changed after locking".into());
+    }
+    Ok(())
+}
+
+pub(super) fn select(
+    selected: &[SelectedMember],
+    target: &Loaded,
+    session: &super::super::native::Session,
+    owner: &super::super::native::Owner,
+    locks: &[MemberLock],
+) -> Result<(Vec<UncreditedMember>, bool), String> {
     const FIELDS: &[&str] = &[
         "host",
         "sessionKey",
@@ -250,16 +352,23 @@ pub(super) fn select(
         "ownerProjectId",
         "ownerIdentitySha256",
     ];
-    let mut selected = Vec::new();
-    for work in works {
-        let member = &observed.members[work];
-        super::super::journey::validate_member_for_session(target, member, session, owner)?;
-        let relative = crate::work::resolve(target, work)?;
-        let (_, events, _) = crate::run::ledger::load(target, &relative)?;
+    let target_binding = super::super::recovery::config_binding_for_current(target)?;
+    let same_target = selected
+        .iter()
+        .all(|item| matches_binding(&item.member, &target_binding));
+    let mut sealed = Vec::new();
+    for item in selected {
+        let work = &item.work;
+        let member = &item.member;
+        let source = source(member)?;
+        super::super::journey::validate_member_for_session(&source, member, session, owner)?;
+        let ledger = member_ledger(&source, work)?;
+        require_locked(work, &ledger, locks)?;
+        let (_, events, _) = crate::run::ledger::load_at(&source, &ledger)?;
         let start = events
             .first()
             .ok_or("historical Work start is unavailable")?;
-        let intent = &observed.linked_intents[work];
+        let intent = &item.intent;
         if start["action"] != "start"
             || start["eventSha256"] != member["startEventSha256"]
             || !start["supersedes"].is_null()
@@ -270,7 +379,7 @@ pub(super) fn select(
             return Err("historical Work start does not match its consumed admission".into());
         }
         let companion = super::super::association::read_private_companion(
-            target,
+            &source,
             work,
             ".session-goal.json",
             "Work Goal context companion",
@@ -286,7 +395,10 @@ pub(super) fn select(
         {
             return Err("historical Work companion does not match its linked member".into());
         }
-        selected.push(UncreditedMember {
+        // Re-read the configuration after the ledger and companion so a
+        // changed source cannot be sealed through an earlier in-memory load.
+        super::fresh(&source)?;
+        sealed.push(UncreditedMember {
             work: work.clone(),
             member_sha256: hash::value(member),
             start_event_sha256: member["startEventSha256"]
@@ -300,5 +412,11 @@ pub(super) fn select(
                 .to_owned(),
         });
     }
-    Ok(selected)
+    // Check every locked path again after the complete set was inspected.
+    for item in selected {
+        let source = source(&item.member)?;
+        let ledger = member_ledger(&source, &item.work)?;
+        require_locked(&item.work, &ledger, locks)?;
+    }
+    Ok((sealed, same_target))
 }

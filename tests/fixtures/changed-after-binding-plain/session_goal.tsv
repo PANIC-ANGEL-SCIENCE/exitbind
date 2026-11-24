@@ -90,6 +90,7 @@ RoutedInText	src/session_goal/owner_correction.rs	pending correction no longer m
 NotCurrentState	src/session_goal/owner_correction.rs	pending owner correction no longer matches; inspect current Goal state
 Integrity	src/session_goal/owner_correction.rs	retained historical Work identity changed after owner correction
 Integrity	src/session_goal/owner_correction/retained.rs	historical Work start does not match its consumed admission
+Integrity	src/session_goal/owner_correction/retained.rs	historical Work ledger path changed after locking
 Integrity	src/session_goal/owner_correction/retained.rs	uncredited Work selection no longer matches its linked identity
 LeadPreparation	src/session_goal/owner_correction/source.rs	relocated source bytes do not match the recorded source snapshot
 Transient	src/session_goal/requirements/mutation.rs	requirement source no longer matches its selected bytes

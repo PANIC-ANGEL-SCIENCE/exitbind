@@ -60,7 +60,7 @@ impl SavedRequest {
 }
 
 /// Exact historical membership and immutable Work identities explicitly
-/// excluded from proof credit by a version-2 owner correction.
+/// excluded from proof credit by a version-2 or version-3 owner correction.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct UncreditedMember {
@@ -145,7 +145,7 @@ impl OwnerCorrectionDecision {
             self.source_writers_quiesced,
         ) {
             (1, None, None) => true,
-            (2, Some(items), Some(true)) => {
+            (2 | 3, Some(items), Some(true)) => {
                 let mut works = std::collections::BTreeSet::new();
                 !items.is_empty()
                     && items.len() <= MAX_UNCREDITED_MEMBERS

@@ -187,6 +187,7 @@ fn validate_recorded_selection(
         return Err("owner correction source project identity is inconsistent".into());
     }
     if let Some(selected) = &decision.uncredited_members {
+        super::journey::state(record)?;
         let members = record["journeyMembers"]
             .as_array()
             .ok_or("historical members are unavailable")?;
@@ -201,21 +202,19 @@ fn validate_recorded_selection(
                         && member["ownerIdentitySha256"]
                             == decision.old_config.local_identity_sha256
                         && member["ownerProjectId"] == json!(decision.old_config.project_id)
-                        && member["projectIdentitySha256"]
-                            == decision.target_config.project_identity_sha256
-                        && member["localIdentitySha256"]
-                            == decision.target_config.local_identity_sha256
-                        && member["configPath"] == decision.target_config.path
-                        && member["configSha256"] == decision.target_config.config_sha256
-                        && member["productRoot"] == decision.target_config.product_root
-                        && member["stateRoot"] == decision.target_config.state_root
                 })
             })
         {
             return Err(
-                "owner correction retained Work does not match the exact target and prior owner"
+                "owner correction retained Work does not match the exact selection and prior owner"
                     .into(),
             );
+        }
+        let all_target = members
+            .iter()
+            .all(|member| retained::matches_binding(member, &decision.target_config));
+        if (decision.version == 2 && !all_target) || (decision.version == 3 && all_target) {
+            return Err("owner correction version does not match its retained Work sources".into());
         }
     }
     let sources = super::requirements::recorded_sources(record)?;
@@ -258,60 +257,16 @@ fn replay<'a>(
     Ok(None)
 }
 
-struct DecisionContext<'a, 'b> {
-    loaded: &'a Loaded,
-    target: &'a Loaded,
-    session: &'a super::native::Session,
-    history: &'a [Value],
-    owner_value: &'a Value,
-    owner: &'a super::native::Owner,
-    request: &'a OwnerCorrectionRequest<'b>,
-    request_sha256: &'a str,
-    prior_digest: Option<&'a str>,
-}
-
-fn exact_decision(context: DecisionContext<'_, '_>) -> Result<OwnerCorrectionDecision, String> {
-    let DecisionContext {
-        loaded,
-        target,
-        session,
-        history,
-        owner_value,
-        owner,
-        request,
-        request_sha256,
-        prior_digest,
-    } = context;
-    if session.adopted() {
-        return Err(
-            "owner correction requires the original native session, not an adoption".into(),
-        );
-    }
-    let record = history.last().ok_or("no native Goal is incorporated")?;
-    if !super::requirements::named(record) || record["closure"]["closed"] != false {
-        return Err("owner correction requires an open named Goal".into());
-    }
-    let goal_id = record["goalId"]
-        .as_str()
-        .ok_or("Goal identity is unavailable")?;
-    let uncredited_members = if let Some(raw) = request.uncredited_members {
-        let works = retained::parse_selection(raw)?;
-        Some(retained::select(
-            history, goal_id, target, session, owner, &works,
-        )?)
-    } else {
-        empty_goal(history, goal_id)?;
-        None
-    };
+fn owner_binding(
+    loaded: &Loaded,
+    record: &Value,
+    owner: &super::native::Owner,
+) -> Result<super::recovery::ConfigBinding, String> {
     let old_config = super::recovery::config_binding_for_current(loaded)?;
-    let target_config = super::recovery::config_binding_for_current(target)?;
     if old_config.local_identity_sha256 != owner.identity_sha256
         || old_config.project_id != owner.project_id
     {
         return Err("owner correction requires the current native Goal owner configuration".into());
-    }
-    if old_config.local_identity_sha256 == target_config.local_identity_sha256 {
-        return Err("owner correction requires a different configured owner".into());
     }
     let existing = decisions(record)?;
     if existing.len() >= 16 {
@@ -325,9 +280,70 @@ fn exact_decision(context: DecisionContext<'_, '_>) -> Result<OwnerCorrectionDec
     } else if record["continuation"]["projectIdentity"] != old_config.project_identity_sha256 {
         return Err("named Goal source identity does not match the current owner".into());
     }
+    Ok(old_config)
+}
+
+struct DecisionContext<'a, 'b> {
+    loaded: &'a Loaded,
+    target: &'a Loaded,
+    session: &'a super::native::Session,
+    history: &'a [Value],
+    owner_value: &'a Value,
+    owner: &'a super::native::Owner,
+    request: &'a OwnerCorrectionRequest<'b>,
+    request_sha256: &'a str,
+    prior_digest: Option<&'a str>,
+    member_locks: Option<&'a [retained::MemberLock]>,
+}
+
+fn exact_decision(context: DecisionContext<'_, '_>) -> Result<OwnerCorrectionDecision, String> {
+    let DecisionContext {
+        loaded,
+        target,
+        session,
+        history,
+        owner_value,
+        owner,
+        request,
+        request_sha256,
+        prior_digest,
+        member_locks,
+    } = context;
+    if session.adopted() {
+        return Err(
+            "owner correction requires the original native session, not an adoption".into(),
+        );
+    }
+    let record = history.last().ok_or("no native Goal is incorporated")?;
+    if !super::requirements::named(record) || record["closure"]["closed"] != false {
+        return Err("owner correction requires an open named Goal".into());
+    }
+    let goal_id = record["goalId"]
+        .as_str()
+        .ok_or("Goal identity is unavailable")?;
+    let old_config = owner_binding(loaded, record, owner)?;
+    let target_config = super::recovery::config_binding_for_current(target)?;
+    if old_config.local_identity_sha256 == target_config.local_identity_sha256 {
+        return Err("owner correction requires a different configured owner".into());
+    }
+    let (uncredited_members, version) = if let Some(raw) = request.uncredited_members {
+        let works = retained::parse_selection(raw)?;
+        let selected = retained::select_history(history, goal_id, session, owner, &works)?;
+        let (members, same_target) = retained::select(
+            &selected,
+            target,
+            session,
+            owner,
+            member_locks.ok_or("historical Work locks are unavailable")?,
+        )?;
+        (Some(members), if same_target { 2 } else { 3 })
+    } else {
+        empty_goal(history, goal_id)?;
+        (None, 1)
+    };
     let relocations = source::relocations(target, record, request.relocations)?;
     let mut decision = OwnerCorrectionDecision {
-        version: if uncredited_members.is_some() { 2 } else { 1 },
+        version,
         goal_id: goal_id.to_owned(),
         host: session.host.into(),
         session_key: session.key.clone(),
@@ -446,7 +462,7 @@ pub(crate) fn correct(
     request: OwnerCorrectionRequest<'_>,
 ) -> Result<Value, String> {
     if request.abort {
-        return correct_inner(loaded, request);
+        return correct_inner(loaded, request, None);
     }
     if let Some(raw) = request.uncredited_members {
         if !request.source_writers_quiesced {
@@ -455,16 +471,76 @@ pub(crate) fn correct(
                     .into(),
             );
         }
+        let saved = saved_request(loaded, &request)?;
+        let session = super::native::current()?
+            .ok_or("owner correction requires the original native host session")?;
+        if session.adopted() {
+            return Err("owner correction requires the original native host session".into());
+        }
+        let (owner_value, history, resolved) =
+            snapshot(&session, super::native::Access::RequireWritable)?;
+        if request.apply {
+            if let Some(event) = replay(
+                &history,
+                request.request_id,
+                &saved.digest(),
+                request.current_binding,
+            )? {
+                return Ok(
+                    json!({"kind":"native_goal_owner_correction_replayed","readOnly":true,"event":event}),
+                );
+            }
+        }
+        let local = super::native::owner_for(loaded)?;
+        if local.identity_sha256 != resolved.owner.identity_sha256
+            || local.project_id != resolved.owner.project_id
+        {
+            return Err("native session Goal is owned by another configured project; this project may read context only".into());
+        }
+        let record = history.last().ok_or("no native Goal is incorporated")?;
+        if !super::requirements::named(record) || record["closure"]["closed"] != false {
+            return Err("owner correction requires an open named Goal".into());
+        }
+        owner_binding(&fresh(loaded)?, record, &resolved.owner)?;
+        let goal_id = record["goalId"]
+            .as_str()
+            .ok_or("Goal identity is unavailable")?;
         let works = retained::parse_selection(raw)?;
-        let target = target_config(request.target_config)?;
-        return with_member_locks(&target, &works, || correct_inner(loaded, request));
+        let selected =
+            retained::select_history(&history, goal_id, &session, &resolved.owner, &works)?;
+        let guarded = LockedMembers {
+            owner_value,
+            goal_event: record["eventSha256"].clone(),
+            locks: retained::member_locks(&selected)?,
+        };
+        return with_member_locks(&guarded.locks, || {
+            correct_inner(loaded, request, Some(&guarded))
+        });
     }
-    correct_inner(loaded, request)
+    correct_inner(loaded, request, None)
+}
+
+struct LockedMembers {
+    owner_value: Value,
+    goal_event: Value,
+    locks: Vec<retained::MemberLock>,
+}
+
+impl LockedMembers {
+    fn verify(&self, owner_value: &Value, history: &[Value]) -> Result<(), String> {
+        if &self.owner_value != owner_value
+            || history.last().map(|record| &record["eventSha256"]) != Some(&self.goal_event)
+        {
+            return Err(
+                "native Goal or owner changed while acquiring historical Work locks".into(),
+            );
+        }
+        Ok(())
+    }
 }
 
 fn with_member_locks<T>(
-    target: &Loaded,
-    works: &[String],
+    members: &[retained::MemberLock],
     operation: impl FnOnce() -> Result<T, String>,
 ) -> Result<T, String> {
     fn take<T>(
@@ -476,21 +552,20 @@ fn with_member_locks<T>(
             None => operation(),
         }
     }
-    let mut locks = Vec::with_capacity(works.len());
-    for work in works {
-        let relative = crate::work::resolve(target, work)?;
-        locks.push(crate::run::ledger::ledger_path(
-            &target.state_root,
-            &relative,
-            false,
-        )?);
-    }
+    let mut locks = members
+        .iter()
+        .map(|member| member.ledger.clone())
+        .collect::<Vec<_>>();
     locks.sort_by(|left, right| left.lock.cmp(&right.lock));
     locks.dedup_by(|left, right| left.lock == right.lock);
     take(&locks, operation)
 }
 
-fn correct_inner(loaded: &Loaded, request: OwnerCorrectionRequest<'_>) -> Result<Value, String> {
+fn correct_inner(
+    loaded: &Loaded,
+    request: OwnerCorrectionRequest<'_>,
+    locked: Option<&LockedMembers>,
+) -> Result<Value, String> {
     if request.abort && request.apply {
         return Err("choose either apply or abort".into());
     }
@@ -517,6 +592,9 @@ fn correct_inner(loaded: &Loaded, request: OwnerCorrectionRequest<'_>) -> Result
                 json!({"kind":"native_goal_owner_correction_replayed","readOnly":true,"event":event}),
             );
         }
+    }
+    if let Some(locked) = locked {
+        locked.verify(&owner_value, &history)?;
     }
     if !request.apply && !request.abort {
         for record in &history {
@@ -575,6 +653,7 @@ fn correct_inner(loaded: &Loaded, request: OwnerCorrectionRequest<'_>) -> Result
             request: &request,
             request_sha256: &request_sha256,
             prior_digest,
+            member_locks: locked.map(|value| value.locks.as_slice()),
         })
     })()
     .map_err(|error: String| {
@@ -627,6 +706,7 @@ fn correct_inner(loaded: &Loaded, request: OwnerCorrectionRequest<'_>) -> Result
             expected: &decision,
             apply_argv: &apply_argv,
             abort_argv: &abort_argv,
+            locked,
         },
     )
 }
@@ -670,6 +750,7 @@ struct ApplyEvidence<'a> {
     expected: &'a OwnerCorrectionDecision,
     apply_argv: &'a [String],
     abort_argv: &'a [String],
+    locked: Option<&'a LockedMembers>,
 }
 
 fn pending_refusal(error: &str, apply: &[String], abort: &[String]) -> String {
@@ -692,6 +773,7 @@ fn apply(
         expected,
         apply_argv,
         abort_argv,
+        locked,
     } = evidence;
     let ledger = super::history_ledger(&session.root)?;
     crate::run::ledger::with_lock(&ledger, || {
@@ -705,6 +787,9 @@ fn apply(
             return Ok(
                 json!({"kind":"native_goal_owner_correction_replayed","readOnly":true,"event":event}),
             );
+        }
+        if let Some(locked) = locked {
+            locked.verify(&value, &history)?;
         }
         let pending = if resolved.pending {
             marker::Marker::parse(session, &value)?.pending
@@ -730,6 +815,7 @@ fn apply(
                 request,
                 request_sha256: request_sha,
                 prior_digest,
+                member_locks: locked.map(|value| value.locks.as_slice()),
             })
         })()
         .map_err(|error: String| {

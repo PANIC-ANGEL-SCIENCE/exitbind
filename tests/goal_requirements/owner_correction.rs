@@ -1140,6 +1140,222 @@ fn historical_preview(fixture: &Fixture, selection: &str, id: &str) -> Output {
     )
 }
 
+fn mixed_source(fixture: &Fixture, label: &str) -> Project {
+    let mut project = Project::new(label);
+    project.native_session = fixture.old.native_session.clone();
+    project
+}
+
+fn historical_ledger(project: &Project, work: &str) -> PathBuf {
+    project
+        .root
+        .join(".exitbind/runs")
+        .join(format!("work-{}.jsonl", work.strip_prefix("smw_").unwrap()))
+}
+
+#[test]
+fn mixed_owner_correction_preserves_exact_sources_without_credit() {
+    let fixture = Fixture::new("owner-correction-mixed");
+    let foreign = mixed_source(&fixture, "owner-correction-mixed-foreign");
+    let first = fixture.target.begin_ordinary("Target context", "true", &[]);
+    let second = foreign.begin_ordinary("Other project context", "true", &[]);
+    foreign.drive(&second, true);
+    let accepted = foreign.value(&["work", "detail", &second, "--json"], None);
+    assert_eq!(
+        accepted["completion"]["workAcceptance"]["state"], "accepted",
+        "{accepted}"
+    );
+    let selection = json!([first, second]).to_string();
+    let (_, journal) = paths(&fixture.old);
+    let before_records = support::goal_journal::records(&journal);
+    let before_goal = fs::read(&journal).unwrap();
+    let before_first = fs::read(historical_ledger(&fixture.target, &first)).unwrap();
+    let before_second = fs::read(historical_ledger(&foreign, &second)).unwrap();
+
+    let config = foreign.root.join("exitbind.json");
+    let missing = foreign.root.join("exitbind.json.unavailable");
+    fs::rename(&config, &missing).unwrap();
+    let partial = historical_preview(&fixture, &json!([first]).to_string(), "mixed-partial");
+    assert!(!partial.status.success());
+    let message = format!(
+        "{}{}",
+        String::from_utf8_lossy(&partial.stdout),
+        String::from_utf8_lossy(&partial.stderr)
+    );
+    assert!(
+        message.contains("selection must name every historical member"),
+        "{message}"
+    );
+    let wrong_owner = fixture.target.call(
+        &[
+            "goal",
+            "correct-owner",
+            "--target-config",
+            fixture.target.root.join("exitbind.json").to_str().unwrap(),
+            "--relocations",
+            &fixture.relocations,
+            "--request-id",
+            "mixed-wrong-owner",
+            "--reason",
+            "Refuse an incorrect owner before source access",
+            "--old-writers-quiesced",
+            "--uncredited-members",
+            &selection,
+            "--source-writers-quiesced",
+            "--json",
+        ],
+        None,
+    );
+    assert!(!wrong_owner.status.success());
+    let message = format!(
+        "{}{}",
+        String::from_utf8_lossy(&wrong_owner.stdout),
+        String::from_utf8_lossy(&wrong_owner.stderr)
+    );
+    assert!(
+        message.contains("owned by another configured project"),
+        "{message}"
+    );
+    assert_eq!(fs::read(&journal).unwrap(), before_goal);
+    fs::rename(&missing, &config).unwrap();
+
+    let preview = value(&historical_preview(&fixture, &selection, "mixed-exact"));
+    assert_eq!(preview["decision"]["version"], 3);
+    assert_eq!(
+        preview["decision"]["uncreditedMembers"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert!(preview["decision"]["uncreditedMembers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|member| member["work"] == second));
+    assert_eq!(fs::read(&journal).unwrap(), before_goal);
+    let applied = value(&fixture.execute(&preview, "applyArgv"));
+    assert_eq!(applied["kind"], "native_goal_owner_correction_applied");
+    let after_records = support::goal_journal::records(&journal);
+    assert_eq!(
+        &after_records[..before_records.len()],
+        before_records.as_slice()
+    );
+    let after = after_records.last().unwrap();
+    assert_eq!(
+        after["journeyMembers"],
+        before_records.last().unwrap()["journeyMembers"]
+    );
+    assert_eq!(after["closure"]["closed"], false);
+    assert_eq!(
+        fs::read(historical_ledger(&fixture.target, &first)).unwrap(),
+        before_first
+    );
+    assert_eq!(
+        fs::read(historical_ledger(&foreign, &second)).unwrap(),
+        before_second
+    );
+    let status = fixture.target.status();
+    assert_eq!(
+        status["goalProgress"]["journeyCompletion"]["state"], "blocked",
+        "{status}"
+    );
+    assert_eq!(
+        status["goalProgress"]["journeyCompletion"]["members"]["ownerCorrectionUncredited"],
+        2
+    );
+    let members = &status["goalProgress"]["journeyCompletion"]["members"];
+    assert_eq!(members["current"], 0);
+    assert_eq!(members["integrationSupported"], 0);
+    assert!(
+        members["retainedOwnerCorrectionUncredited"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|member| member["work"] == second
+                && member["state"] == "owner_correction_uncredited")
+    );
+
+    fs::rename(&config, &missing).unwrap();
+    let replay = value(&fixture.execute(&preview, "applyArgv"));
+    assert_eq!(replay["kind"], "native_goal_owner_correction_replayed");
+    assert_eq!(
+        fs::read(historical_ledger(&foreign, &second)).unwrap(),
+        before_second
+    );
+    fs::rename(missing, config).unwrap();
+}
+
+#[test]
+fn mixed_owner_correction_refuses_stale_source_and_aborts_without_it() {
+    let fixture = Fixture::new("owner-correction-mixed-stale");
+    let foreign = mixed_source(&fixture, "owner-correction-mixed-stale-foreign");
+    let first = fixture.target.begin_ordinary("Target context", "true", &[]);
+    let second = foreign.begin_ordinary("Other project context", "true", &[]);
+    let selection = json!([first, second]).to_string();
+    let (_, journal) = paths(&fixture.old);
+    let before_goal = fs::read(&journal).unwrap();
+    let before_first = fs::read(historical_ledger(&fixture.target, &first)).unwrap();
+    let before_second = fs::read(historical_ledger(&foreign, &second)).unwrap();
+    let preview = value(&historical_preview(&fixture, &selection, "mixed-stale"));
+    assert_eq!(preview["decision"]["version"], 3);
+    let config = foreign.root.join("exitbind.json");
+    let original = fs::read(&config).unwrap();
+    let mut changed = original.clone();
+    changed.push(b'\n');
+    fs::write(&config, changed).unwrap();
+    assert!(!fixture.execute(&preview, "applyArgv").status.success());
+    assert_eq!(fs::read(&journal).unwrap(), before_goal);
+    assert_eq!(
+        fs::read(historical_ledger(&fixture.target, &first)).unwrap(),
+        before_first
+    );
+    assert_eq!(
+        fs::read(historical_ledger(&foreign, &second)).unwrap(),
+        before_second
+    );
+    fs::write(&config, original).unwrap();
+
+    // A validly rehashed legacy version still cannot describe mixed sources.
+    let (owner_path, _) = paths(&fixture.old);
+    let original_owner = fs::read(&owner_path).unwrap();
+    let mut forged = preview.clone();
+    forged["decision"]["version"] = json!(2);
+    let mut unsigned = forged["decision"].clone();
+    unsigned.as_object_mut().unwrap().remove("previewSha256");
+    unsigned.as_object_mut().unwrap().remove("decisionSha256");
+    forged["decision"]["previewSha256"] = json!(sha(canonical(&unsigned).as_bytes()));
+    let mut unsigned = forged["decision"].clone();
+    unsigned.as_object_mut().unwrap().remove("decisionSha256");
+    forged["decision"]["decisionSha256"] = json!(sha(canonical(&unsigned).as_bytes()));
+    install_pending_marker(&fixture.old, &forged);
+    let forged_apply = fixture.execute(&preview, "applyArgv");
+    assert!(!forged_apply.status.success());
+    let message = format!(
+        "{}{}",
+        String::from_utf8_lossy(&forged_apply.stdout),
+        String::from_utf8_lossy(&forged_apply.stderr)
+    );
+    assert!(message.contains("version does not match"), "{message}");
+    assert_eq!(fs::read(&journal).unwrap(), before_goal);
+    fs::write(owner_path, original_owner).unwrap();
+
+    install_pending_marker(&fixture.old, &preview);
+    let missing = foreign.root.join("exitbind.json.unavailable");
+    fs::rename(&config, &missing).unwrap();
+    let pending = fixture.old.native_store_snapshot();
+    assert!(!fixture.execute(&preview, "applyArgv").status.success());
+    assert_eq!(fixture.old.native_store_snapshot(), pending);
+    let aborted = value(&fixture.execute(&preview, "abortArgv"));
+    assert_eq!(aborted["kind"], "native_goal_owner_correction_aborted");
+    assert_eq!(fs::read(&journal).unwrap(), before_goal);
+    assert_eq!(
+        fs::read(historical_ledger(&foreign, &second)).unwrap(),
+        before_second
+    );
+    fs::rename(missing, config).unwrap();
+}
+
 #[test]
 fn historical_owner_correction_requires_exact_target_set_and_preserves_work() {
     let fixture = Fixture::new("owner-correction-historical-set");

@@ -44,7 +44,7 @@ when an exported `EXITBIND_NATIVE_SESSION_ID` still names an earlier one. These 
 they do not authenticate the caller or grant host authority. Session journals
 are private user-state data, separate from configured project Work/evidence
 state, and are owned by the project that first incorporates the Goal unless
-the explicit empty-Goal correction below is applied.
+the explicit owner correction below is applied.
 
 With no recognized native identity, Goal commands keep their existing
 configured-project behavior. Under a native identity, use `goal ... --project`
@@ -79,18 +79,33 @@ After commit, edits to the selected configuration preserve Goal ownership when
 its canonical path and project and state-root identities remain the same.
 Existing Work and evidence still follow their own currentness rules.
 
-If the Goal already has context-only journey members in the target project,
+If the Goal already has context-only journey members in recorded projects,
 select their complete exact Work handle set with `--uncredited-members JSON`
 and add `--source-writers-quiesced` to the preview. The JSON value is an array
 of Work handles, for example `["smw_..."]`. Before attesting, establish that
-both old-owner Goal writers and target-project Work writers have stopped; the
-locks cannot fence already-running old code. Every member must have its exact
-consumed admission, start and private context companion. The path refuses a
-partial or foreign selection, pending admissions, named Work mappings,
-integrations, adoption, recovery and quarantine. It supports ordinary linked
-starts; successor starts require a different recovery path.
+the old-owner Goal writers and the Work writers in every selected source
+project have stopped. Keep them stopped until apply finishes. The correction
+reads each member through the canonical configuration path, configuration
+bytes, project identity and state root bound to its admission. Every member
+must have its exact consumed admission, start and private context companion.
+The path refuses an incomplete selection, unrelated Work, pending admissions,
+named Work mappings, integrations, adoption, recovery and quarantine. It
+supports ordinary linked starts. Successor starts require a different recovery
+path.
 At most 30 members may be selected, leaving two of the existing 32 journey
 admission slots for the fresh validation and integration Works.
+
+The preview seals the exact member identities and sources together. For an
+eligible Goal without historical Work, omitting `--uncredited-members` records a
+version-1 decision. An empty JSON selection is refused. A valid selection
+records a version-2 decision only when every member's recorded binding matches
+the target's canonical configuration path and bytes, project and local
+identities, and product and state roots. If any selected binding differs, the
+decision is version 3, including when the same project uses separate
+configuration files.
+Use a reader with the applicable decision support for the Goal and any pending
+recovery. Once committed, the correction can be read from the sealed Goal
+history with the original Work sources archived.
 
 This decision retains each original member and Work ledger as history without
 giving that Work, its successor, or its result reference credit toward closure.
@@ -204,8 +219,8 @@ source and each accepted meaning, then assigns useful work. One Work can cover
 several requirements, and several Works can contribute to the same requirement.
 A mapping records an assignment; it becomes current support only after actual
 checks, the selected review and Lead acceptance. The pre-existing project-local
-named-requirement path is included in the stable v0.31.30 installation; the
-native conversation linkage described above is also included in the stable v0.31.30 installation.
+named-requirement path is included in the stable v0.31.31 installation; the
+native conversation linkage described above is also included in the stable v0.31.31 installation.
 
 ## Inspect and continue
 
