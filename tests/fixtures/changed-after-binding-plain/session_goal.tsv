@@ -88,6 +88,9 @@ Transient	src/session_goal/owner_correction.rs	native Goal journal no longer mat
 LeadPreparation	src/session_goal/owner_correction.rs	owner correction preview no longer matches its exact inputs
 RoutedInText	src/session_goal/owner_correction.rs	pending correction no longer matches its preview
 NotCurrentState	src/session_goal/owner_correction.rs	pending owner correction no longer matches; inspect current Goal state
+Integrity	src/session_goal/owner_correction.rs	retained historical Work identity changed after owner correction
+Integrity	src/session_goal/owner_correction/retained.rs	historical Work start does not match its consumed admission
+Integrity	src/session_goal/owner_correction/retained.rs	uncredited Work selection no longer matches its linked identity
 LeadPreparation	src/session_goal/owner_correction/source.rs	relocated source bytes do not match the recorded source snapshot
 Transient	src/session_goal/requirements/mutation.rs	requirement source no longer matches its selected bytes
 # Both are re-observations during this invocation under the Goal lock; a previously recorded claim is left intact.

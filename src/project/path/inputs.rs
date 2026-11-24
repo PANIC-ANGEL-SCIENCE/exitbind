@@ -267,6 +267,7 @@ pub(crate) const NOT_PATHS: &[&str] = &[
     "query",
     "request-id",
     "retirements",
+    "uncredited-members",
     "retry-of",
     "reason",
     "reasoning-effort",
