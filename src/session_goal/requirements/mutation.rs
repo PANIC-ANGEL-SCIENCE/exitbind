@@ -133,6 +133,9 @@ pub(crate) fn assign(
         .to_owned();
     super::super::mutate(root, loaded, |previous| {
         let previous = previous.ok_or("no canonical goal is open")?;
+        if super::super::owner_correction::uncredited_reference(loaded, previous, work_id)? {
+            return Err("owner correction retained this Work without evidence credit".into());
+        }
         if previous["goalId"] != goal_id || contract.goal_id != goal_id {
             return Err("Work belongs to a different goal".into());
         }

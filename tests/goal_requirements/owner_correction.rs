@@ -1115,3 +1115,596 @@ fn an_adopting_session_cannot_correct_another_sessions_goal() {
     assert!(!correction_call(&fixture, "adopted").status.success());
     assert_eq!(fixture.old.native_store_snapshot(), before);
 }
+
+fn historical_preview(fixture: &Fixture, selection: &str, id: &str) -> Output {
+    let config = fixture.target.root.join("exitbind.json");
+    fixture.old.call(
+        &[
+            "goal",
+            "correct-owner",
+            "--target-config",
+            config.to_str().unwrap(),
+            "--relocations",
+            &fixture.relocations,
+            "--request-id",
+            id,
+            "--reason",
+            "Correct the selected project and retain prior Work without credit",
+            "--old-writers-quiesced",
+            "--uncredited-members",
+            selection,
+            "--source-writers-quiesced",
+            "--json",
+        ],
+        None,
+    )
+}
+
+#[test]
+fn historical_owner_correction_requires_exact_target_set_and_preserves_work() {
+    let fixture = Fixture::new("owner-correction-historical-set");
+    let first = fixture
+        .target
+        .begin_ordinary("First linked Work", "true", &[]);
+    let second = fixture
+        .target
+        .begin_ordinary("Second linked Work", "true", &[]);
+    let (_, journal) = paths(&fixture.old);
+    let before_goal = fs::read(&journal).unwrap();
+    let before_members = support::goal_journal::latest(&journal)["journeyMembers"].clone();
+    let work_path = |work: &str| {
+        fixture
+            .target
+            .root
+            .join(".exitbind/runs")
+            .join(format!("work-{}.jsonl", work.strip_prefix("smw_").unwrap()))
+    };
+    let before_first = fs::read(work_path(&first)).unwrap();
+    let before_second = fs::read(work_path(&second)).unwrap();
+    let partial = json!([first]).to_string();
+    assert!(!historical_preview(&fixture, &partial, "partial")
+        .status
+        .success());
+    let selected = json!([first, second]).to_string();
+    let wrong_owner = fixture.target.call(
+        &[
+            "goal",
+            "correct-owner",
+            "--target-config",
+            fixture.target.root.join("exitbind.json").to_str().unwrap(),
+            "--relocations",
+            &fixture.relocations,
+            "--request-id",
+            "wrong-owner",
+            "--reason",
+            "Refuse an incorrect owner",
+            "--old-writers-quiesced",
+            "--uncredited-members",
+            &selected,
+            "--source-writers-quiesced",
+            "--json",
+        ],
+        None,
+    );
+    assert!(!wrong_owner.status.success());
+    let refusal = format!(
+        "{}{}",
+        String::from_utf8_lossy(&wrong_owner.stdout),
+        String::from_utf8_lossy(&wrong_owner.stderr)
+    );
+    assert!(
+        refusal.contains("owned by another configured project"),
+        "{refusal}"
+    );
+    assert_eq!(fs::read(&journal).unwrap(), before_goal);
+    let preview = value(&historical_preview(&fixture, &selected, "historical-set"));
+    assert_eq!(preview["decision"]["version"], 2);
+    assert_eq!(
+        preview["decision"]["uncreditedMembers"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(fs::read(&journal).unwrap(), before_goal);
+    let applied = value(&fixture.execute(&preview, "applyArgv"));
+    assert_eq!(applied["kind"], "native_goal_owner_correction_applied");
+    let after = support::goal_journal::latest(&journal);
+    assert_eq!(after["journeyMembers"], before_members);
+    assert_eq!(fs::read(work_path(&first)).unwrap(), before_first);
+    assert_eq!(fs::read(work_path(&second)).unwrap(), before_second);
+    let before_supersede_goal = fs::read(&journal).unwrap();
+    let before_supersede_runs = fixture.target.run_entries();
+    let successor = fixture.target.call(
+        &[
+            "work",
+            "supersede",
+            &first,
+            "--reason",
+            "Try to continue the retained historical Work",
+            "--json",
+        ],
+        None,
+    );
+    assert!(!successor.status.success(), "{successor:?}");
+    let refusal = format!(
+        "{}{}",
+        String::from_utf8_lossy(&successor.stdout),
+        String::from_utf8_lossy(&successor.stderr)
+    );
+    assert!(
+        refusal.contains("owner") || refusal.contains("context"),
+        "{refusal}"
+    );
+    assert_eq!(fs::read(&journal).unwrap(), before_supersede_goal);
+    assert_eq!(fs::read(work_path(&first)).unwrap(), before_first);
+    assert_eq!(fixture.target.run_entries(), before_supersede_runs);
+    let status = fixture.target.status();
+    assert_eq!(
+        status["goalProgress"]["journeyCompletion"]["state"], "blocked",
+        "{status}"
+    );
+    assert_eq!(
+        status["goalProgress"]["journeyCompletion"]["members"]["ownerCorrectionUncredited"],
+        2
+    );
+}
+
+#[test]
+fn historical_owner_correction_needs_fresh_reviewed_named_journey_integration() {
+    let fixture = Fixture::new("owner-correction-historical-close");
+    let first = fixture
+        .target
+        .begin_ordinary("Original unfinished Work", "true", &[]);
+    let second = fixture
+        .target
+        .begin_ordinary("Original independent Work", "true", &[]);
+    fixture.target.drive(&second, true);
+    let (_, journal) = paths(&fixture.old);
+    let raw_second = fs::read_to_string(fixture.target.root.join(".exitbind/runs").join(format!(
+        "work-{}.jsonl",
+        second.strip_prefix("smw_").unwrap()
+    )))
+    .unwrap();
+    let head: Value = serde_json::from_str(raw_second.lines().last().unwrap()).unwrap();
+    let old_head = head["eventSha256"].as_str().unwrap().to_owned();
+    let goal = "Import names safely and show a count";
+    for (question, reference) in [
+        ("Prior Work handle", second.as_str()),
+        ("Prior Work head", old_head.as_str()),
+        ("Prior published result", "https://example.invalid/prior"),
+    ] {
+        fixture.old.value(
+            &[
+                "goal",
+                "incorporate",
+                "--goal-id",
+                "import",
+                "--goal",
+                goal,
+                "--decision",
+                question,
+                "--disposition",
+                "accepted",
+                "--result-ref",
+                reference,
+            ],
+            None,
+        );
+    }
+    let before = support::goal_journal::latest(&journal);
+    let selection = json!([first, second]).to_string();
+    let preview = value(&historical_preview(
+        &fixture,
+        &selection,
+        "historical-close",
+    ));
+    value(&fixture.execute(&preview, "applyArgv"));
+    let after = support::goal_journal::latest(&journal);
+    assert_eq!(after["decisions"], before["decisions"]);
+    assert_eq!(after["journeyMembers"], before["journeyMembers"]);
+    assert_eq!(
+        fixture.target.status()["goalProgress"]["journeyCompletion"]["state"],
+        "blocked"
+    );
+    let pre_integration = fixture.target.call(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "Integrate before new member",
+            "--goal-id",
+            "import",
+            "--requirement",
+            "R1,R2,R3",
+            "--artifact",
+            "check.sh",
+            "--check-command",
+            "sh check.sh all",
+            "--review-policy",
+            "required",
+            "--scope",
+            "integration",
+            "--journey-integration",
+        ],
+        None,
+    );
+    assert!(!pre_integration.status.success(), "{pre_integration:?}");
+    let validation = fixture.target.begin_ordinary(
+        "Fresh named validation",
+        "sh check.sh all",
+        &[
+            "--goal-id",
+            "import",
+            "--requirement",
+            "R1,R2,R3",
+            "--artifact",
+            "check.sh",
+        ],
+    );
+    fixture.target.drive(&validation, true);
+    let validation_ledger = fs::read_to_string(fixture.target.root.join(".exitbind/runs").join(
+        format!("work-{}.jsonl", validation.strip_prefix("smw_").unwrap()),
+    ))
+    .unwrap();
+    let validation_head: Value =
+        serde_json::from_str(validation_ledger.lines().last().unwrap()).unwrap();
+    let validation_head = validation_head["eventSha256"].as_str().unwrap().to_owned();
+    fixture.target.value(
+        &[
+            "goal",
+            "assign",
+            "--goal-id",
+            "import",
+            "--requirement",
+            "R1,R2,R3",
+            "--result-ref",
+            &validation,
+        ],
+        None,
+    );
+    fixture.target.reject(
+        &[
+            "goal",
+            "close",
+            "--goal-id",
+            "import",
+            "--result-ref",
+            &validation,
+        ],
+        "journey",
+    );
+    let integration = fixture.target.begin_ordinary(
+        "Fresh named journey integration",
+        "sh check.sh all",
+        &[
+            "--goal-id",
+            "import",
+            "--requirement",
+            "R1,R2,R3",
+            "--artifact",
+            "check.sh",
+            "--scope",
+            "integration",
+            "--journey-integration",
+        ],
+    );
+    fixture.target.drive(&integration, true);
+    assert_eq!(
+        fixture.target.status()["goalProgress"]["journeyCompletion"]["state"],
+        "current"
+    );
+    for question in [
+        "Prior Work handle",
+        "Prior Work head",
+        "Prior published result",
+    ] {
+        fixture.target.value(
+            &[
+                "goal",
+                "incorporate",
+                "--goal-id",
+                "import",
+                "--goal",
+                goal,
+                "--decision",
+                question,
+                "--disposition",
+                "open",
+            ],
+            None,
+        );
+        fixture.target.value(
+            &[
+                "goal",
+                "incorporate",
+                "--goal-id",
+                "import",
+                "--goal",
+                goal,
+                "--decision",
+                question,
+                "--disposition",
+                "accepted",
+                "--result-ref",
+                &validation,
+            ],
+            None,
+        );
+    }
+    // Isolate each historical spelling so another unresolved decision cannot
+    // accidentally explain its refusal.
+    for (question, reference) in [
+        ("Prior Work handle", second.as_str()),
+        ("Prior Work head", old_head.as_str()),
+        ("Prior published result", "https://example.invalid/prior"),
+        ("Fresh Work head", validation_head.as_str()),
+    ] {
+        fixture.target.value(
+            &[
+                "goal",
+                "incorporate",
+                "--goal-id",
+                "import",
+                "--goal",
+                goal,
+                "--decision",
+                question,
+                "--disposition",
+                "accepted",
+                "--result-ref",
+                reference,
+            ],
+            None,
+        );
+        let refused = fixture.target.call(
+            &[
+                "goal",
+                "close",
+                "--goal-id",
+                "import",
+                "--result-ref",
+                &integration,
+            ],
+            None,
+        );
+        assert!(
+            !refused.status.success(),
+            "historical result {question} must not close the Goal"
+        );
+        fixture.target.value(
+            &[
+                "goal",
+                "incorporate",
+                "--goal-id",
+                "import",
+                "--goal",
+                goal,
+                "--decision",
+                question,
+                "--disposition",
+                "open",
+            ],
+            None,
+        );
+        fixture.target.value(
+            &[
+                "goal",
+                "incorporate",
+                "--goal-id",
+                "import",
+                "--goal",
+                goal,
+                "--decision",
+                question,
+                "--disposition",
+                "accepted",
+                "--result-ref",
+                &validation,
+            ],
+            None,
+        );
+    }
+    let closed = fixture.target.value(
+        &[
+            "goal",
+            "close",
+            "--goal-id",
+            "import",
+            "--result-ref",
+            &integration,
+        ],
+        None,
+    );
+    assert_eq!(closed["closure"]["closed"], true);
+    let history = support::goal_journal::records(&journal);
+    assert!(history
+        .iter()
+        .any(|item| item["decisions"] == before["decisions"]));
+}
+
+#[test]
+fn historical_owner_correction_rejects_stale_preview_and_recovers_pending_barrier() {
+    let fixture = Fixture::new("owner-correction-historical-retry");
+    let work = fixture
+        .target
+        .begin_ordinary("Retain the original Work", "true", &[]);
+    let selection = json!([work]).to_string();
+    let (_, journal) = paths(&fixture.old);
+    let ledger = fixture
+        .target
+        .root
+        .join(".exitbind/runs")
+        .join(format!("work-{}.jsonl", work.strip_prefix("smw_").unwrap()));
+    let work_before = fs::read(&ledger).unwrap();
+    let stale = value(&historical_preview(
+        &fixture,
+        &selection,
+        "historical-stale",
+    ));
+    fixture.old.value(
+        &[
+            "goal",
+            "incorporate",
+            "--goal-id",
+            "import",
+            "--goal",
+            "Import names safely and show a count",
+            "--finding",
+            "A later recorded observation",
+        ],
+        None,
+    );
+    let later = fs::read(&journal).unwrap();
+    assert!(!fixture.execute(&stale, "applyArgv").status.success());
+    assert_eq!(fs::read(&journal).unwrap(), later);
+    assert_eq!(fs::read(&ledger).unwrap(), work_before);
+
+    let preview = value(&historical_preview(
+        &fixture,
+        &selection,
+        "historical-pending",
+    ));
+    install_pending_marker(&fixture.old, &preview);
+    let current = fixture.old.status();
+    assert_eq!(
+        current["ownerCorrectionRecovery"]["applyArgv"],
+        preview["applyArgv"]
+    );
+    assert_eq!(
+        current["ownerCorrectionRecovery"]["abortArgv"],
+        preview["abortArgv"]
+    );
+    assert_eq!(
+        value(&fixture.execute(&preview, "abortArgv"))["kind"],
+        "native_goal_owner_correction_aborted"
+    );
+    assert_eq!(fs::read(&journal).unwrap(), later);
+    assert_eq!(fs::read(&ledger).unwrap(), work_before);
+    let retry = value(&historical_preview(
+        &fixture,
+        &selection,
+        "historical-after-abort",
+    ));
+    let applied = value(&fixture.execute(&retry, "applyArgv"));
+    assert_eq!(applied["kind"], "native_goal_owner_correction_applied");
+    assert_eq!(fs::read(&ledger).unwrap(), work_before);
+    assert_eq!(
+        value(&fixture.execute(&retry, "applyArgv"))["kind"],
+        "native_goal_owner_correction_replayed"
+    );
+}
+
+#[test]
+fn historical_owner_correction_refuses_real_pending_admission_and_missing_attestation() {
+    use std::os::unix::fs::symlink;
+
+    struct RestoreRuns {
+        runs: PathBuf,
+        saved: PathBuf,
+    }
+    impl Drop for RestoreRuns {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.runs);
+            if self.saved.exists() {
+                fs::rename(&self.saved, &self.runs).expect("restore isolated Work directory");
+            }
+        }
+    }
+    let fixture = Fixture::new("owner-correction-historical-admission");
+    let work = fixture
+        .target
+        .begin_ordinary("Existing target Work", "true", &[]);
+    let selected = json!([work]).to_string();
+    let target_config = fixture.target.root.join("exitbind.json");
+    let before = fixture.old.native_store_snapshot();
+    let missing_attestation = fixture.old.call(
+        &[
+            "goal",
+            "correct-owner",
+            "--target-config",
+            target_config.to_str().unwrap(),
+            "--relocations",
+            &fixture.relocations,
+            "--request-id",
+            "without-source-attestation",
+            "--reason",
+            "Do not infer source writer quiescence",
+            "--old-writers-quiesced",
+            "--uncredited-members",
+            &selected,
+            "--json",
+        ],
+        None,
+    );
+    assert!(!missing_attestation.status.success());
+    let diagnostic = format!(
+        "{}{}",
+        String::from_utf8_lossy(&missing_attestation.stdout),
+        String::from_utf8_lossy(&missing_attestation.stderr)
+    );
+    assert!(diagnostic.contains("quiescence"), "{diagnostic}");
+    assert_eq!(fixture.old.native_store_snapshot(), before);
+    let preview = value(&historical_preview(
+        &fixture,
+        &selected,
+        "before-pending-admission",
+    ));
+    let (_, journal) = paths(&fixture.old);
+    let ledger = fixture
+        .target
+        .root
+        .join(".exitbind/runs")
+        .join(format!("work-{}.jsonl", work.strip_prefix("smw_").unwrap()));
+    let work_before = fs::read(&ledger).unwrap();
+
+    // Leave an actual recorded admission when the confined Run path refuses.
+    let runs = fixture.target.root.join(".exitbind/runs");
+    let saved = fixture
+        .target
+        .root
+        .join(".exitbind/runs-retained-for-admission");
+    let outside = fixture.target.root.parent().unwrap().join("outside-runs");
+    fs::create_dir(&outside).unwrap();
+    fs::rename(&runs, &saved).unwrap();
+    let restore = RestoreRuns {
+        runs: runs.clone(),
+        saved,
+    };
+    symlink(&outside, &runs).unwrap();
+    let failed = fixture.target.call(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "A real pending admission",
+            "--check-command",
+            "true",
+            "--review-policy",
+            "required",
+            "--json",
+        ],
+        None,
+    );
+    assert!(!failed.status.success(), "{failed:?}");
+    let diagnostic = format!(
+        "{}{}",
+        String::from_utf8_lossy(&failed.stdout),
+        String::from_utf8_lossy(&failed.stderr)
+    );
+    assert!(
+        diagnostic.contains("native journey admission remains unresolved"),
+        "{diagnostic}"
+    );
+    drop(restore);
+    let pending = fixture.old.status();
+    assert_eq!(pending["journeyAdmissions"].as_array().unwrap().len(), 1);
+    let before_refusal = fs::read(&journal).unwrap();
+    let refused = historical_preview(&fixture, &selected, "pending-admission");
+    assert!(!refused.status.success());
+    assert!(!fixture.execute(&preview, "applyArgv").status.success());
+    assert_eq!(fs::read(&journal).unwrap(), before_refusal);
+    assert_eq!(fs::read(&ledger).unwrap(), work_before);
+}

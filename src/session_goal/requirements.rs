@@ -213,6 +213,9 @@ pub(crate) fn category_result_current(
     previous: &Value,
     reference: &str,
 ) -> Result<bool, String> {
+    if super::owner_correction::uncredited_reference(loaded, previous, reference)? {
+        return Ok(false);
+    }
     let Some(evidence) = crate::run::result_ref_evidence(loaded, reference)? else {
         return Err("goal result is unavailable".into());
     };
@@ -245,6 +248,7 @@ pub(crate) fn validate_close_candidate(
         return Err("canonical goal identity does not match".into());
     }
     super::journey::require_close_ready(loaded, root, previous)?;
+    super::journey::require_owner_corrected_integration(loaded, previous, result_ref)?;
     if !coverage_current {
         return Err("required goal coverage is missing, failed, stale or unknown".into());
     }

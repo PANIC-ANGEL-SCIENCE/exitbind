@@ -39,16 +39,35 @@ pub(super) struct SavedRequest {
     pub(super) request_id: String,
     pub(super) reason: String,
     pub(super) old_writers_quiesced: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) uncredited_members: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) source_writers_quiesced: Option<bool>,
 }
 
 impl SavedRequest {
     pub(super) fn digest(&self) -> String {
-        hash::value(
-            &json!({"ownerConfig":self.owner_config,"targetConfig":self.target_config,
+        let mut request = json!({"ownerConfig":self.owner_config,"targetConfig":self.target_config,
             "relocations":self.relocations,"requestId":self.request_id,"reason":self.reason,
-            "oldWritersQuiesced":self.old_writers_quiesced}),
-        )
+            "oldWritersQuiesced":self.old_writers_quiesced});
+        if let Some(members) = &self.uncredited_members {
+            request["uncreditedMembers"] = json!(members);
+            request["sourceWritersQuiesced"] = json!(self.source_writers_quiesced);
+        }
+        hash::value(&request)
     }
+}
+
+/// Exact historical membership and immutable Work identities explicitly
+/// excluded from proof credit by a version-2 owner correction.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct UncreditedMember {
+    pub(crate) work: String,
+    pub(crate) member_sha256: String,
+    pub(crate) start_event_sha256: String,
+    pub(crate) start_intent_sha256: String,
+    pub(crate) companion_sha256: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -69,6 +88,10 @@ pub(crate) struct OwnerCorrectionDecision {
     pub(crate) request_sha256: String,
     pub(crate) preview_sha256: String,
     pub(crate) old_writers_quiesced: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) uncredited_members: Option<Vec<UncreditedMember>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) source_writers_quiesced: Option<bool>,
     pub(crate) decision_sha256: String,
 }
 
@@ -115,7 +138,32 @@ impl OwnerCorrectionDecision {
 
     pub(super) fn validate(&self) -> Result<(), String> {
         let mut keys = std::collections::BTreeSet::new();
-        if self.version != 1
+        let valid_uncredited = match (
+            self.version,
+            &self.uncredited_members,
+            self.source_writers_quiesced,
+        ) {
+            (1, None, None) => true,
+            (2, Some(items), Some(true)) => {
+                let mut works = std::collections::BTreeSet::new();
+                !items.is_empty()
+                    && items.len() <= 32
+                    && items.iter().all(|item| {
+                        crate::work::valid_work_handle(&item.work)
+                            && works.insert(&item.work)
+                            && [
+                                &item.member_sha256,
+                                &item.start_event_sha256,
+                                &item.start_intent_sha256,
+                                &item.companion_sha256,
+                            ]
+                            .iter()
+                            .all(|sha| super::super::native::valid_hash(sha))
+                    })
+            }
+            _ => false,
+        };
+        if !valid_uncredited
             || !valid_text(&self.goal_id, 128)
             || !matches!(self.host.as_str(), "codex" | "claude")
             || !super::super::native::valid_hash(&self.session_key)

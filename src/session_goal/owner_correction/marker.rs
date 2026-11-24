@@ -74,6 +74,8 @@ impl Marker {
                 || request.request_id != pending.request_id
                 || request.reason != pending.reason
                 || !request.old_writers_quiesced
+                || request.uncredited_members.is_some() != pending.uncredited_members.is_some()
+                || request.source_writers_quiesced != pending.source_writers_quiesced
             {
                 return Err("native Goal owner correction marker names another session".into());
             }
@@ -139,6 +141,7 @@ struct OwnershipFold<'a> {
     before_latest: Option<String>,
     request_ids: BTreeSet<String>,
     eligibility: BTreeMap<String, Option<String>>,
+    retained_eligibility: BTreeMap<String, super::retained::History>,
     previous_goal: Option<String>,
     preceding: usize,
 }
@@ -152,6 +155,7 @@ impl<'a> OwnershipFold<'a> {
             before_latest: None,
             request_ids: BTreeSet::new(),
             eligibility: BTreeMap::new(),
+            retained_eligibility: BTreeMap::new(),
             previous_goal: None,
             preceding: 0,
         }
@@ -163,6 +167,16 @@ impl<'a> OwnershipFold<'a> {
             Some(Some(error)) => Err(error.clone()),
             None => Err("the named Goal history is unavailable".into()),
         }
+    }
+
+    fn require_selection(&self, decision: &OwnerCorrectionDecision) -> Result<(), String> {
+        if decision.version == 1 {
+            return self.require_empty(&decision.goal_id);
+        }
+        self.retained_eligibility
+            .get(&decision.goal_id)
+            .ok_or("the named Goal history is unavailable")?
+            .validate_decision(decision)
     }
 
     fn observe(&mut self, record: &Value, previous: Option<&Value>) -> Result<(), String> {
@@ -180,7 +194,7 @@ impl<'a> OwnershipFold<'a> {
             let decision = current.last().ok_or("owner correction is missing")?;
             let prior = previous.ok_or("native Goal owner correction has no predecessor")?;
             super::validate_recorded_selection(prior, decision)?;
-            self.require_empty(&decision.goal_id)?;
+            self.require_selection(decision)?;
             if decision.host != self.session.host
                 || decision.session_key != self.session.key
                 || decision.old_config.local_identity_sha256 != self.effective.identity_sha256
@@ -203,6 +217,10 @@ impl<'a> OwnershipFold<'a> {
         if eligibility.is_none() {
             *eligibility = super::empty_record(record).err();
         }
+        self.retained_eligibility
+            .entry(goal_id.to_owned())
+            .or_default()
+            .observe(record, previous);
         self.preceding = current.len();
         self.previous_goal = Some(goal_id.to_owned());
         Ok(())
@@ -243,7 +261,7 @@ fn finish(
                 return Err("native Goal owner marker predecessor is inconsistent".into());
             }
             super::validate_recorded_selection(head, decision)?;
-            fold.require_empty(&decision.goal_id)?;
+            fold.require_selection(decision)?;
             if decision.old_config.local_identity_sha256 != fold.effective.identity_sha256
                 || decision.old_config.project_id != fold.effective.project_id
             {

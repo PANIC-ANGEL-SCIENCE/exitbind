@@ -155,6 +155,16 @@ pub(crate) fn projection_selected(
                 item["reason"] = json!("requirement_revision_changed");
             } else {
                 let observed = (|| {
+                    if super::super::owner_correction::uncredited_reference(
+                        loaded,
+                        record,
+                        &mapping.work,
+                    )? {
+                        return Err(
+                            "owner correction retained this Work without evidence credit"
+                                .to_owned(),
+                        );
+                    }
                     let ledger = crate::work::resolve(loaded, &mapping.work)?;
                     let (_, events, _) = crate::run::ledger::load(loaded, &ledger)?;
                     if events.first().map_or(true, |start| {

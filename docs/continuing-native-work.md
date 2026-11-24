@@ -1,5 +1,13 @@
 # Current context, managed file edits and the quiet hall
 
+When a named native Goal was opened under the wrong owner and already has
+target-owned context-only Work, `goal correct-owner` can preserve the exact
+historical association set without crediting those Works. The Lead selects
+every member explicitly and establishes writer quiescence before applying the
+bound preview. The corrected Goal needs a fresh accepted named validation Work
+and a reviewed, Lead-accepted named journey integration before closure. See
+[Goal requirements](goal-requirements.md) for eligibility and the exact inputs.
+
 ## Product-owned goal and result status
 
 When a Lead has registered the external user's goal with `goal incorporate`

@@ -82,6 +82,7 @@ fn member_currentness(
                 .as_ref()
                 .map(|value| value.integration_sha256.clone()),
             shared_sha256: None,
+            owner_correction_sha256: None,
             checker: super::super::requirements::CheckerInput {
                 path: String::new(),
                 sha256: String::new(),
@@ -196,9 +197,11 @@ pub(super) fn readiness_for_state_inner(
             historical: 0,
             retired_uncredited: 0,
             quarantined_uncredited: 0,
+            owner_uncredited: 0,
             historical_details: Vec::new(),
             retired_details: Vec::new(),
             quarantined_details: Vec::new(),
+            owner_uncredited_details: Vec::new(),
             pending_admissions: 0,
             unresolved: vec![
                 json!({"state":"unavailable","reason":"explicit_native_goal_incorporation_required"}),
@@ -211,6 +214,8 @@ pub(super) fn readiness_for_state_inner(
     let mut historical = 0;
     let mut retired_uncredited = 0;
     let mut quarantined_uncredited = 0;
+    let mut owner_uncredited = 0;
+    let mut owner_uncredited_details = Vec::new();
     let mut quarantined_details = Vec::new();
     let mut integration_work = None;
     let mut unresolved = Vec::new();
@@ -229,6 +234,23 @@ pub(super) fn readiness_for_state_inner(
     }
     for member in &state.members {
         if let Some(record) = record {
+            match super::super::owner_correction::uncredited_member(record, member) {
+                Ok(true) => {
+                    if let Some(observation) = observation.as_deref_mut() {
+                        observation.disable();
+                    }
+                    owner_uncredited += 1;
+                    owner_uncredited_details.push(json!({"work":member.work,
+                        "state":"owner_correction_uncredited"}));
+                    continue;
+                }
+                Ok(false) => {}
+                Err(error) => {
+                    unresolved
+                        .push(json!({"work":member.work,"state":"unavailable","reason":error}));
+                    continue;
+                }
+            }
             match super::super::quarantine::current_for_member(loaded, record, &member.work) {
                 Ok(Some(detail)) => {
                     if let Some(observation) = observation.as_deref_mut() {
@@ -294,6 +316,35 @@ pub(super) fn readiness_for_state_inner(
             }
         }
     }
+    if let Some(record) = record {
+        match super::super::owner_correction::uncredited_binding(record) {
+            Ok(Some(_)) => {
+                if let Some(observation) = observation.as_deref_mut() {
+                    observation.disable();
+                }
+                let integration =
+                    super::super::requirements::identity(loaded).and_then(|project| {
+                        current_integration_for_project(
+                            loaded,
+                            record,
+                            &state,
+                            &state.members,
+                            &project,
+                        )
+                    });
+                match integration {
+                    Ok(Some(work)) => {
+                        integration_work.get_or_insert(work);
+                    }
+                    Ok(None) => unresolved.push(json!({"state":"unresolved",
+                        "reason":"fresh_owner_corrected_journey_integration_required"})),
+                    Err(error) => unresolved.push(json!({"state":"unavailable","reason":error})),
+                }
+            }
+            Ok(None) => {}
+            Err(error) => unresolved.push(json!({"state":"unavailable","reason":error})),
+        }
+    }
     let state_name = if unresolved.is_empty() {
         ReadinessState::Current
     } else {
@@ -337,9 +388,11 @@ pub(super) fn readiness_for_state_inner(
         historical,
         retired_uncredited,
         quarantined_uncredited,
+        owner_uncredited,
         historical_details,
         retired_details,
         quarantined_details,
+        owner_uncredited_details,
         pending_admissions: state.admissions.len(),
         unresolved: unresolved
             .into_iter()
@@ -450,9 +503,11 @@ pub(in crate::session_goal) fn readiness_for_record_with_access(
             historical: 0,
             retired_uncredited: 0,
             quarantined_uncredited: 0,
+            owner_uncredited: 0,
             historical_details: Vec::new(),
             retired_details: Vec::new(),
             quarantined_details: Vec::new(),
+            owner_uncredited_details: Vec::new(),
             pending_admissions: state(&current)?.map_or(0, |state| state.admissions.len()),
             unresolved: vec![
                 json!({"state":"unresolved","reason":"newer_session_goal_is_current"}),
@@ -520,6 +575,27 @@ pub(crate) fn require_close_ready(
     }
 }
 
+/// Closure after owner correction must use the same current integration that
+/// froze the correction and the fresh accepted member set.
+pub(crate) fn require_owner_corrected_integration(
+    loaded: &Loaded,
+    record: &Value,
+    work: &str,
+) -> Result<(), String> {
+    if super::super::owner_correction::uncredited_binding(record)?.is_none() {
+        return Ok(());
+    }
+    let journey = state(record)?.ok_or("corrected Goal has no journey membership")?;
+    let project = super::super::requirements::identity(loaded)?;
+    if current_integration_for_project(loaded, record, &journey, &journey.members, &project)?
+        .as_deref()
+        != Some(work)
+    {
+        return Err("corrected Goal closure requires its current named journey integration".into());
+    }
+    Ok(())
+}
+
 /// Replacement may continue a failed member, but never bypass an unfinished
 /// admission or attach that member to a newer conversation commitment.
 pub(crate) fn require_resolved_replacement_admissions(record: &Value) -> Result<(), String> {
@@ -571,6 +647,9 @@ pub(crate) fn result_ref_current_or_supported(
     reference: &str,
     inputs_current: Option<bool>,
 ) -> Result<bool, String> {
+    if super::super::owner_correction::uncredited_reference(loaded, record, reference)? {
+        return Ok(false);
+    }
     if inputs_current == Some(true) {
         return Ok(true);
     }

@@ -1,12 +1,13 @@
-// Corrects the configured owner of an empty native named Goal.
-// Refuses Goals with Work or admission history; see `src/session_goal.rs`.
-//! Explicit correction of an empty native named Goal's configured owner.
+// Corrects the configured owner of a bounded native named Goal.
+// Refuses unselected Work or unresolved admissions; see `src/session_goal.rs`.
+//! Explicit correction of a native named Goal's configured owner.
 //!
 //! The owner record is a reader barrier. The sealed Goal append is the only
 //! authority transition; a pending barrier keeps the old owner effective.
 
 mod marker;
 mod model;
+mod retained;
 mod source;
 
 pub(super) use self::marker::{
@@ -25,6 +26,8 @@ pub(crate) struct OwnerCorrectionRequest<'a> {
     pub(crate) request_id: &'a str,
     pub(crate) reason: &'a str,
     pub(crate) old_writers_quiesced: bool,
+    pub(crate) uncredited_members: Option<&'a str>,
+    pub(crate) source_writers_quiesced: bool,
     pub(crate) current_binding: Option<&'a str>,
     pub(crate) apply: bool,
     pub(crate) abort: bool,
@@ -51,6 +54,18 @@ fn saved_request(
     if !std::path::Path::new(request.target_config).is_absolute() {
         return Err("goal correct-owner requires an absolute target configuration path".into());
     }
+    match (request.uncredited_members, request.source_writers_quiesced) {
+        (Some(raw), true) => {
+            retained::parse_selection(raw)?;
+        }
+        (None, false) => {}
+        _ => {
+            return Err(
+                "uncredited members require an explicit source-writer quiescence attestation"
+                    .into(),
+            )
+        }
+    }
     Ok(SavedRequest {
         owner_config: path.to_owned(),
         target_config: request.target_config.to_owned(),
@@ -58,6 +73,10 @@ fn saved_request(
         request_id: request.request_id.to_owned(),
         reason: request.reason.to_owned(),
         old_writers_quiesced: request.old_writers_quiesced,
+        uncredited_members: request.uncredited_members.map(str::to_owned),
+        source_writers_quiesced: request
+            .uncredited_members
+            .map(|_| request.source_writers_quiesced),
     })
 }
 
@@ -167,6 +186,38 @@ fn validate_recorded_selection(
     if project_identity != decision.old_config.project_identity_sha256 {
         return Err("owner correction source project identity is inconsistent".into());
     }
+    if let Some(selected) = &decision.uncredited_members {
+        let members = record["journeyMembers"]
+            .as_array()
+            .ok_or("historical members are unavailable")?;
+        if members.len() != selected.len()
+            || selected.iter().any(|item| {
+                !members.iter().any(|member| {
+                    member["work"] == item.work
+                        && crate::evidence::hash::value(member) == item.member_sha256
+                        && member["startEventSha256"] == item.start_event_sha256
+                        && member["host"] == decision.host
+                        && member["sessionKey"] == decision.session_key
+                        && member["ownerIdentitySha256"]
+                            == decision.old_config.local_identity_sha256
+                        && member["ownerProjectId"] == json!(decision.old_config.project_id)
+                        && member["projectIdentitySha256"]
+                            == decision.target_config.project_identity_sha256
+                        && member["localIdentitySha256"]
+                            == decision.target_config.local_identity_sha256
+                        && member["configPath"] == decision.target_config.path
+                        && member["configSha256"] == decision.target_config.config_sha256
+                        && member["productRoot"] == decision.target_config.product_root
+                        && member["stateRoot"] == decision.target_config.state_root
+                })
+            })
+        {
+            return Err(
+                "owner correction retained Work does not match the exact target and prior owner"
+                    .into(),
+            );
+        }
+    }
     let sources = super::requirements::recorded_sources(record)?;
     if sources.len() != decision.relocations.len()
         || sources.iter().any(|(reference, sha, _)| {
@@ -243,7 +294,15 @@ fn exact_decision(context: DecisionContext<'_, '_>) -> Result<OwnerCorrectionDec
     let goal_id = record["goalId"]
         .as_str()
         .ok_or("Goal identity is unavailable")?;
-    empty_goal(history, goal_id)?;
+    let uncredited_members = if let Some(raw) = request.uncredited_members {
+        let works = retained::parse_selection(raw)?;
+        Some(retained::select(
+            history, goal_id, target, session, owner, &works,
+        )?)
+    } else {
+        empty_goal(history, goal_id)?;
+        None
+    };
     let old_config = super::recovery::config_binding_for_current(loaded)?;
     let target_config = super::recovery::config_binding_for_current(target)?;
     if old_config.local_identity_sha256 != owner.identity_sha256
@@ -268,7 +327,7 @@ fn exact_decision(context: DecisionContext<'_, '_>) -> Result<OwnerCorrectionDec
     }
     let relocations = source::relocations(target, record, request.relocations)?;
     let mut decision = OwnerCorrectionDecision {
-        version: 1,
+        version: if uncredited_members.is_some() { 2 } else { 1 },
         goal_id: goal_id.to_owned(),
         host: session.host.into(),
         session_key: session.key.clone(),
@@ -290,16 +349,21 @@ fn exact_decision(context: DecisionContext<'_, '_>) -> Result<OwnerCorrectionDec
         request_sha256: request_sha256.to_owned(),
         preview_sha256: String::new(),
         old_writers_quiesced: request.old_writers_quiesced,
+        source_writers_quiesced: uncredited_members
+            .as_ref()
+            .map(|_| request.source_writers_quiesced),
+        uncredited_members,
         decision_sha256: String::new(),
     };
     decision.preview_sha256 = decision.preview_digest()?;
     decision.decision_sha256 = decision.digest()?;
     decision.validate()?;
+    validate_recorded_selection(record, &decision)?;
     Ok(decision)
 }
 
 fn routes(request: &SavedRequest, binding: &str) -> Result<(Vec<String>, Vec<String>), String> {
-    let route = crate::emitted::Route::new([
+    let mut route = crate::emitted::Route::new([
         "goal",
         "correct-owner",
         "--target-config",
@@ -311,9 +375,11 @@ fn routes(request: &SavedRequest, binding: &str) -> Result<(Vec<String>, Vec<Str
         "--reason",
         request.reason.as_str(),
         "--old-writers-quiesced",
-        "--current-binding",
-        binding,
     ]);
+    if let Some(members) = &request.uncredited_members {
+        route = route.words(["--uncredited-members", members, "--source-writers-quiesced"]);
+    }
+    route = route.words(["--current-binding", binding]);
     Ok((
         route
             .clone()
@@ -379,6 +445,49 @@ pub(crate) fn correct(
     loaded: &Loaded,
     request: OwnerCorrectionRequest<'_>,
 ) -> Result<Value, String> {
+    if let Some(raw) = request.uncredited_members {
+        if !request.source_writers_quiesced {
+            return Err(
+                "uncredited members require an explicit source-writer quiescence attestation"
+                    .into(),
+            );
+        }
+        let works = retained::parse_selection(raw)?;
+        let target = target_config(request.target_config)?;
+        return with_member_locks(&target, &works, || correct_inner(loaded, request));
+    }
+    correct_inner(loaded, request)
+}
+
+fn with_member_locks<T>(
+    target: &Loaded,
+    works: &[String],
+    operation: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    fn take<T>(
+        locks: &[crate::run::ledger::LedgerPath],
+        operation: impl FnOnce() -> Result<T, String>,
+    ) -> Result<T, String> {
+        match locks.split_first() {
+            Some((lock, rest)) => crate::run::ledger::with_lock(lock, || take(rest, operation)),
+            None => operation(),
+        }
+    }
+    let mut locks = Vec::with_capacity(works.len());
+    for work in works {
+        let relative = crate::work::resolve(target, work)?;
+        locks.push(crate::run::ledger::ledger_path(
+            &target.state_root,
+            &relative,
+            false,
+        )?);
+    }
+    locks.sort_by(|left, right| left.lock.cmp(&right.lock));
+    locks.dedup_by(|left, right| left.lock == right.lock);
+    take(&locks, operation)
+}
+
+fn correct_inner(loaded: &Loaded, request: OwnerCorrectionRequest<'_>) -> Result<Value, String> {
     if request.abort && request.apply {
         return Err("choose either apply or abort".into());
     }
@@ -705,6 +814,82 @@ pub(super) fn recorded_identity(record: &Value, original: &str) -> Result<String
         || original.to_owned(),
         |decision| decision.target_config.project_identity_sha256.clone(),
     ))
+}
+
+/// The correction seals exclusions rather than retiring or changing a Work.
+/// Every later reader requires the exact retained member identities to remain.
+pub(super) fn uncredited_binding(record: &Value) -> Result<Option<String>, String> {
+    let Some(decision) = decisions(record)?.last().cloned() else {
+        return Ok(None);
+    };
+    let Some(selected) = &decision.uncredited_members else {
+        return Ok(None);
+    };
+    let members = record["journeyMembers"]
+        .as_array()
+        .ok_or("retained historical members are unavailable")?;
+    for item in selected {
+        if members
+            .iter()
+            .filter(|member| {
+                member["work"] == item.work
+                    && crate::evidence::hash::value(member) == item.member_sha256
+                    && member["startEventSha256"] == item.start_event_sha256
+            })
+            .count()
+            != 1
+        {
+            return Err("retained historical Work identity changed after owner correction".into());
+        }
+    }
+    Ok(Some(decision.decision_sha256))
+}
+
+pub(super) fn uncredited_member(
+    record: &Value,
+    member: &super::journey::Member,
+) -> Result<bool, String> {
+    if uncredited_binding(record)?.is_none() {
+        return Ok(false);
+    }
+    Ok(decisions(record)?
+        .last()
+        .and_then(|decision| decision.uncredited_members.as_ref())
+        .is_some_and(|items| items.iter().any(|item| item.work == member.work)))
+}
+
+/// After correction a Work category reference must name its Work explicitly.
+/// This prevents an anonymous ledger-head hash from bypassing the lineage
+/// exclusion while leaving every retained Work in its original state.
+pub(super) fn uncredited_reference(
+    loaded: &Loaded,
+    record: &Value,
+    reference: &str,
+) -> Result<bool, String> {
+    if uncredited_binding(record)?.is_none() {
+        return Ok(false);
+    }
+    let decision = decisions(record)?
+        .last()
+        .cloned()
+        .ok_or("owner correction is unavailable")?;
+    let selected = decision
+        .uncredited_members
+        .ok_or("uncredited Work selection is unavailable")?;
+    if selected.iter().any(|item| item.work == reference) {
+        return Ok(true);
+    }
+    if crate::work::valid_work_handle(reference) {
+        if let Some(member) =
+            super::journey::member_for_work_with_lineage(loaded, record, reference)?
+        {
+            if selected.iter().any(|item| member["work"] == item.work) {
+                return Ok(true);
+            }
+        }
+        return Ok(false);
+    }
+    Ok(super::native::valid_hash(reference))
 }
 
 pub(super) fn current_source_path(

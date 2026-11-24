@@ -99,6 +99,7 @@ const VALUE_OPTIONS: &[&str] = &[
     "source-config",
     "target-config",
     "relocations",
+    "uncredited-members",
     "session-key",
     "step",
     "feature-config",

@@ -19,6 +19,7 @@ use std::{
 pub(crate) const PROTOCOL: u64 = 1;
 pub(crate) const RECOVERY_INTEGRATION_PROTOCOL: u64 = 2;
 pub(crate) const GROUP_INTEGRATION_PROTOCOL: u64 = 3;
+pub(crate) const OWNER_CORRECTION_INTEGRATION_PROTOCOL: u64 = 4;
 /// Membership v2 adds pre-start admissions. Old readers that understand v1
 /// therefore refuse an in-flight admission instead of treating it as ready.
 const MEMBERSHIP_PROTOCOL: u64 = 2;
@@ -135,6 +136,8 @@ struct Header {
     recovery_sha256: Option<String>,
     #[serde(rename = "g", default, skip_serializing_if = "Option::is_none")]
     shared_sha256: Option<String>,
+    #[serde(rename = "o2", default, skip_serializing_if = "Option::is_none")]
+    owner_correction_sha256: Option<String>,
     #[serde(rename = "k")]
     checker: super::requirements::CheckerInput,
 }
@@ -185,9 +188,11 @@ pub(crate) struct Readiness {
     pub(crate) historical: usize,
     pub(crate) retired_uncredited: usize,
     pub(crate) quarantined_uncredited: usize,
+    pub(crate) owner_uncredited: usize,
     pub(crate) historical_details: Vec<Value>,
     pub(crate) retired_details: Vec<Value>,
     pub(crate) quarantined_details: Vec<Value>,
+    pub(crate) owner_uncredited_details: Vec<Value>,
     pub(crate) pending_admissions: usize,
     pub(crate) unresolved: Vec<Value>,
     pub(crate) integration_work: Option<String>,
@@ -212,6 +217,11 @@ impl Readiness {
         if self.retired_uncredited != 0 {
             value["members"]["retiredUncredited"] = json!(self.retired_uncredited);
             value["members"]["retainedRetiredUncredited"] = json!(self.retired_details);
+        }
+        if self.owner_uncredited != 0 {
+            value["members"]["ownerCorrectionUncredited"] = json!(self.owner_uncredited);
+            value["members"]["retainedOwnerCorrectionUncredited"] =
+                json!(self.owner_uncredited_details);
         }
         value
     }
@@ -602,6 +612,7 @@ pub(crate) fn validate_member_for_session(
         config_binding_sha256: config_binding(&original)?,
         recovery_sha256: None,
         shared_sha256: None,
+        owner_correction_sha256: None,
         checker: super::requirements::CheckerInput {
             path: String::new(),
             sha256: String::new(),
@@ -707,6 +718,7 @@ pub(super) fn validate_recovery_endpoint_with_access(
             config_binding_sha256: config_binding(&original)?,
             recovery_sha256: None,
             shared_sha256: None,
+            owner_correction_sha256: None,
             checker: super::requirements::CheckerInput {
                 path: String::new(),
                 sha256: String::new(),
@@ -856,8 +868,8 @@ pub(super) use observation::{observe_work, WorkJourney};
 #[cfg(test)]
 pub(super) use readiness::readiness_for_state;
 pub(crate) use readiness::{
-    progress_for_record, require_close_ready, require_resolved_replacement_admissions,
-    result_ref_current_or_supported,
+    progress_for_record, require_close_ready, require_owner_corrected_integration,
+    require_resolved_replacement_admissions, result_ref_current_or_supported,
 };
 pub(in crate::session_goal) use readiness::{
     progress_for_record_readonly, readiness_for_record_with_access,

@@ -95,15 +95,29 @@ fn validate_header_for_loaded(loaded: &Loaded, header: &Header) -> Result<(), St
     let local = super::super::native::owner_for(loaded)?;
     if !matches!(
         header.protocol,
-        PROTOCOL | RECOVERY_INTEGRATION_PROTOCOL | GROUP_INTEGRATION_PROTOCOL
+        PROTOCOL
+            | RECOVERY_INTEGRATION_PROTOCOL
+            | GROUP_INTEGRATION_PROTOCOL
+            | OWNER_CORRECTION_INTEGRATION_PROTOCOL
     ) || (header.protocol == PROTOCOL
-        && (header.recovery_sha256.is_some() || header.shared_sha256.is_some()))
+        && (header.recovery_sha256.is_some()
+            || header.shared_sha256.is_some()
+            || header.owner_correction_sha256.is_some()))
         || (header.protocol == RECOVERY_INTEGRATION_PROTOCOL
             && (!header.recovery_sha256.as_deref().is_some_and(valid_sha)
-                || header.shared_sha256.is_some()))
+                || header.shared_sha256.is_some()
+                || header.owner_correction_sha256.is_some()))
         || (header.protocol == GROUP_INTEGRATION_PROTOCOL
             && (!header.recovery_sha256.as_deref().is_some_and(valid_sha)
-                || !header.shared_sha256.as_deref().is_some_and(valid_sha)))
+                || !header.shared_sha256.as_deref().is_some_and(valid_sha)
+                || header.owner_correction_sha256.is_some()))
+        || (header.protocol == OWNER_CORRECTION_INTEGRATION_PROTOCOL
+            && (!header
+                .owner_correction_sha256
+                .as_deref()
+                .is_some_and(valid_sha)
+                || header.recovery_sha256.is_some()
+                || header.shared_sha256.is_some()))
         || !matches!(header.host.as_str(), "codex" | "claude")
         || !valid_sha(&header.session_key)
         || !valid_sha(&header.owner_identity_sha256)
@@ -316,7 +330,13 @@ fn prepare_for_record(
         context.active.source_config.project_identity_sha256 == project_identity_sha256
     });
     let grouped = recovered_context.is_some_and(|context| context.grouped);
-    let protocol = if grouped {
+    let owner_correction_sha256 = super::super::owner_correction::uncredited_binding(record)?;
+    if owner_correction_sha256.is_some() && recovered_context.is_some() {
+        return Err("owner correction and native recovery cannot share an integration".into());
+    }
+    let protocol = if owner_correction_sha256.is_some() {
+        OWNER_CORRECTION_INTEGRATION_PROTOCOL
+    } else if grouped {
         GROUP_INTEGRATION_PROTOCOL
     } else if recovered_context.is_some() {
         RECOVERY_INTEGRATION_PROTOCOL
@@ -341,6 +361,7 @@ fn prepare_for_record(
                 .as_ref()
                 .map(|value| value.integration_sha256.clone()),
             shared_sha256: shared_sha256.clone(),
+            owner_correction_sha256: owner_correction_sha256.clone(),
             checker: checker.clone(),
         },
         false,
@@ -363,6 +384,7 @@ fn prepare_for_record(
                 .as_ref()
                 .map(|value| value.integration_sha256.clone()),
             shared_sha256,
+            owner_correction_sha256,
             checker,
         },
         members: covered,
@@ -433,7 +455,13 @@ fn covered_snapshot(
         .filter(|_| is_recovered_source)
         .map(|value| value.integration_sha256.as_str());
     let grouped = recovery.as_ref().is_some_and(|context| context.grouped);
-    let valid_protocol = if is_recovered_source && grouped {
+    let owner_correction_sha256 = super::super::owner_correction::uncredited_binding(record)?;
+    let valid_protocol = if owner_correction_sha256.is_some() {
+        !is_recovered_source
+            && header.protocol == OWNER_CORRECTION_INTEGRATION_PROTOCOL
+            && header.shared_sha256.is_none()
+            && header.owner_correction_sha256 == owner_correction_sha256
+    } else if is_recovered_source && grouped {
         (header.protocol == GROUP_INTEGRATION_PROTOCOL
             && header.shared_sha256.as_deref()
                 == Some(super::super::recovery::shared_inputs(record).as_str()))
@@ -460,6 +488,9 @@ fn covered_snapshot(
         })
         .collect::<Vec<_>>();
     for member in &project_members {
+        if super::super::owner_correction::uncredited_member(record, member)? {
+            continue;
+        }
         if recovery
             .as_ref()
             .is_some_and(|context| context.retired_uncredited.contains(&member.work))
@@ -567,6 +598,7 @@ pub(super) fn current_integration_for_project(
                 .as_ref()
                 .map(|value| value.integration_sha256.clone()),
             shared_sha256: None,
+            owner_correction_sha256: None,
             checker: super::super::requirements::CheckerInput {
                 path: String::new(),
                 sha256: String::new(),
@@ -615,7 +647,10 @@ pub(super) fn current_integration_for_project(
             &contract.header.checker,
         )?;
         if evidence["state"] == "current" && evidence["accepted"] == true {
-            if recovered_context.is_some() && !current_required_review(loaded, &endpoint.work)? {
+            if (recovered_context.is_some()
+                || contract.header.protocol == OWNER_CORRECTION_INTEGRATION_PROTOCOL)
+                && !current_required_review(loaded, &endpoint.work)?
+            {
                 continue;
             }
             return Ok(Some(endpoint.work));
@@ -693,6 +728,7 @@ fn member_loaded(loaded: &Loaded, member: &Member) -> Result<Option<Loaded>, Str
             config_binding_sha256: config_binding(&original)?,
             recovery_sha256: None,
             shared_sha256: None,
+            owner_correction_sha256: None,
             checker: super::super::requirements::CheckerInput {
                 path: String::new(),
                 sha256: String::new(),

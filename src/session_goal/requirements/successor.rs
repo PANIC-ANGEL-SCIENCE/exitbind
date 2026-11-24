@@ -24,6 +24,11 @@ pub(crate) fn assign_successor(
 ) -> Result<Value, String> {
     super::super::mutate(root, loaded, |previous| {
         let previous = previous.ok_or("no canonical named Goal is open")?;
+        if super::super::owner_correction::uncredited_reference(loaded, previous, predecessor)?
+            || super::super::owner_correction::uncredited_reference(loaded, previous, successor)?
+        {
+            return Err("owner correction retained this Work without evidence credit".into());
+        }
         let proven = verify_actual(root, loaded, predecessor, successor)?;
         if previous["goalId"] != goal_id || proven.contract.goal_id != goal_id {
             return Err("successor belongs to a different named Goal".into());

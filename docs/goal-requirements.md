@@ -54,9 +54,8 @@ unavailable. A project other than the fixed owner may read a bounded
 context-only Goal preview, but cannot edit its requirements, map named
 coverage, evaluate owner evidence, or close it.
 
-An open named native Goal that has never had a Work association, mapping,
-journey member, integration, or admission can be corrected to another project
-with `goal correct-owner`. From the original session and current owner config,
+An open named native Goal can be corrected to another project with `goal
+correct-owner`. From the original session and current owner config,
 provide the canonical absolute `--target-config PATH`, `--request-id ID`, `--reason TEXT` and
 `--relocations JSON`. Each relocation is an object with `originalRef`,
 `recordedSha256`, and `targetPath`: select every current Goal and requirement
@@ -79,6 +78,31 @@ correction transfers no Work check, review, acceptance, or grant.
 After commit, edits to the selected configuration preserve Goal ownership when
 its canonical path and project and state-root identities remain the same.
 Existing Work and evidence still follow their own currentness rules.
+
+If the Goal already has context-only journey members in the target project,
+select their complete exact Work handle set with `--uncredited-members JSON`
+and add `--source-writers-quiesced` to the preview. The JSON value is an array
+of Work handles, for example `["smw_..."]`. Before attesting, establish that
+both old-owner Goal writers and target-project Work writers have stopped; the
+locks cannot fence already-running old code. Every member must have its exact
+consumed admission, start and private context companion. The path refuses a
+partial or foreign selection, pending admissions, named Work mappings,
+integrations, adoption, recovery and quarantine. It supports ordinary linked
+starts; successor starts require a different recovery path.
+
+This decision retains each original member and Work ledger as history without
+giving that Work, its successor, or its result reference credit toward closure.
+For a corrected Goal, use the exact `smw_` Work handle for current category
+evidence. Event head hashes are historical observations and do not establish
+category currentness, even for fresh Work. Work handles retain the ordinary
+currentness checks. Earlier Goal decisions remain in the journal and can be
+explicitly reassessed through the current Goal decision route. After applying
+the exact preview, start and accept a fresh target-owned named validation Work,
+map the current requirements, then start a fresh named integration with
+`--journey-integration`. That integration must have current checks, independent
+review and Lead acceptance before it can close the Goal; its frozen contract
+binds the exact correction and accepted current members. The Goal remains open
+while no such integration is current.
 
 Goal usage observations remain in the state root that recorded them. When the
 correction changes state roots, the target's `goal usage` does not include
