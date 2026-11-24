@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.31.30
+
+Release: https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/tag/v0.31.30 — the tag sits on this entry's release commit, and the page lists its assets once they are published.
+
+- Recover the configured owner of a named native Goal with explicitly selected
+  historical Work from the target project. Preserve the original Work records
+  and guide the corrected Goal through fresh validation and reviewed integration.
+- Keep an interrupted correction cancellable from the original owner when the
+  target becomes unavailable. Check that the historical Work selection leaves
+  two journey slots for fresh validation and integration at correction time.
+- Keep this release or a compatible reader for a Goal corrected with historical
+  Work. Stop original Goal writers and the selected project's Work writers
+  before preview and keep them stopped through apply. If apply stops with a
+  pending reader barrier before the Goal event commits, use the exact abort
+  route to recover the original owner. After commit, inspect the current state
+  and replay the exact apply to recover its response.
+  [Goal owner correction](docs/goal-requirements.md)
+
 ## 0.31.29
 
 Release: https://github.com/PANIC-ANGEL-SCIENCE/exitbind/releases/tag/v0.31.29 — the tag sits on this entry's release commit, and the page lists its assets once they are published.
