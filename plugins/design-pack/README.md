@@ -1,4 +1,4 @@
-# Design Pack 0.7.26 candidate
+# Design Pack 0.7.27 candidate
 
 A skills-only design partner for turning real content and inspected references into deliberate visual work. It covers interfaces, portfolio presentations, brand, editorial, diagrams, objects, spaces, fashion, motion, sound and 3D. Start at [Design Pack](skills/design-pack/SKILL.md) and load only relevant [methods](skills/design-pack/references/methods.md).
 

@@ -8,6 +8,8 @@ Find the installed version, exported API, real implementation, theme/provider bo
 
 Inventory the components the real flow needs: actions, inputs/choices, navigation, data display and feedback/overlays as applicable. Reuse supported behavior before creating an almost-identical wrapper. An existing primitive can provide semantics while a composition carries the product's own expression; a component library's default look is not the design brief.
 
+Use **Meta Astryx** as a method reference: the component owns interaction, semantics and accessible states; the theme owns appearance. Translate useful slots and semantic tokens to the local stack, not its framework, props, assets or visual defaults. Apply **Apple Human Interface Guidelines** when choosing the target-appropriate navigation, feedback or platform behavior; native host semantics and actual product needs decide conflicts. Do not change an established visual identity to resemble a reference library.
+
 ## Define anatomy and behavior together
 
 For each changed family, identify root, label, leading/trailing accessory, supporting text, status and interactive regions. Give slots a purpose and document who owns spacing, focus, events and accessible naming. Only make a slot independently interactive when the product needs that separate action. Avoid nested buttons and clickable wrappers around links.

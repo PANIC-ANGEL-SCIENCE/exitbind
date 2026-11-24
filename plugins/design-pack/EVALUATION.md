@@ -33,6 +33,10 @@ Use a synthetic object-exploration task whose required actions are supplied by t
 
 Try a deliberately difficult variation: similar objects, a long translated label or a return after selection. The interface must make the association clear without hiding essential image evidence. Preserve truthfulness when destinations or data are samples.
 
+## Interface source-role exercise
+
+Give a branded desktop data tool with an inline selector and a narrow touch version. Inspect one navigation or overlay change and one component-state change. The maker should justify hierarchy, focus and adaptive surface behavior with Apple HIG and separate accessible behavior from styling using the Meta Astryx model. Compare actual dark/light backgrounds, reduced transparency, reduced motion and restored focus. Fail if a familiar library skin substitutes for the product's identity, a decorative blur is essential to navigating, or a theme change alters keyboard behavior.
+
 ## Source-preservation exercise
 
 Give a permitted clean image, exact text and a presentation task requiring related states. Then request a local text correction. Inspect whether the maker kept the original asset, changed the relevant source and compared unchanged image regions. If only a generator-only route exists, review native originals and collateral changes; do not require an unavailable tool or claim exact continuity from a prompt. No hash can prove that a source visually survived a generative edit.

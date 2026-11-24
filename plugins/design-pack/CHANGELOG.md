@@ -7,6 +7,10 @@ publication, host activation, visual improvement or user acceptance. Each entry
 retains the limits stated when it was written. Current methods live in the
 linked skills and references; historical notes do not replace them.
 
+## 0.7.27
+
+Use Apple HIG for platform hierarchy, navigation, focus and surfaces, and Meta Astryx as the component behavior and theming reference. Preserve product identity and native semantics, with accessible opaque and reduced-motion equivalents. No vendor dependency, asset or aesthetic preset is included.
+
 ## 0.7.26
 
 Add selective background-removal and subject-isolation guidance: source-preserving alpha extraction, connected-background candidate comparison, protected details, local mask repair, approximate translucency, multi-background review and reopened transparent export checks. Distinguish RGB fidelity from composite quality and generated reinterpretation; preserve authority, source and metadata boundaries. New routes, lexical guards and synthetic declarations do not prove actual image quality or automatic host use.

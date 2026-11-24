@@ -2,6 +2,8 @@
 
 Use for icon selection, original icon design, a family refresh or icon-bearing UI components. Inspect the actual rendered symbols and their context; a library name or equal SVG bounds cannot establish visual consistency. This is not a mandate for a particular icon family, outline style, grid, stroke width or platform.
 
+Use Apple HIG to check platform meaning and accessibility and Meta Astryx to separate a component's semantic icon role from the selected artwork. Neither reference requires adopting system artwork, uniform dimensions or a universal outline/filled rule.
+
 ## Decide whether a symbol helps
 
 Identify the role: decoration already explained by text, information, status, action, navigation, object identity or brand mark. Remove a redundant symbol when it adds noise. Use a visible label when the meaning is unfamiliar or consequential; a tooltip is not a substitute for discoverable essential instruction. Do not use a logo as a generic category decoration or conflate expand, open, select and move.
