@@ -445,6 +445,9 @@ pub(crate) fn correct(
     loaded: &Loaded,
     request: OwnerCorrectionRequest<'_>,
 ) -> Result<Value, String> {
+    if request.abort {
+        return correct_inner(loaded, request);
+    }
     if let Some(raw) = request.uncredited_members {
         if !request.source_writers_quiesced {
             return Err(
@@ -818,7 +821,7 @@ pub(super) fn recorded_identity(record: &Value, original: &str) -> Result<String
 
 /// The correction seals exclusions rather than retiring or changing a Work.
 /// Every later reader requires the exact retained member identities to remain.
-pub(super) fn uncredited_binding(record: &Value) -> Result<Option<String>, String> {
+pub(crate) fn uncredited_binding(record: &Value) -> Result<Option<String>, String> {
     let Some(decision) = decisions(record)?.last().cloned() else {
         return Ok(None);
     };

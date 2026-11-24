@@ -2,7 +2,7 @@
 // Refuses unmatched admissions or changed identities; see `src/session_goal/owner_correction.rs`.
 //! Exact historical association selection without transferring Work authority.
 
-use super::model::{OwnerCorrectionDecision, UncreditedMember};
+use super::model::{OwnerCorrectionDecision, UncreditedMember, MAX_UNCREDITED_MEMBERS};
 use crate::{config::Loaded, evidence::hash};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -202,8 +202,13 @@ pub(super) fn parse_selection(raw: &str) -> Result<Vec<String>, String> {
     let original = works.len();
     works.sort();
     works.dedup();
+    if works.len() > MAX_UNCREDITED_MEMBERS {
+        return Err(
+            "owner correction needs two free journey slots for fresh validation and integration"
+                .into(),
+        );
+    }
     if works.is_empty()
-        || works.len() > 32
         || works.len() != original
         || works
             .iter()

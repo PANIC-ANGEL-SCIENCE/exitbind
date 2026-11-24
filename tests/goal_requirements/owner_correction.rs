@@ -1531,7 +1531,7 @@ fn historical_owner_correction_rejects_stale_preview_and_recovers_pending_barrie
         .target
         .begin_ordinary("Retain the original Work", "true", &[]);
     let selection = json!([work]).to_string();
-    let (_, journal) = paths(&fixture.old);
+    let (owner_path, journal) = paths(&fixture.old);
     let ledger = fixture
         .target
         .root
@@ -1566,6 +1566,7 @@ fn historical_owner_correction_rejects_stale_preview_and_recovers_pending_barrie
         &selection,
         "historical-pending",
     ));
+    let original_owner: Value = serde_json::from_slice(&fs::read(&owner_path).unwrap()).unwrap();
     install_pending_marker(&fixture.old, &preview);
     let current = fixture.old.status();
     assert_eq!(
@@ -1576,12 +1577,37 @@ fn historical_owner_correction_rejects_stale_preview_and_recovers_pending_barrie
         current["ownerCorrectionRecovery"]["abortArgv"],
         preview["abortArgv"]
     );
+    let config = fixture.target.root.join("exitbind.json");
+    let unavailable_config = fixture.target.root.join("exitbind.json.unavailable");
+    fs::rename(&config, &unavailable_config).unwrap();
+    let pending_store = fixture.old.native_store_snapshot();
+    assert!(!fixture.execute(&preview, "applyArgv").status.success());
+    assert_eq!(fixture.old.native_store_snapshot(), pending_store);
+    let mut wrong_binding = preview["abortArgv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    let index = wrong_binding
+        .iter()
+        .position(|item| item == "--current-binding")
+        .unwrap();
+    wrong_binding[index + 1] = "a".repeat(64);
+    assert!(!fixture.old.call_exact_argv(&wrong_binding).status.success());
+    assert_eq!(fixture.old.native_store_snapshot(), pending_store);
     assert_eq!(
         value(&fixture.execute(&preview, "abortArgv"))["kind"],
         "native_goal_owner_correction_aborted"
     );
+    let restored_owner: Value = serde_json::from_slice(&fs::read(&owner_path).unwrap()).unwrap();
+    assert_eq!(restored_owner["original"], original_owner);
+    assert!(restored_owner["pending"].is_null());
     assert_eq!(fs::read(&journal).unwrap(), later);
     assert_eq!(fs::read(&ledger).unwrap(), work_before);
+    fs::rename(unavailable_config, config).unwrap();
+    assert!(!fixture.execute(&preview, "applyArgv").status.success());
+    assert_eq!(fs::read(&journal).unwrap(), later);
     let retry = value(&historical_preview(
         &fixture,
         &selection,
@@ -1707,4 +1733,380 @@ fn historical_owner_correction_refuses_real_pending_admission_and_missing_attest
     assert!(!fixture.execute(&preview, "applyArgv").status.success());
     assert_eq!(fs::read(&journal).unwrap(), before_refusal);
     assert_eq!(fs::read(&ledger).unwrap(), work_before);
+}
+
+#[test]
+fn corrected_owner_emits_reviewed_integration_and_exact_close_routes() {
+    let fixture = Fixture::new("owner-correction-reviewed-route");
+    let old = fixture
+        .target
+        .begin_ordinary("Retained historical Work", "true", &[]);
+    let preview = value(&historical_preview(
+        &fixture,
+        &json!([old]).to_string(),
+        "reviewed-route",
+    ));
+    value(&fixture.execute(&preview, "applyArgv"));
+
+    // The existing preparation route must not offer an unbound integration
+    // while there is no fresh accepted journey member to freeze.
+    let before = fixture.target.run_entries();
+    let unavailable = fixture.target.value(
+        &[
+            "goal",
+            "prepare",
+            "--goal-id",
+            "import",
+            "--requirement",
+            "R1,R2,R3",
+            "--artifact",
+            "check.sh",
+            "--check-command",
+            "sh check.sh all",
+            "--scope",
+            "integration",
+            "--json",
+        ],
+        None,
+    );
+    assert!(unavailable["beginRoute"].is_null(), "{unavailable}");
+    assert!(
+        unavailable["journeyIntegrationOmitted"].is_string(),
+        "{unavailable}"
+    );
+    assert_eq!(fixture.target.run_entries(), before);
+
+    // A named integration without journey selection is a validation member.
+    // Its earlier mapping must not be chosen as the eventual closure Work.
+    let validation = fixture.target.begin_ordinary(
+        "Fresh named validation",
+        "sh check.sh all",
+        &[
+            "--goal-id",
+            "import",
+            "--requirement",
+            "R1,R2,R3",
+            "--artifact",
+            "check.sh",
+            "--scope",
+            "integration",
+        ],
+    );
+    fixture.target.drive(&validation, true);
+    fixture.target.value(
+        &[
+            "goal",
+            "assign",
+            "--goal-id",
+            "import",
+            "--requirement",
+            "R1,R2,R3",
+            "--result-ref",
+            &validation,
+        ],
+        None,
+    );
+
+    // An accepted journey integration with omitted review cannot close.
+    let omitted = fixture.target.value(
+        &[
+            "work",
+            "begin",
+            "change",
+            "--goal",
+            "An integration without review",
+            "--goal-id",
+            "import",
+            "--requirement",
+            "R1,R2,R3",
+            "--artifact",
+            "check.sh",
+            "--check-command",
+            "sh check.sh all",
+            "--scope",
+            "integration",
+            "--journey-integration",
+            "--review-policy",
+            "omitted",
+            "--json",
+        ],
+        None,
+    )["work"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    fixture.target.drive(&omitted, true);
+    fixture.target.reject(
+        &[
+            "goal",
+            "close",
+            "--goal-id",
+            "import",
+            "--result-ref",
+            &omitted,
+        ],
+        "journey",
+    );
+
+    // A reviewed but non-named journey integration is current, yet it does
+    // not satisfy the named Goal. A later eligible candidate must be chosen.
+    let generic = fixture.target.begin_ordinary(
+        "A reviewed journey without a named contract",
+        "sh check.sh all",
+        &["--artifact", "check.sh", "--journey-integration"],
+    );
+    fixture.target.drive(&generic, true);
+    assert!(!fixture
+        .target
+        .call(
+            &[
+                "goal",
+                "close",
+                "--goal-id",
+                "import",
+                "--result-ref",
+                &generic,
+            ],
+            None
+        )
+        .status
+        .success());
+
+    let next = fixture.target.status()["requirements"]["nextAction"].clone();
+    let prepare_argv = next["command"]
+        .as_array()
+        .expect("current prepare route")
+        .iter()
+        .map(|item| match item.as_str().unwrap() {
+            "<PROJECT_CHECKER>" => "check.sh".to_owned(),
+            "<CHECK_COMMAND>" => "sh check.sh all".to_owned(),
+            other => other.to_owned(),
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        prepare_argv.iter().any(|word| word == "prepare"),
+        "{prepare_argv:?}"
+    );
+    let prepared = value(&fixture.target.call_exact_argv(&prepare_argv));
+    assert!(
+        prepared["journeyIntegrationOmitted"].is_null(),
+        "{prepared}"
+    );
+    let begin_argv = prepared["beginRoute"]["command"]
+        .as_array()
+        .expect("ready begin route")
+        .iter()
+        .map(|item| item.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    assert!(
+        begin_argv
+            .iter()
+            .any(|word| word == "--journey-integration"),
+        "{begin_argv:?}"
+    );
+    let review = begin_argv
+        .iter()
+        .position(|word| word == "--review-policy")
+        .unwrap();
+    assert_eq!(begin_argv[review + 1], "required");
+    let started = value(&fixture.target.call_exact_argv(&begin_argv));
+    let integration = started["work"].as_str().unwrap().to_owned();
+    fixture.target.drive(&integration, true);
+
+    // The emitted close route must select the actual reviewed named journey
+    // result even though the earlier ordinary integration remains mapped.
+    let close = fixture.target.status()["requirements"]["nextAction"].clone();
+    let close_argv = close["command"]
+        .as_array()
+        .expect("current close route")
+        .iter()
+        .map(|item| item.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    assert!(
+        close_argv.iter().any(|word| word == "close"),
+        "{close_argv:?}"
+    );
+    let result = close_argv
+        .iter()
+        .position(|word| word == "--result-ref")
+        .unwrap();
+    assert_eq!(close_argv[result + 1], integration);
+    assert_ne!(close_argv[result + 1], validation);
+    let closed = value(&fixture.target.call_exact_argv(&close_argv));
+    assert_eq!(closed["kind"], "goal_completion_response");
+    assert_eq!(closed["completionEvent"]["kind"], "session_goal_completed");
+    let status = fixture.target.status();
+    assert_eq!(status["closure"]["closed"], true);
+    assert_eq!(status["currentReadiness"]["state"], "current");
+    assert_eq!(status["goalProgress"]["overall"], "complete");
+    assert_eq!(status["presentation"]["terminal"], TERMINAL);
+}
+
+#[test]
+fn historical_owner_correction_reserves_two_existing_admission_slots() {
+    let fixture = Fixture::new("owner-correction-admission-capacity");
+    let (owner_path, journal) = paths(&fixture.old);
+    let mut works = Vec::new();
+    for index in 0..30 {
+        works.push(fixture.target.begin_ordinary(
+            &format!("Historical target Work {index}"),
+            "true",
+            &[],
+        ));
+    }
+    let selection = json!(works).to_string();
+    let before_preview = fs::read(&journal).unwrap();
+    let preview = value(&historical_preview(&fixture, &selection, "capacity-thirty"));
+    assert_eq!(
+        preview["decision"]["uncreditedMembers"]
+            .as_array()
+            .unwrap()
+            .len(),
+        30
+    );
+    assert_eq!(fs::read(&journal).unwrap(), before_preview);
+
+    // A correctly hashed pending decision also cannot seal an oversized set.
+    let owner_before = fs::read(&owner_path).unwrap();
+    let mut forged = preview.clone();
+    let mut extra = forged["decision"]["uncreditedMembers"][0].clone();
+    extra["work"] = json!(format!("smw_{}", "f".repeat(64)));
+    forged["decision"]["uncreditedMembers"]
+        .as_array_mut()
+        .unwrap()
+        .push(extra);
+    let mut unsigned = forged["decision"].clone();
+    unsigned.as_object_mut().unwrap().remove("previewSha256");
+    unsigned.as_object_mut().unwrap().remove("decisionSha256");
+    forged["decision"]["previewSha256"] = json!(sha(canonical(&unsigned).as_bytes()));
+    let mut unsigned = forged["decision"].clone();
+    unsigned.as_object_mut().unwrap().remove("decisionSha256");
+    forged["decision"]["decisionSha256"] = json!(sha(canonical(&unsigned).as_bytes()));
+    install_pending_marker(&fixture.old, &forged);
+    let invalid = fixture.old.call(&["goal", "status", "--json"], None);
+    assert!(!invalid.status.success(), "{invalid:?}");
+    let diagnostic = format!(
+        "{}{}",
+        String::from_utf8_lossy(&invalid.stdout),
+        String::from_utf8_lossy(&invalid.stderr)
+    );
+    assert!(
+        diagnostic.contains("owner correction decision is invalid"),
+        "{diagnostic}"
+    );
+    fs::write(owner_path, owner_before).unwrap();
+    assert_eq!(fs::read(&journal).unwrap(), before_preview);
+
+    // The existing journey admits both additional Works, while a correction
+    // cannot consume either of the two slots needed after its cutover.
+    for count in [31, 32] {
+        works.push(fixture.target.begin_ordinary(
+            &format!("Historical target Work {}", count - 1),
+            "true",
+            &[],
+        ));
+        let current = fs::read(&journal).unwrap();
+        let selection = json!(works).to_string();
+        let refused = historical_preview(&fixture, &selection, &format!("capacity-{count}"));
+        assert!(!refused.status.success(), "{refused:?}");
+        let diagnostic = format!(
+            "{}{}",
+            String::from_utf8_lossy(&refused.stdout),
+            String::from_utf8_lossy(&refused.stderr)
+        );
+        assert!(
+            diagnostic.contains("two free journey slots"),
+            "{diagnostic}"
+        );
+        assert_eq!(fs::read(&journal).unwrap(), current);
+        assert!(!fixture.execute(&preview, "applyArgv").status.success());
+        assert_eq!(fs::read(&journal).unwrap(), current);
+    }
+}
+
+#[test]
+fn corrected_owner_prepares_one_validation_for_all_current_requirements() {
+    let fixture = Fixture::new("owner-correction-single-validation");
+    let old = fixture
+        .target
+        .begin_ordinary("Retained historical Work", "true", &[]);
+    let preview = value(&historical_preview(
+        &fixture,
+        &json!([old]).to_string(),
+        "one-validation",
+    ));
+    value(&fixture.execute(&preview, "applyArgv"));
+
+    let status = fixture.target.status();
+    let next = status["requirements"]["nextAction"].clone();
+    let rows = status["requirements"]["requirements"].as_array().unwrap();
+    assert_eq!(rows.len(), 3);
+    for row in rows {
+        assert_eq!(row["nextAction"]["command"], next["command"]);
+        assert_eq!(
+            row["nextAction"]["afterCurrentAcceptance"],
+            next["afterCurrentAcceptance"]
+        );
+    }
+    let prepare = next["command"]
+        .as_array()
+        .expect("validation preparation route")
+        .iter()
+        .map(|item| match item.as_str().unwrap() {
+            "<PROJECT_CHECKER>" => "check.sh".to_owned(),
+            "<CHECK_COMMAND>" => "sh check.sh all".to_owned(),
+            other => other.to_owned(),
+        })
+        .collect::<Vec<_>>();
+    assert!(prepare.iter().any(|word| word == "prepare"), "{prepare:?}");
+    let requirement = prepare
+        .iter()
+        .position(|word| word == "--requirement")
+        .unwrap();
+    assert_eq!(prepare[requirement + 1], "R1,R2,R3");
+    assert!(!prepare.iter().any(|word| word == "--scope"), "{prepare:?}");
+    let assignment = next["afterCurrentAcceptance"]["command"]
+        .as_array()
+        .expect("existing assignment route")
+        .iter()
+        .map(|item| item.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    let prepared = value(&fixture.target.call_exact_argv(&prepare));
+    let begin = prepared["beginRoute"]["command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| match item.as_str().unwrap() {
+            "<REVIEW_DECISION>" => "required".to_owned(),
+            other => other.to_owned(),
+        })
+        .collect::<Vec<_>>();
+    let started = value(&fixture.target.call_exact_argv(&begin));
+    let validation = started["work"].as_str().unwrap().to_owned();
+    fixture.target.drive(&validation, true);
+    let assignment = assignment
+        .into_iter()
+        .map(|part| {
+            if part == "<NEW_ACCEPTED_WORK>" {
+                validation.clone()
+            } else {
+                part
+            }
+        })
+        .collect::<Vec<_>>();
+    value(&fixture.target.call_exact_argv(&assignment));
+    let ready = fixture.target.status();
+    assert_eq!(ready["requirements"]["coverageCurrent"], true, "{ready}");
+    let integration = ready["requirements"]["nextAction"]["command"]
+        .as_array()
+        .expect("integration preparation route");
+    assert!(
+        integration.iter().any(|word| word == "prepare"),
+        "{integration:?}"
+    );
+    let scope = integration
+        .iter()
+        .position(|word| word == "--scope")
+        .unwrap();
+    assert_eq!(integration[scope + 1], "integration");
 }

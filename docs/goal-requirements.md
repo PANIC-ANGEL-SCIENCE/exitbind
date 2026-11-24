@@ -89,6 +89,8 @@ consumed admission, start and private context companion. The path refuses a
 partial or foreign selection, pending admissions, named Work mappings,
 integrations, adoption, recovery and quarantine. It supports ordinary linked
 starts; successor starts require a different recovery path.
+At most 30 members may be selected, leaving two of the existing 32 journey
+admission slots for the fresh validation and integration Works.
 
 This decision retains each original member and Work ledger as history without
 giving that Work, its successor, or its result reference credit toward closure.

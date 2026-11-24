@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 pub(super) const FIELD: &str = "nativeGoalOwnerCorrections";
 const MAX_CORRECTIONS: usize = 16;
 const MAX_SOURCES: usize = 33;
+pub(super) const MAX_UNCREDITED_MEMBERS: usize = super::super::journey::MAX_MEMBERS - 2;
 
 /// A committed correction keeps its selected configuration and project
 /// identity, while later edits may change configuration bytes. Full binding
@@ -147,7 +148,7 @@ impl OwnerCorrectionDecision {
             (2, Some(items), Some(true)) => {
                 let mut works = std::collections::BTreeSet::new();
                 !items.is_empty()
-                    && items.len() <= 32
+                    && items.len() <= MAX_UNCREDITED_MEMBERS
                     && items.iter().all(|item| {
                         crate::work::valid_work_handle(&item.work)
                             && works.insert(&item.work)

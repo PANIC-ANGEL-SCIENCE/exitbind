@@ -23,7 +23,7 @@ pub(crate) const OWNER_CORRECTION_INTEGRATION_PROTOCOL: u64 = 4;
 /// Membership v2 adds pre-start admissions. Old readers that understand v1
 /// therefore refuse an in-flight admission instead of treating it as ready.
 const MEMBERSHIP_PROTOCOL: u64 = 2;
-const MAX_MEMBERS: usize = 32;
+pub(super) const MAX_MEMBERS: usize = 32;
 const MAX_INTEGRATIONS: usize = 32;
 const MAX_ADMISSIONS: usize = 32;
 const MAX_PATH_BYTES: usize = 512;
@@ -868,8 +868,9 @@ pub(super) use observation::{observe_work, WorkJourney};
 #[cfg(test)]
 pub(super) use readiness::readiness_for_state;
 pub(crate) use readiness::{
-    progress_for_record, require_close_ready, require_owner_corrected_integration,
-    require_resolved_replacement_admissions, result_ref_current_or_supported,
+    current_owner_corrected_integrations, progress_for_record, require_close_ready,
+    require_owner_corrected_integration, require_resolved_replacement_admissions,
+    result_ref_current_or_supported,
 };
 pub(in crate::session_goal) use readiness::{
     progress_for_record_readonly, readiness_for_record_with_access,

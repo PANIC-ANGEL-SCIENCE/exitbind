@@ -577,6 +577,32 @@ pub(crate) fn require_close_ready(
 
 /// Closure after owner correction must use the same current integration that
 /// froze the correction and the fresh accepted member set.
+pub(crate) fn current_owner_corrected_integrations(
+    loaded: &Loaded,
+    record: &Value,
+) -> Result<Vec<String>, String> {
+    if super::super::owner_correction::uncredited_binding(record)?.is_none() {
+        return Ok(Vec::new());
+    }
+    let journey = state(record)?.ok_or("corrected Goal has no journey membership")?;
+    let project = super::super::requirements::identity(loaded)?;
+    let mut current = Vec::new();
+    for entry in &journey.integrations {
+        let mut candidate = journey.clone();
+        candidate.integrations = vec![entry.clone()];
+        if let Some(work) = current_integration_for_project(
+            loaded,
+            record,
+            &candidate,
+            &candidate.members,
+            &project,
+        )? {
+            current.push(work);
+        }
+    }
+    Ok(current)
+}
+
 pub(crate) fn require_owner_corrected_integration(
     loaded: &Loaded,
     record: &Value,
@@ -585,11 +611,9 @@ pub(crate) fn require_owner_corrected_integration(
     if super::super::owner_correction::uncredited_binding(record)?.is_none() {
         return Ok(());
     }
-    let journey = state(record)?.ok_or("corrected Goal has no journey membership")?;
-    let project = super::super::requirements::identity(loaded)?;
-    if current_integration_for_project(loaded, record, &journey, &journey.members, &project)?
-        .as_deref()
-        != Some(work)
+    if !current_owner_corrected_integrations(loaded, record)?
+        .iter()
+        .any(|current| current == work)
     {
         return Err("corrected Goal closure requires its current named journey integration".into());
     }

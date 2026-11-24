@@ -228,6 +228,9 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             )?;
             let record = crate::session_goal::read(&scope.root)?
                 .ok_or("goal prepare requires the current canonical Goal")?;
+            let corrected_integration = integration
+                && scope.is_session()
+                && crate::session_goal::owner_correction::uncredited_binding(&record)?.is_some();
             // An integration over the conversation journey freezes its
             // accepted members when that freeze would succeed now; otherwise
             // the route omits the flag and the response says why.
@@ -239,6 +242,11 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 crate::session_goal::journey::prepare(l, Some(&prepared.basis), checker, command)
                     .err()
                     .map(|error| crate::drift::plain(&error))
+            };
+            let review = if corrected_integration {
+                "required".to_owned()
+            } else {
+                crate::emitted::slot("REVIEW_DECISION")
             };
             let mut begin = crate::emitted::Route::new([
                 "work",
@@ -255,7 +263,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                 "--check-command",
                 command,
                 "--review-policy",
-                crate::emitted::slot("REVIEW_DECISION").as_str(),
+                review.as_str(),
                 "--detail",
             ]);
             if integration {
@@ -270,7 +278,11 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
             if a.flags.contains_key("project") {
                 begin = begin.words(["--project-goal"]);
             }
-            let route = crate::work::compact::continuation_route(&l.path, begin);
+            let route = if corrected_integration && journey_omitted.is_some() {
+                Value::Null
+            } else {
+                crate::work::compact::continuation_route(&l.path, begin)
+            };
             let scope_label = match prepared.scope {
                 crate::session_goal::requirements::ContractScope::Project => "project",
                 crate::session_goal::requirements::ContractScope::Session => "session",
@@ -282,7 +294,7 @@ pub(super) fn command(l: &config::Loaded, a: &Arguments) -> Result<(), String> {
                     "derived":!a.options.contains_key("artifact"),"via":derived.via},
                 "integration":integration,"beginRoute":route,"journeyIntegrationOmitted":journey_omitted,
                 "readiness":readiness,
-                "placeholders":{"REVIEW_DECISION":"the owner's required or omitted review choice"},
+                "placeholders":if corrected_integration { json!({}) } else { json!({"REVIEW_DECISION":"the owner's required or omitted review choice"}) },
                 "effect":"no Work is started or frozen until beginRoute is executed"}))
         }
         GoalAction::Require => {

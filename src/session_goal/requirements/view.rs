@@ -102,6 +102,11 @@ fn begin_route(
     result["placeholders"] = json!({"PROJECT_CHECKER":"a non-ignored project checker file included in tested inputs",
         "CHECK_COMMAND":"the actual check command naming that checker","REVIEW_DECISION":"the owner's required/omitted choice within this scope"});
     result["effect"] = json!("records a new legitimate Work when executed; no old grant is copied");
+    result["afterCurrentAcceptance"] = assignment_route(loaded, record, ids, project_selected);
+    result
+}
+
+fn assignment_route(loaded: &Loaded, record: &Value, ids: &str, project_selected: bool) -> Value {
     let mut assignment = Route::new([
         "goal",
         "assign",
@@ -117,8 +122,7 @@ fn begin_route(
     if project_selected {
         assignment = assignment.words(["--project"]);
     }
-    result["afterCurrentAcceptance"] = route(loaded, assignment);
-    result
+    route(loaded, assignment)
 }
 
 pub(crate) fn projection(loaded: &Loaded, record: &Value) -> Result<Value, String> {
@@ -244,109 +248,9 @@ pub(crate) fn projection_selected(
     }
     let complete =
         goal.source.coverage_confirmed && rows.iter().all(|row| row["satisfied"] == true);
-    let next = if source_error.is_some() {
-        Value::Null
-    } else if !goal.source.coverage_confirmed {
-        let mut args = Route::new([
-            "goal",
-            "cover",
-            "--goal-id",
-            record["goalId"].as_str().unwrap_or_default(),
-            "--view",
-            "summary",
-        ]);
-        if project_selected {
-            args = args.words(["--project"]);
-        }
-        route(loaded, args)
-    } else if let Some(row) = rows.iter().find(|row| row["satisfied"] != true) {
-        row["nextAction"].clone()
-    } else {
-        let full = goal
-            .mappings
-            .iter()
-            .filter(|mapping| mapping.active)
-            .find_map(|mapping| {
-                let contract = work::contract(loaded, &mapping.work).ok()?;
-                (contract.integration
-                    && goal
-                        .requirements
-                        .iter()
-                        .all(|requirement| contract.covers(&requirement.reference()))
-                    && evidence
-                        .get(&mapping.work)
-                        .is_some_and(|result| result["state"] == "current"))
-                .then_some(mapping.work.clone())
-            });
-        if let Some(work) = full {
-            let validation = super::validate_close_candidate(
-                loaded,
-                root,
-                record,
-                record["goalId"].as_str().unwrap_or_default(),
-                &work,
-                complete,
-            );
-            if validation.as_ref().err().is_some_and(|error| {
-                error == "additional direct completion is stale or unknown"
-                    || error.starts_with("additional goal result in ")
-            }) {
-                super::super::progress::categories::category_revalidation_route(
-                    loaded,
-                    record,
-                    project_selected,
-                )
-                .unwrap_or(Value::Null)
-            } else if validation.is_ok() {
-                let mut args = Route::new([
-                    "goal",
-                    "close",
-                    "--goal-id",
-                    record["goalId"].as_str().unwrap_or_default(),
-                    "--result-ref",
-                    work.as_str(),
-                    "--view",
-                    "event",
-                    "--json",
-                ]);
-                if project_selected {
-                    args = args.words(["--project"]);
-                }
-                route(loaded, args)
-            } else {
-                let ids = goal
-                    .requirements
-                    .iter()
-                    .map(|item| item.id.as_str())
-                    .collect::<Vec<_>>()
-                    .join(",");
-                begin_route(
-                    loaded,
-                    record,
-                    &ids,
-                    "Validate the final integration of every agreed requirement.",
-                    true,
-                    project_selected,
-                )
-            }
-        } else {
-            let ids = goal
-                .requirements
-                .iter()
-                .map(|item| item.id.as_str())
-                .collect::<Vec<_>>()
-                .join(",");
-            begin_route(
-                loaded,
-                record,
-                &ids,
-                "Validate the final integration of every agreed requirement.",
-                true,
-                project_selected,
-            )
-        }
-    };
-    let preparation_ids = if !complete {
+    let corrected =
+        !project_selected && super::super::owner_correction::uncredited_binding(record)?.is_some();
+    let preparation_ids = if !complete && !corrected {
         rows.iter()
             .find(|row| row["satisfied"] != true)
             .and_then(|row| row["id"].as_str())
@@ -400,6 +304,153 @@ pub(crate) fn projection_selected(
             "effect":"read-only validation; the returned beginRoute remains a separate Work-creation decision"})
     } else {
         json!({"available":false,"reason":"lead_must_confirm_finite_coverage_first","selectedRequirementIds":preparation_ids.split(',').collect::<Vec<_>>()})
+    };
+    let category_blocked = |error: &str| {
+        error == "additional direct completion is stale or unknown"
+            || error.starts_with("additional goal result in ")
+            || (corrected && error == "additional goal obligations or decisions remain unresolved")
+    };
+    let prepare_integration = || {
+        let mut current = preparation["scopeRoutes"]["currentGoal"].clone();
+        current["placeholders"] = preparation["placeholders"].clone();
+        current
+    };
+    let prepare_validation = || {
+        let mut current = preparation["scopeRoutes"]["currentGoal"].clone();
+        current["placeholders"] = preparation["placeholders"].clone();
+        current["afterCurrentAcceptance"] =
+            assignment_route(loaded, record, &preparation_ids, project_selected);
+        current
+    };
+    if corrected && !complete && source_error.is_none() && goal.source.coverage_confirmed {
+        let grouped = prepare_validation();
+        for row in &mut rows {
+            if row["satisfied"] != true && row["state"] != "pending" {
+                row["nextAction"] = grouped.clone();
+            }
+        }
+    }
+    let next = if source_error.is_some() {
+        Value::Null
+    } else if !goal.source.coverage_confirmed {
+        let mut args = Route::new([
+            "goal",
+            "cover",
+            "--goal-id",
+            record["goalId"].as_str().unwrap_or_default(),
+            "--view",
+            "summary",
+        ]);
+        if project_selected {
+            args = args.words(["--project"]);
+        }
+        route(loaded, args)
+    } else if let Some(row) = rows.iter().find(|row| row["satisfied"] != true) {
+        row["nextAction"].clone()
+    } else {
+        let validate = |work: &str| {
+            super::validate_close_candidate(
+                loaded,
+                root,
+                record,
+                record["goalId"].as_str().unwrap_or_default(),
+                work,
+                complete,
+            )
+        };
+        let candidate = if corrected {
+            super::super::journey::current_owner_corrected_integrations(loaded, record)?
+                .into_iter()
+                .find_map(|work| {
+                    let validation = validate(&work);
+                    (validation.is_ok()
+                        || validation
+                            .as_ref()
+                            .err()
+                            .is_some_and(|error| category_blocked(error)))
+                    .then_some((work, validation))
+                })
+        } else {
+            goal.mappings
+                .iter()
+                .filter(|mapping| mapping.active)
+                .find_map(|mapping| {
+                    let contract = work::contract(loaded, &mapping.work).ok()?;
+                    (contract.integration
+                        && goal
+                            .requirements
+                            .iter()
+                            .all(|requirement| contract.covers(&requirement.reference()))
+                        && evidence
+                            .get(&mapping.work)
+                            .is_some_and(|result| result["state"] == "current"))
+                    .then(|| (mapping.work.clone(), validate(&mapping.work)))
+                })
+        };
+        if let Some((work, validation)) = candidate {
+            if validation
+                .as_ref()
+                .err()
+                .is_some_and(|error| category_blocked(error))
+            {
+                super::super::progress::categories::category_revalidation_route(
+                    loaded,
+                    record,
+                    project_selected,
+                )
+                .unwrap_or(Value::Null)
+            } else if validation.is_ok() {
+                let mut args = Route::new([
+                    "goal",
+                    "close",
+                    "--goal-id",
+                    record["goalId"].as_str().unwrap_or_default(),
+                    "--result-ref",
+                    work.as_str(),
+                    "--view",
+                    "event",
+                    "--json",
+                ]);
+                if project_selected {
+                    args = args.words(["--project"]);
+                }
+                route(loaded, args)
+            } else if corrected {
+                prepare_integration()
+            } else {
+                let ids = goal
+                    .requirements
+                    .iter()
+                    .map(|item| item.id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                begin_route(
+                    loaded,
+                    record,
+                    &ids,
+                    "Validate the final integration of every agreed requirement.",
+                    true,
+                    project_selected,
+                )
+            }
+        } else if corrected {
+            prepare_integration()
+        } else {
+            let ids = goal
+                .requirements
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>()
+                .join(",");
+            begin_route(
+                loaded,
+                record,
+                &ids,
+                "Validate the final integration of every agreed requirement.",
+                true,
+                project_selected,
+            )
+        }
     };
     let source_status = source_error.map_or_else(
         || json!({"state":"current"}),
