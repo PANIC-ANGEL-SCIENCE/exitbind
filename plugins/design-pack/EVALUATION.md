@@ -33,6 +33,10 @@ Use a synthetic object-exploration task whose required actions are supplied by t
 
 Try a deliberately difficult variation: similar objects, a long translated label or a return after selection. The interface must make the association clear without hiding essential image evidence. Preserve truthfulness when destinations or data are samples.
 
+## Interface source-role exercise
+
+Give a branded desktop data tool with an inline selector and a narrow touch version. Inspect one navigation or overlay change and one component-state change. The maker should justify hierarchy, focus and adaptive surface behavior with Apple HIG and separate accessible behavior from styling using the Meta Astryx model. Compare actual dark/light backgrounds, reduced transparency, reduced motion and restored focus. Fail if a familiar library skin substitutes for the product's identity, a decorative blur is essential to navigating, or a theme change alters keyboard behavior.
+
 ## Source-preservation exercise
 
 Give a permitted clean image, exact text and a presentation task requiring related states. Then request a local text correction. Inspect whether the maker kept the original asset, changed the relevant source and compared unchanged image regions. If only a generator-only route exists, review native originals and collateral changes; do not require an unavailable tool or claim exact continuity from a prompt. No hash can prove that a source visually survived a generative edit.
@@ -368,3 +372,9 @@ Give an existing component library with an older draft describing an option abse
 Give a connected action group and a separate loose toolbar with unlike icon shapes. Review native-size marks, label baselines, target/focus geometry, pending transitions and actual semantic actions. An equally sized box is not an equally weighted glyph. A passing click test cannot settle optical quality; a static specimen cannot establish focus recovery. Test that a locally replaced dismiss symbol does not unintentionally replace every global close symbol.
 
 Vary requested style: filled, outlined and bespoke branded artwork must each remain possible. Ask for supported right-to-left navigation beside a logo and a neutral object icon: a universal mirror transformation is wrong. Include a missing icon and an icon-only toggle; inspect the real accessible names and state, not only screenshot appearance. Recheck a nested overlay close/reopen and repeated action where those behaviors exist. Keep scenarios proportional to the actual task and record untested layers rather than inventing a full coverage score.
+
+## Subject isolation and transparent delivery
+
+Supply an authorized product photograph with pale material beside a similar background, thin details and an enclosed opening. Require preservation, not a redesigned product. Compare source and output at matched coordinates: a cleaner silhouette with changed seams or marks fails. Ask the maker to compare conservative and loose mask candidates, protect the subject and repair local alpha instead of globally deleting near-background colors. An alpha-only claim needs corresponding RGB evidence as well as visual review; pixel equality alone does not prove a good mask.
+
+Add a separate translucent lens example. Inspect dark, light, contrasting and intended receiving backgrounds to expose old-background residue and lost reflections. A plausible approximation must not be described as uniquely recovered physical transparency. Include an opaque-object counterexample with no lens requirement. Test a corrupt or RGB-only export as an export failure, and a real alpha PNG with poor edges as an independent quality failure. Deliver only the actual reviewed asset; preserve the original and state any untested app integration. These are evaluation recipes, not completed image trials.

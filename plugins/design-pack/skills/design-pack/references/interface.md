@@ -22,6 +22,12 @@ Responsive work includes narrow viewports, touch targets, landscape, zoom, keybo
 
 Review density against actual use. A frequent operator may need visible information that a first-time customer does not. Use clear grouping and alignment before decorative containers. Preserve established conventions where they reduce effort; change them deliberately when the brief justifies it.
 
+## Choose the right source for each UI decision
+
+For new or meaningfully revised UI, use **Apple Human Interface Guidelines** as the reference for navigation hierarchy, focus and input, adaptive layout, and surface roles. Use **Meta Astryx** as the reference for separating component behavior and accessible states from theme presentation; apply its [component contract](components.md) without inheriting a look. Reuse the target host's native semantics and the product's established visual identity first. Do not fill an unspecified brief by silently adopting another design system, arbitrary style defaults or an imported component library.
+
+Borrow Apple's separation of navigation/control surfaces and content, not a universal translucent finish. Use translucency only when the underlying context contributes. Inspect final foreground contrast over light, dark and high-detail content, plus an opaque equivalent when blur is unavailable or reduced transparency is set. Preserve reading order and discoverability in that equivalent. Match the platform and workload: an information-dense desktop tool may need more visible hierarchy than a mobile toolbar. Keep focus independent from selection, give keyboard and pointer equivalent paths, and preserve the result of each action when motion is reduced. Do not make glass or any branded motion a default.
+
 ## Prototype and implement
 
 Make the riskiest flow usable at representative fidelity. Compare alternatives with the same task and content. Choose realistic acceptance checks, for example “recover from a failed booking without losing the chosen date” instead of “looks modern.” Distinguish designer inspection from usability research with participants.

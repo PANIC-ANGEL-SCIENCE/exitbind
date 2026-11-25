@@ -10,6 +10,8 @@ Personally view relevant readable materials through [Discovery](discovery.md). S
 
 ## Explore the product relationship
 
+For UI system decisions, assign each source a role using [the interface source guide](interface.md). Use Apple HIG for hierarchy, navigation and surface behavior, Meta Astryx for the component/theme boundary, and project evidence for what it should actually look like.
+
 Start with real content and the action that makes this product useful. Build a small state strip or prototype when the interface idea is uncertain. A presentation or photographic relationship may need exploration alongside it; do not lock the entire board merely to finish states in order. Compare materially different relationships at comparable fidelity: how information is grouped, how selection changes space, how content and control share a frame, or how detail relates to its origin. A palette swap or new bottom-sheet contour alone is not a new interaction concept.
 
 Map the user’s required actions to visible changes: initial state → action → changed content/control → next action → resulting state. Show the initial context when it is part of the request; do not start after the first action has already happened. Preserve selection and useful back context. For each promising direction, show its meaningful before/after and return or dismissal where relevant. Keep object identity, labels and primary action consistent. Explore visual form without inventing unsupported product behavior. A static transition is still only a proposal; test real behavior when implementation is in scope.

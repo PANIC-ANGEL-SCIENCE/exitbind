@@ -30,7 +30,8 @@ EXPECTED = {
     'scripts/test_garment_structure_guidance.py',
     'scripts/test_component_icon_guidance.py', 'scripts/test_typography_guidance.py', 'scripts/test_outcome_test_support.py',
     'scripts/outcome_test_support.py', 'scripts/capture_outcome_fixtures.py',
-    'scripts/test_mirror_selfie_guidance.py',
+    'scripts/test_mirror_selfie_guidance.py', 'scripts/test_background_removal_guidance.py',
+    'skills/mockup-image/references/background-removal.md',
     'scripts/check_outcome.py', 'scripts/test_check_outcome.py', OUTCOME,
     'skills/mockup-image/references/generation-contract.md',
     'skills/mockup-image/references/model-direction.md',
@@ -145,6 +146,14 @@ def check(root):
         if isinstance(base.get('version'), str) and not texts['README.md'].startswith(
                 '# Design Pack ' + base['version'] + ' candidate\n'):
             errors.append('README version mismatch')
+    for source, target in {
+        'skills/mockup-image/SKILL.md': 'references/background-removal.md',
+        'skills/mockup-image/references/image-production.md': 'background-removal.md',
+        'skills/mockup-image/references/generation-contract.md': 'background-removal.md',
+        'skills/design-pack/references/methods.md': '../../mockup-image/references/background-removal.md',
+    }.items():
+        if '](' + target + ')' not in texts[source]:
+            errors.append('missing background removal route')
     craft_routes = {
         'skills/design-pack/references/screen-production.md':
             ('visual-methods.md', 'interface-craft.md', 'reference-roles.md'),
@@ -337,6 +346,11 @@ def self_test():
 
     cases = [
         ('missing mirror selfie contracts', lambda r: (r / 'scripts/test_mirror_selfie_guidance.py').unlink(), 'package inventory mismatch'),
+        ('missing background method', lambda r: (r / 'skills/mockup-image/references/background-removal.md').unlink(), 'package inventory mismatch'),
+        ('background entry route', edit('skills/mockup-image/SKILL.md', lambda s: s.replace('](references/background-removal.md)', '](references/image-production.md)')), 'missing background removal route'),
+        ('background production route', edit('skills/mockup-image/references/image-production.md', lambda s: s.replace('](background-removal.md)', '](generation-contract.md)')), 'missing background removal route'),
+        ('background generation route', edit('skills/mockup-image/references/generation-contract.md', lambda s: s.replace('](background-removal.md)', '](image-production.md)')), 'missing background removal route'),
+        ('background index route', edit('skills/design-pack/references/methods.md', lambda s: s.replace('](../../mockup-image/references/background-removal.md)', '](../../mockup-image/SKILL.md)')), 'missing background removal route'),
         ('missing mirror selfie method', lambda r: (r / 'skills/mockup-image/references/mirror-selfie.md').unlink(), 'package inventory mismatch'),
         ('mirror entry route', edit('skills/mockup-image/SKILL.md', lambda s: s.replace('](references/mirror-selfie.md)', '](references/image-production.md)')), 'missing mirror selfie route'),
         ('mirror capture route', edit('skills/mockup-image/references/capture-styling.md', lambda s: s.replace('](mirror-selfie.md)', '](generation-contract.md)')), 'missing mirror selfie route'),

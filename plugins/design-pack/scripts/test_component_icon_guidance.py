@@ -30,6 +30,19 @@ class WrittenContracts(unittest.TestCase):
             for target in ('components.md', 'iconography.md'):
                 with self.subTest(name=name, target=target): self.assertIn('](' + target + ')', text)
 
+    def test_interface_source_roles_and_fallbacks(self):
+        refs = ROOT / 'skills/design-pack/references'
+        method = (refs / 'interface.md').read_text()
+        for boundary in ('Apple Human Interface Guidelines', 'Meta Astryx',
+                         'visual identity first', 'opaque equivalent',
+                         'when motion is reduced', 'silently adopting another design system'):
+            self.assertIn(boundary, method)
+        for name in ('screen-production.md', 'components.md', 'iconography.md'):
+            guidance = (refs / name).read_text()
+            self.assertIn('Apple', guidance)
+            self.assertIn('Meta Astryx', guidance)
+
+
 class ComponentIconDeclarations(SyntheticOutcomeCase):
     axes = ('component-behavior', 'icon-meaning', 'icon-optical-fit', 'icon-accessibility')
 

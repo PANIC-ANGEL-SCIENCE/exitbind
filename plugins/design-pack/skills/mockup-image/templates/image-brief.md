@@ -105,3 +105,5 @@ Use only consequential fields. Face, expression and casting fields apply only wh
 - Repair/reinspection or explicit frozen-trial findings:
 
 Use the optional [image run](image-run.json) only when a machine-checkable receipt is useful. The record checks declared evidence, not actual perception or quality.
+
+For subject isolation when applicable: original/master identity; protected subject evidence; chosen extraction route and rights; alpha-only versus RGB repair; tolerance candidates and local mask corrections; translucent-material approximation; composite backgrounds and native-use/detail findings; reopened export checks; remaining failures and delivery scope.
